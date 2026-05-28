@@ -9,9 +9,24 @@ Edytor ma umożliwić szybkie doprowadzenie wyniku AI do jakości grywalnego pli
 ### Upload
 
 - Pole wyboru pliku audio.
-- Metadane: tytuł, artysta, język, opcjonalny BPM, opcjonalny tryb jakości.
-- Informacja o ograniczeniach pliku.
+- Obsługiwane formaty: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
+- Metadane: tytuł, artysta, opcjonalny język, opcjonalny rok/gatunek.
+- Jeśli plik audio zawiera metadane, formularz importu automatycznie uzupełnia dostępne pola.
+- Jeśli metadane nie istnieją, pola pozostają puste do ręcznego uzupełnienia.
+- Wskazówka: dla utworów wielojęzycznych zostaw język pusty, żeby Whisper sam wykrył język.
+- Wybór modelu separacji: szybszy `htdemucs` albo dokładniejszy `htdemucs_ft`.
+- Wybór modelu transkrypcji: szybszy `large-v3-turbo` albo dokładniejszy `large-v3`.
+- Opcjonalny upload covera, który może zostać użyty w eksporcie.
+- Jeśli użytkownik nie wgra covera, eksportowana paczka nie zawiera covera.
+- Informacja, że audio zostanie przekonwertowane lokalnie przez FFmpeg do formatów roboczych.
 - Start zadania.
+
+### Import Projektu
+
+- Użytkownik może wczytać `mukai-project.json`.
+- Jeśli oryginalne audio jest niedostępne, UI prosi o ponowne wgranie pliku audio.
+- Jeśli ponownie wgrany plik audio ma inną długość niż zapisana w JSON-ie, UI pokazuje ostrzeżenie przed kontynuacją.
+- Import nie uruchamia ponownie BPM, transkrypcji, alignacji ani pitch detection.
 
 ### Status zadania
 
@@ -26,9 +41,9 @@ Główne obszary:
 
 - Odtwarzacz audio z przełącznikiem oryginał/wokal/instrumental.
 - Waveform z markerami fraz.
-- Lista fraz tekstu.
+- Lista fraz tekstu z edycją słów i sylab.
 - Piano roll lub siatka nut zsynchronizowana z osią czasu.
-- Panel właściwości zaznaczonej frazy, słowa albo nuty.
+- Panel właściwości zaznaczonej frazy, słowa, sylaby albo nuty.
 
 ## Operacje edycyjne
 
@@ -36,7 +51,8 @@ Tekst:
 
 - Edycja treści frazy.
 - Podział i scalanie fraz.
-- Podział i scalanie słów/tokenów.
+- Podział i scalanie słów.
+- Podział i scalanie sylab.
 - Oznaczanie fragmentu jako instrumentalny, freestyle albo rap.
 
 Timing:
@@ -60,6 +76,7 @@ Akcje globalne:
 - Zapis wersji roboczej.
 - Walidacja przed eksportem.
 - Eksport po zatwierdzeniu.
+- Skróty klawiaturowe nie są wymagane w MVP.
 
 ## Stany jakości
 
@@ -79,6 +96,18 @@ Edytor powinien wizualnie oznaczać:
 - Edycje muszą być zapisywane jako wersje, żeby można było wrócić do poprzedniego stanu.
 - Interfejs powinien obsługiwać długie utwory bez renderowania całej osi czasu naraz.
 - Tekst w przyciskach i panelach nie może nachodzić na inne elementy przy małej szerokości ekranu.
+- MVP nie wymaga widoku porównania oryginalnego wyniku AI z poprawioną wersją.
+
+## Eksport w UI
+
+- Użytkownik może zaznaczyć jeden lub wiele formatów docelowych: UltraStar Deluxe, UltraStar Play, Vocaluxe.
+- Użytkownik może zaznaczyć jeden lub oba warianty paczki: oryginalne audio albo audio bez wokalu.
+- Każda paczka eksportowana jest jako ZIP zawierający cały katalog utworu.
+- Domyślna nazwa katalogu pochodzi z nazwy pliku źródłowego i może zostać zmieniona przed eksportem.
+- Użytkownik może wybrać cover z importu, jeśli jest dostępny, albo wgrać inny cover przed eksportem.
+- Jeśli cover nie jest ustawiony, eksport przebiega bez covera.
+- Użytkownik może zaznaczyć opcję usunięcia plików audio i artefaktów roboczych po pomyślnym eksporcie.
+- ZIP-y dla różnych profili eksportu mają różne nazwy, ale katalog i pliki wewnątrz używają tego samego schematu nazw.
 
 ## Minimalna walidacja przed eksportem
 
@@ -87,3 +116,4 @@ Edytor powinien wizualnie oznaczać:
 - Każda nuta ma dodatnią długość.
 - Pitch mieści się w rozsądnym zakresie MIDI dla wokalu.
 - Linie są posortowane rosnąco po czasie.
+- Golden notes, rap notes i rap golden notes są obsługiwane jako typy nut w MVP.

@@ -18,15 +18,33 @@
   "metadata": {
     "title": "Song Title",
     "artist": "Artist",
-    "language": "pl"
+    "language": "pl",
+    "languageMode": "forced",
+    "detectedSongBpm": 123.45,
+    "ultrastarBpm": 493.8
   },
   "profiles": {
-    "separation": "quality",
-    "transcription": "quality",
+    "separationModel": "htdemucs_ft",
+    "transcriptionModel": "large-v3",
     "pitch": "default"
   }
 }
 ```
+
+`languageMode`:
+
+- `forced`: użytkownik wskazał język.
+- `auto`: użytkownik zostawił język pusty i detekcja należy do Whispera.
+
+`separationModel`:
+
+- `htdemucs`: szybki.
+- `htdemucs_ft`: dokładniejszy.
+
+`transcriptionModel`:
+
+- `large-v3`: dokładniejszy.
+- `large-v3-turbo`: szybszy.
 
 ## AudioAsset
 
@@ -35,10 +53,37 @@
   "assetId": "asset_vocals",
   "type": "vocals",
   "path": "jobs/job_01J/artifacts/vocals.wav",
+  "originalFilename": "source-file.mp3",
   "durationSec": 213.42,
   "sampleRate": 44100,
   "channels": 2,
   "sha256": "..."
+}
+```
+
+## SourceMetadata
+
+```json
+{
+  "title": "Song Title",
+  "artist": "Artist",
+  "album": "Album",
+  "year": "2026",
+  "genre": "Pop",
+  "source": "audio_tags",
+  "missingFields": ["language"]
+}
+```
+
+## Tempo
+
+```json
+{
+  "songBpm": 123.45,
+  "ultrastarBpm": 493.8,
+  "confidence": 0.68,
+  "method": "auto_detected",
+  "requiresReview": true
 }
 ```
 
@@ -97,6 +142,7 @@
   "tokenId": "tok_001",
   "text": "pierw",
   "wordId": "word_001",
+  "syllableIndex": 0,
   "noteId": "note_001",
   "startSec": 12.34,
   "endSec": 12.88,
@@ -104,6 +150,71 @@
   "noteType": "normal"
 }
 ```
+
+## ExportSelection
+
+```json
+{
+  "packageName": "source-file-name",
+  "targets": ["ultrastar_deluxe", "ultrastar_play", "vocaluxe"],
+  "variants": ["original_audio", "instrumental"],
+  "includeProjectJson": true,
+  "coverAssetId": null,
+  "includeVocalsInInstrumentalPackage": true,
+  "includeInstrumentalTag": true,
+  "deleteArtifactsAfterSuccessfulExport": false
+}
+```
+
+`variants`:
+
+- `original_audio`: `.txt` + oryginalne audio skonwertowane do MP3 + opcjonalny cover + JSON projektu.
+- `instrumental`: `.txt` + audio bez wokalu skonwertowane do MP3 + osobny plik wokalu + opcjonalny cover + JSON projektu.
+
+`coverAssetId`:
+
+- `null`: eksport bez covera.
+- identyfikator assetu: eksport z wybranym coverem.
+
+`includeProjectJson` jest zawsze `true` w MVP.
+
+## MukaiProject
+
+`mukai-project.json` musi pozwalać kontynuować pracę bez ponownego wykrywania BPM, transkrypcji, timingów i pitch.
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "projectId": "proj_01J...",
+  "sourceAudio": {
+    "originalFilename": "source-file.mp3",
+    "durationSec": 213.42,
+    "sha256": "...",
+    "available": true
+  },
+  "artifactAvailability": {
+    "vocals": false,
+    "instrumental": false,
+    "pitchFrames": true,
+    "transcript": true
+  },
+  "metadata": {},
+  "modelSettings": {},
+  "tempo": {},
+  "transcriptSegments": [],
+  "pitchFrames": [],
+  "noteEvents": [],
+  "arrangement": {},
+  "exportSelections": []
+}
+```
+
+Import:
+
+- Jeśli `vocals` i `instrumental` są niedostępne, ale `sourceAudio.available` jest `true`, aplikacja może ponownie uruchomić tylko separację.
+- Jeśli `sourceAudio.available` jest `false`, aplikacja prosi o ponowne wgranie audio.
+- Jeśli długość ponownie wgranego audio różni się od `sourceAudio.durationSec`, aplikacja pokazuje ostrzeżenie.
+- Import nie uruchamia ponownie BPM, ASR, alignacji ani pitch detection.
 
 ## Arrangement
 

@@ -2,10 +2,10 @@
 
 ## Separacja: Demucs v4
 
-Rekomendacja:
+Profile wybierane przez użytkownika:
 
-- Domyślnie `htdemucs` dla szybkości.
-- Profil jakości `htdemucs_ft` dla finalnych eksportów albo gdy użytkownik zaakceptuje dłuższe przetwarzanie.
+- `htdemucs`: profil szybszy.
+- `htdemucs_ft`: profil dokładniejszy.
 
 Uzasadnienie:
 
@@ -16,27 +16,29 @@ Uzasadnienie:
 Ryzyka:
 
 - Artefakty i bleeding mogą pogarszać ASR oraz pitch detection.
-- Długie utwory i `htdemucs_ft` zwiększą czas przetwarzania.
+- Długie utwory i `htdemucs_ft` zwiększą czas przetwarzania oraz zużycie VRAM.
 - Zależności CUDA/PyTorch muszą być dobrane do GPU hosta.
 
 ## Transkrypcja: WhisperX
 
-Rekomendacja:
+Profile wybierane przez użytkownika:
 
-- Domyślnie WhisperX + `large-v3`.
-- Dodać profil `large-v3-turbo` do benchmarku szybkości i jakości.
-- Nie polegać na samym Whisper bez alignacji, bo aplikacja potrzebuje czasów słów/fraz.
+- `large-v3`: profil dokładniejszy.
+- `large-v3-turbo`: profil szybszy.
 
 Uzasadnienie:
 
 - WhisperX dodaje forced alignment i czasy słów, co jest bezpośrednio potrzebne do edytora karaoke.
-- OpenAI Whisper wskazuje model `turbo` jako domyślny dla transkrypcji, ale nie dla tłumaczenia.
 - Dla karaoke ważniejsza jest stabilność timingów i ręczna korekta niż sam tekst.
+- Nie polegać na samym Whisper bez alignacji, bo aplikacja potrzebuje czasów słów/fraz.
 
-Alternatywy:
+Wymagania:
 
-- NVIDIA Parakeet RNNT multilingual obsługuje m.in. `pl-PL` i działa na GPU, ale jego podstawowy wynik to tekst. Wymagałby osobnej warstwy alignacji i benchmarku na śpiewie.
-- Zewnętrzne API ASR może mieć lepszą jakość w niektórych językach, ale komplikuje prywatność, koszty i pracę offline.
+- Model działa lokalnie, bez zewnętrznych API.
+- Jeśli użytkownik poda język, przekazać go do transkrypcji.
+- Jeśli użytkownik nie poda języka, zostawić detekcję języka Whisperowi.
+- Dla utworów wielojęzycznych rekomendować użytkownikowi brak wymuszonego języka.
+- Dla długich utworów zachować globalne czasy mimo pracy Whispera na oknach około 30 sekund.
 
 ## Pitch detection: torchcrepe
 
@@ -51,10 +53,30 @@ Uzasadnienie:
 - torchcrepe jest implementacją PyTorch, ma użycie `device='cuda:0'`, Viterbi decoding, periodicity i filtry przydatne przy wokalu.
 - Stos PyTorch upraszcza środowisko, bo Demucs i część stosu WhisperX również opiera się o PyTorch.
 
-Alternatywy:
+Wymagania:
 
-- Basic Pitch generuje note events i MIDI, może być wartościowy jako dodatkowy benchmark segmentacji nut.
-- Basic Pitch jest projektowany jako instrument-agnostic AMT i najlepiej działa na jednym instrumencie naraz; dla izolowanego wokalu może pomóc, ale nie zastępuje potrzeby alignacji z tekstem.
+- Model działa lokalnie, bez zewnętrznych API.
+- Worker dostaje audio przygotowane przez FFmpeg do wymagań torchcrepe.
+- Surowe ramki F0 są przechowywane niezależnie od nut po segmentacji.
+
+## BPM: lokalna detekcja tempa
+
+Rekomendacja do wyboru:
+
+1. Essentia `RhythmExtractor2013` jako główny kandydat dla MVP.
+2. librosa `beat_track` jako prostszy fallback albo narzędzie porównawcze.
+3. madmom RNN/DBN beat tracking jako opcja po spike'u kompatybilności środowiska.
+
+Uzasadnienie rekomendacji:
+
+- Essentia `RhythmExtractor2013` zwraca BPM, pozycje beatów, confidence i rozkład estymacji, co pasuje do UI z ostrzeżeniem o niepewnym BPM.
+- Essentia wymaga sygnału 44100 Hz, więc FFmpeg musi przygotować osobny input do detekcji BPM.
+- librosa jest najprostsza do uruchomienia w Pythonie i ma dynamic programming beat tracker, ale zwykle wymaga więcej własnej logiki wokół confidence i half-time/double-time.
+- madmom ma mocne algorytmy RNN/DBN, ale przed wyborem trzeba sprawdzić kompatybilność z aktualnym Pythonem i kontenerem.
+
+Decyzja:
+
+- Do czasu wyboru przez użytkownika specyfikacja traktuje Essentia `RhythmExtractor2013` jako rekomendowany wariant.
 
 ## Benchmark akceptacyjny modeli
 
@@ -82,5 +104,7 @@ Metryki:
 - OpenAI Whisper: https://github.com/openai/whisper
 - CREPE: https://github.com/marl/crepe
 - torchcrepe: https://github.com/maxrmorrison/torchcrepe
-- Basic Pitch: https://github.com/spotify/basic-pitch
-- NVIDIA Parakeet RNNT multilingual: https://build.nvidia.com/nvidia/parakeet-1_1b-rnnt-multilingual-asr/modelcard
+- FFmpeg: https://ffmpeg.org/
+- Essentia RhythmExtractor2013: https://essentia.upf.edu/reference/std_RhythmExtractor2013.html
+- librosa beat_track: https://librosa.org/doc/main/generated/librosa.beat.beat_track.html
+- madmom beats: https://madmom.readthedocs.io/en/v0.16.1/modules/features/beats.html

@@ -4,33 +4,38 @@ Ostatnia weryfikacja źródeł: 2026-05-28.
 
 ## Cel aplikacji
 
-Mukai ma być lokalną lub self-hosted aplikacją do przygotowywania plików karaoke dla UltraStar. Użytkownik wgrywa utwór audio, aplikacja izoluje wokal, rozpoznaje tekst z czasami, wykrywa wysokości śpiewanych nut, pozwala ręcznie poprawić wynik i eksportuje gotowy plik `.txt` zgodny z UltraStar.
+Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików karaoke dla UltraStar Deluxe, UltraStar Play i Vocaluxe. Użytkownik wgrywa utwór audio, aplikacja izoluje wokal, rozpoznaje tekst z czasami, wykrywa wysokości śpiewanych nut, pozwala ręcznie poprawić wynik i eksportuje wybrane paczki ZIP.
 
 ## Zakres MVP
 
-- Upload pojedynczego pliku audio.
-- Separacja wokalu i instrumentalnego podkładu.
-- Transkrypcja wokalu z czasami fraz oraz słów.
+- Upload pojedynczego pliku audio w formacie `WAV`, `MP3`, `MP4`, `M4A`, `OGG` albo `FLAC`.
+- Automatyczne uzupełnienie metadanych z tagów pliku audio, jeśli są dostępne.
+- Konwersja audio przez FFmpeg do formatów roboczych wymaganych przez workery.
+- Separacja wokalu i instrumentalnego podkładu z wyborem profilu Demucs.
+- Transkrypcja wokalu z czasami fraz oraz słów z wyborem profilu WhisperX.
 - Detekcja wysokości dźwięku z wokalu i segmentacja do nut.
-- Edytor tekstu, timingów i nut.
-- Eksport paczki UltraStar zawierającej `.txt` oraz wskazane pliki audio.
+- Edytor tekstu, sylab, timingów, typów nut i pitch.
+- Import i kontynuacja pracy z `mukai-project.json`.
+- Eksport jednej lub wielu paczek ZIP zgodnych z wybranymi odtwarzaczami.
 
 ## Poza zakresem pierwszej wersji
 
 - Konta użytkowników i współpraca wielu osób.
+- Logowanie i zarządzanie uprawnieniami.
 - Automatyczne pobieranie tekstów piosenek z zewnętrznych serwisów.
 - Automatyczna publikacja do baz piosenek.
 - Obsługa duetów jako wymaganie bazowe.
 - Trening własnych modeli.
+- Zewnętrzne API do transkrypcji, pitch detection albo separacji audio.
 
 ## Rekomendacja stosu AI
 
-- Separacja źródeł: Demucs v4, domyślnie `htdemucs`, opcjonalnie `htdemucs_ft` dla wyższej jakości kosztem czasu.
-- Transkrypcja: WhisperX z modelem `large-v3` jako domyślna ścieżka jakościowa. Warto przetestować `large-v3-turbo` jako profil szybki, szczególnie dla języka angielskiego i krótszych kolejek GPU.
+- Separacja źródeł: Demucs v4 z wyborem użytkownika: szybki `htdemucs` albo dokładniejszy `htdemucs_ft`.
+- Transkrypcja: WhisperX z wyborem użytkownika: dokładniejszy `large-v3` albo szybszy `large-v3-turbo`.
 - Detekcja wysokości: `torchcrepe` zamiast oryginalnego pakietu CREPE, bo daje ten sam kierunek modelu w PyTorch, obsługuje GPU i łatwiej pasuje do stosu Demucs/WhisperX.
-- Alternatywy eksperymentalne: NVIDIA Parakeet dla ASR oraz Basic Pitch dla note events, ale tylko po benchmarku na realnych piosenkach i po potwierdzeniu jakości alignacji do tekstu.
+- Detekcja BPM: rekomendowana Essentia `RhythmExtractor2013`; decyzja do potwierdzenia po wyborze użytkownika.
 
-Nie ma jednej oczywiście lepszej zamiany za WhisperX dla tego przypadku, ponieważ aplikacja potrzebuje nie tylko tekstu, ale też stabilnych czasów fraz/słów do dalszej edycji karaoke. Decyzję należy potwierdzić benchmarkiem na zestawie utworów docelowych.
+Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lokalnie dostępne binaria. Specyfikacja nie przewiduje zewnętrznych API.
 
 ## Dokumenty
 
@@ -50,6 +55,8 @@ Nie ma jednej oczywiście lepszej zamiany za WhisperX dla tego przypadku, poniew
 - OpenAI Whisper: https://github.com/openai/whisper
 - CREPE: https://github.com/marl/crepe
 - torchcrepe: https://github.com/maxrmorrison/torchcrepe
-- Basic Pitch: https://github.com/spotify/basic-pitch
-- NVIDIA Parakeet RNNT multilingual: https://build.nvidia.com/nvidia/parakeet-1_1b-rnnt-multilingual-asr/modelcard
+- FFmpeg: https://ffmpeg.org/
+- Essentia RhythmExtractor2013: https://essentia.upf.edu/reference/std_RhythmExtractor2013.html
+- librosa beat_track: https://librosa.org/doc/main/generated/librosa.beat.beat_track.html
+- madmom beats: https://madmom.readthedocs.io/en/v0.16.1/modules/features/beats.html
 - UltraStar format: https://usdx.eu/format/
