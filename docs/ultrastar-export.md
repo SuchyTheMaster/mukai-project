@@ -12,7 +12,7 @@ Użytkownik wybiera:
 - cover z importu, jeśli jest dostępny, albo wgrany ręcznie; jeśli cover nie jest ustawiony, paczka nie zawiera covera;
 - opcjonalne usunięcie artefaktów roboczych po pomyślnym eksporcie.
 
-ZIP-y dla różnych profili eksportu mają różne nazwy. Katalog i pliki wewnątrz ZIP-a używają tego samego schematu nazw niezależnie od profilu docelowego.
+ZIP-y dla różnych profili eksportu i wariantów audio mają różne nazwy. Katalog i pliki wewnątrz ZIP-a używają konsekwentnie tej samej nazwy bazowej niezależnie od profilu docelowego i wariantu; zawartość pliku playback MP3 zależy od wariantu.
 
 ## Struktura paczki ZIP
 
@@ -49,7 +49,6 @@ Zawartość:
 Artist - Song Title/
 ├── Artist - Song Title.txt
 ├── Artist - Song Title.mp3
-├── Artist - Song Title [instrumental].mp3
 ├── Artist - Song Title [vocals].mp3
 └── mukai-project.json
 ```
@@ -58,7 +57,7 @@ Artist - Song Title/
 
 Plik powinien być zapisany jako UTF-8 bez BOM.
 
-Minimalne nagłówki:
+Nagłówki dla wariantu `original_audio`:
 
 ```text
 #VERSION:1.1.0
@@ -69,14 +68,34 @@ Minimalne nagłówki:
 #GAP:12345
 ```
 
-Opcjonalne nagłówki:
+Opcjonalne nagłówki dla wariantu `original_audio`:
 
 ```text
 #CREATOR:Mukai
 #LANGUAGE:Polish
 #COVER:cover.jpg
+#COMMENT:Generated draft reviewed in Mukai
+```
+
+Nagłówki dla wariantu `instrumental`:
+
+```text
+#VERSION:1.1.0
+#TITLE:Song Title
+#ARTIST:Artist
+#AUDIO:Artist - Song Title.mp3
+#INSTRUMENTAL:Artist - Song Title.mp3
 #VOCALS:Artist - Song Title [vocals].mp3
-#INSTRUMENTAL:Artist - Song Title [instrumental].mp3
+#BPM:493.8
+#GAP:12345
+```
+
+Opcjonalne nagłówki dla wariantu `instrumental`:
+
+```text
+#CREATOR:Mukai
+#LANGUAGE:Polish
+#COVER:cover.jpg
 #COMMENT:Generated draft reviewed in Mukai
 ```
 
@@ -85,7 +104,7 @@ Używać nowych tagów `#AUDIO`, `#VOCALS`, `#INSTRUMENTAL`. Nie generować star
 Warianty audio:
 
 - W paczce z oryginalnym audio `#AUDIO` wskazuje oryginalne audio skonwertowane do MP3. Jeśli w paczce są stems, `#VOCALS` i `#INSTRUMENTAL` wskazują osobne pliki wokalu i instrumentalu.
-- W paczce instrumentalnej `#AUDIO` wskazuje plik MP3 używany do odtwarzania, a `#INSTRUMENTAL` wskazuje ten sam plik instrumentalny.
+- W paczce instrumentalnej `#AUDIO` wskazuje plik MP3 używany do odtwarzania, a `#INSTRUMENTAL` wskazuje ten sam plik instrumentalny. Wewnętrzna nazwa pliku pozostaje `Artist - Song Title.mp3`.
 - Paczka instrumentalna zawiera też `#VOCALS` wskazujący osobny plik wokalu, nawet jeśli użytkownik eksportuje tylko wersję bez wokalu.
 - Jeśli cover nie jest ustawiony, nie generować tagu `#COVER` i nie dodawać pliku covera do ZIP-a.
 
@@ -204,9 +223,9 @@ Eksporter powinien mieć osobne profile dla:
 - UltraStar Play;
 - Vocaluxe.
 
-Profile mogą różnić się szczegółami tagów i nazw plików, ale wszystkie muszą bazować na tych samych danych `Arrangement` i zapisywać JSON projektu do ponownego importu.
+Profile mogą różnić się szczegółami tagów, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement` i zapisują JSON projektu do ponownego importu.
 
-Nazwa ZIP-a zawiera profil eksportu i wariant audio, np. `[ultrastar-deluxe original]`, `[ultrastar-play instrumental]`, `[vocaluxe original]`. Wewnętrzny katalog i nazwy plików zachowują ten sam schemat, żeby import projektu nie zależał od profilu docelowego.
+Nazwa ZIP-a zawiera profil eksportu i wariant audio, np. `[ultrastar-deluxe original]`, `[ultrastar-play instrumental]`, `[vocaluxe original]`. Wewnętrzny katalog i nazwy plików zachowują tę samą nazwę bazową, żeby import projektu nie zależał od profilu docelowego ani wariantu audio.
 
 ## `mukai-project.json`
 
@@ -222,7 +241,7 @@ Plik musi zawierać:
 - transkrypcję i czasy;
 - pitch frames, note events i finalny arrangement.
 
-Import `mukai-project.json` nie uruchamia ponownie BPM, ASR, alignacji ani pitch detection. Może uruchomić tylko separację audio, jeśli brakuje rozdzielonych plików, ale dostępne jest oryginalne audio albo użytkownik wgra je ponownie.
+Import `mukai-project.json` nie uruchamia ponownie BPM, ASR, alignacji ani pitch detection. Uruchamia ponownie tylko separację audio, jeśli brakuje rozdzielonych plików, ale dostępne jest oryginalne audio albo użytkownik wgra je ponownie.
 
 ## Źródło formatu
 

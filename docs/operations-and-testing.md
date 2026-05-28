@@ -65,6 +65,7 @@ Minimalne dane diagnostyczne zadania:
 - torchcrepe na syntetycznej sinusoidzie i wokalu testowym.
 - Eksport ZIP dla UltraStar Deluxe, UltraStar Play i Vocaluxe.
 - Eksport wariantu z oryginalnym audio i wariantu instrumentalnego.
+- Weryfikacja, że różne profile eksportu zmieniają nazwę ZIP, ale nie zmieniają bazowej nazwy katalogu i plików wewnątrz paczki.
 - Ponowny import `mukai-project.json`.
 - Ponowny import projektu po usunięciu stems i uruchomienie tylko separacji.
 - Ponowny import projektu po usunięciu oryginalnego audio i ponowne wgranie audio.

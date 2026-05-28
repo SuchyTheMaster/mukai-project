@@ -8,6 +8,7 @@ Wejście:
 - Metadane: tytuł, artysta, opcjonalny język, opcjonalny rok/gatunek.
 - Profile modeli: separacja szybka albo dokładniejsza, transkrypcja szybka albo dokładniejsza.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
+- Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
 - Opcjonalny import `mukai-project.json` jako kontynuacja wcześniejszej pracy.
 
 Walidacja:
@@ -18,6 +19,7 @@ Walidacja:
 - Jeśli użytkownik nie poda języka, detekcję języka pozostawić Whisperowi.
 - Jeśli utwór jest wielojęzyczny, ekran importu powinien sugerować pozostawienie języka pustego.
 - Jeśli plik audio zawiera metadane, aplikacja od razu uzupełnia odpowiednie pola formularza.
+- Jeśli plik audio zawiera osadzony cover, aplikacja od razu pokazuje jego podgląd i traktuje go jak domyślny cover importu.
 - Jeśli plik audio nie zawiera metadanych, pola pozostają do ręcznego uzupełnienia.
 - Jeśli użytkownik nie wgra covera, eksport nie zawiera covera.
 
@@ -30,9 +32,8 @@ Cel:
 Artefakty:
 
 - `mix.wav`: znormalizowane audio robocze.
-- `worker_inputs/whisperx.wav`: audio dopasowane do wymagań WhisperX.
-- `worker_inputs/torchcrepe.wav`: audio dopasowane do wymagań torchcrepe.
 - `worker_inputs/demucs.wav`: audio dopasowane do wymagań Demucs, jeśli różni się od `mix.wav`.
+- `worker_inputs/bpm.wav`: audio 44100 Hz dopasowane do wymagań Essentia `RhythmExtractor2013`.
 - `audio_metadata.json`: sample rate, kanały, duration, loudness, hash.
 
 Decyzje:
@@ -51,7 +52,7 @@ Cel:
 
 Wejście:
 
-- `mix.wav`.
+- `worker_inputs/bpm.wav`.
 
 Wyjście:
 
@@ -75,12 +76,14 @@ Demucs v4 z wyborem użytkownika:
 
 Wejście:
 
-- `mix.wav`.
+- `worker_inputs/demucs.wav` albo `mix.wav`, jeśli Demucs nie wymaga osobnego przygotowania.
 
 Wyjście:
 
 - `vocals.wav`
 - `instrumental.wav` albo stem `other`/miks instrumentalny zależnie od konfiguracji.
+- `worker_inputs/whisperx.wav`: audio przygotowane z `vocals.wav` po separacji.
+- `worker_inputs/torchcrepe.wav`: audio przygotowane z `vocals.wav` po separacji.
 - `separation.json` z modelem, parametrami i czasem przetwarzania.
 
 Wymagania:
@@ -192,7 +195,7 @@ Zasady:
 
 - JSON zawsze zawiera pełną edycję, ustawienia modeli, metadane, wykryte BPM, transkrypcję, czasy, pitch/nuty i wybory eksportu.
 - Import JSON-a nie uruchamia ponownie wykrywania BPM, transkrypcji, alignacji, czasów ani pitch detection.
-- Jeśli usunięto tylko rozdzielone audio, aplikacja może ponownie uruchomić wyłącznie separację Demucs na podstawie dostępnego oryginalnego audio.
+- Jeśli usunięto tylko rozdzielone audio, aplikacja uruchamia ponownie wyłącznie separację Demucs na podstawie dostępnego oryginalnego audio.
 - Jeśli usunięto oryginalne audio, import pozwala użytkownikowi wgrać je ponownie i dopiero wtedy ponownie rozdzielić wokal oraz instrumental.
 - Jeśli długość ponownie wgranego audio różni się od długości zapisanej w JSON-ie, aplikacja pokazuje ostrzeżenie przed kontynuacją.
 - Ostrzeżenie o innej długości audio nie zmienia automatycznie timingów; użytkownik decyduje, czy kontynuować.

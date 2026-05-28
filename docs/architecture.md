@@ -2,7 +2,7 @@
 
 ## Widok ogólny
 
-Aplikacja działa w Dockerze i składa się z interfejsu webowego, backendu API, kolejki zadań, workerów AI używających GPU, magazynu artefaktów oraz eksportera paczek karaoke. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania ani podziału uprawnień; zakładany jest jeden operator aplikacji.
+Aplikacja działa w Dockerze i składa się z interfejsu webowego, backendu API, kolejki zadań, workerów AI używających GPU, magazynu artefaktów oraz eksportera paczek karaoke. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Ewentualne zabezpieczenia sieciowe są poza zakresem MVP i mogą zostać zaprojektowane później.
 
 Każde przetwarzanie utworu jest reprezentowane jako `Job`, który przechodzi przez jawne statusy i zapisuje pośrednie artefakty.
 
@@ -44,7 +44,7 @@ Upload UI / Project Import
 - Udostępnia statusy, artefakty i zapis edycji.
 - Zabezpiecza ścieżki plików przed dostępem poza katalogiem roboczym aplikacji.
 - Nie wykonuje ciężkich obliczeń synchronicznie w żądaniu HTTP.
-- Nie implementuje autoryzacji użytkowników w MVP.
+- Nie implementuje logowania ani autoryzacji użytkowników w MVP, także przy wystawieniu aplikacji w sieci.
 
 ### Kolejka i orkiestracja
 

@@ -18,6 +18,38 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 - **Error** (#FF3366): Error (bright red-pink)
 - **Info** (#3A86FF): Info (electric blue)
 
+## Core Tokens
+
+Surfaces:
+
+- **surface-base** (#0A0A2E): Primary app background.
+- **surface-raised** (#12123A): Cards, panels, list containers.
+- **surface-sunken** (#060620): Inputs, waveform lanes, recessed editor tracks.
+- **surface-overlay** (#1C1C4A): Tooltips, popovers, menus, modal overlays.
+- **surface-gradient** (linear-gradient(135deg, #0A0A2E, #1C1C4A)): Large visual bands and empty states.
+
+Content:
+
+- **content-primary** (#FFFFFF): Main text on dark surfaces.
+- **content-secondary** (#C8C8FF): Secondary labels, list text, inactive controls.
+- **content-tertiary** (#8F8FC7): Form labels, helper text, metadata, subtle captions.
+- **content-disabled** (#FFFFFF at 35%): Disabled text and icons.
+- **content-inverse** (#0A0A2E): Text on bright neon fills when white would not be appropriate.
+
+Borders:
+
+- **border-default** (#2D2D66): Default card, input, list and divider borders.
+- **border-strong** (#4A4AA0): Hovered inputs, active panel edges and stronger separators.
+- **border-neon** (#FF006E at 55%): Elevated cards and focused feature panels.
+- **border-error** (#FF3366): Error inputs and destructive validation states.
+
+Semantic fills:
+
+- **success-fill** (#00F5A0 at 15%): Success chips and low-emphasis success states.
+- **warning-fill** (#FFD700 at 15%): Warning chips and review-required states.
+- **error-fill** (#FF3366 at 15%): Error chips and destructive low-emphasis states.
+- **info-fill** (#3A86FF at 15%): Informational chips and neutral guidance states.
+
 ## Typography
 
 - **Headline Font**: Bebas Neue

@@ -27,6 +27,7 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Obsługa duetów jako wymaganie bazowe.
 - Trening własnych modeli.
 - Zewnętrzne API do transkrypcji, pitch detection albo separacji audio.
+- Komunikaty przypominające o prawach do przetwarzanego utworu; zakładamy, że użytkownik ma potrzebne prawa.
 
 ## Rekomendacja stosu AI
 
@@ -47,7 +48,6 @@ Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lo
 - [Edytor UI](editor-ui.md)
 - [Eksport UltraStar](ultrastar-export.md)
 - [Operacje i testowanie](operations-and-testing.md)
-- [Otwarte pytania](open-questions.md)
 
 ## Źródła
 

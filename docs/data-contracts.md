@@ -156,6 +156,9 @@
 ```json
 {
   "packageName": "source-file-name",
+  "internalDirectoryName": "Artist - Song Title",
+  "baseFilename": "Artist - Song Title",
+  "zipNamePattern": "{baseFilename} [{target} {variant}].zip",
   "targets": ["ultrastar_deluxe", "ultrastar_play", "vocaluxe"],
   "variants": ["original_audio", "instrumental"],
   "includeProjectJson": true,
@@ -169,8 +172,8 @@
 
 `variants`:
 
-- `original_audio`: `.txt` + oryginalne audio skonwertowane do MP3 + opcjonalny cover + JSON projektu.
-- `instrumental`: `.txt` + audio bez wokalu skonwertowane do MP3 + osobny plik wokalu + opcjonalny cover + JSON projektu.
+- `original_audio`: `.txt` + playback MP3 zawierający oryginalne audio + opcjonalny cover + JSON projektu.
+- `instrumental`: `.txt` + playback MP3 zawierający audio bez wokalu + osobny plik wokalu + opcjonalny cover + JSON projektu.
 
 `coverAssetId`:
 
@@ -178,6 +181,11 @@
 - identyfikator assetu: eksport z wybranym coverem.
 
 `includeProjectJson` jest zawsze `true` w MVP.
+
+`internalDirectoryName` i `baseFilename`:
+
+- Są takie same dla wszystkich profili docelowych i wariantów audio.
+- Różnice między profilami i wariantami występują w nazwie ZIP, np. przez `zipNamePattern`.
 
 `instrumentalPackageAudioRouting`:
 
@@ -216,7 +224,7 @@
 
 Import:
 
-- Jeśli `vocals` i `instrumental` są niedostępne, ale `sourceAudio.available` jest `true`, aplikacja może ponownie uruchomić tylko separację.
+- Jeśli `vocals` i `instrumental` są niedostępne, ale `sourceAudio.available` jest `true`, aplikacja uruchamia ponownie tylko separację.
 - Jeśli `sourceAudio.available` jest `false`, aplikacja prosi o ponowne wgranie audio.
 - Jeśli długość ponownie wgranego audio różni się od `sourceAudio.durationSec`, aplikacja pokazuje ostrzeżenie.
 - Import nie uruchamia ponownie BPM, ASR, alignacji ani pitch detection.

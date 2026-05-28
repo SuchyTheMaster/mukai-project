@@ -14,11 +14,13 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Obsługiwane formaty: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
 - Metadane: tytuł, artysta, opcjonalny język, opcjonalny rok/gatunek.
 - Jeśli plik audio zawiera metadane, formularz importu automatycznie uzupełnia dostępne pola.
+- Jeśli plik audio zawiera osadzony cover utworu albo albumu, formularz importu automatycznie ustawia go jako wstępny cover.
 - Jeśli metadane nie istnieją, pola pozostają puste do ręcznego uzupełnienia.
 - Wskazówka: dla utworów wielojęzycznych zostaw język pusty, żeby Whisper sam wykrył język.
 - Wybór modelu separacji: szybszy `htdemucs` albo dokładniejszy `htdemucs_ft`.
 - Wybór modelu transkrypcji: szybszy `large-v3-turbo` albo dokładniejszy `large-v3`.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
+- Podgląd covera jest widoczny od razu po wykryciu grafiki z tagów albo po ręcznym wgraniu pliku.
 - Jeśli użytkownik nie wgra covera, eksportowana paczka nie zawiera covera.
 - Informacja, że audio zostanie przekonwertowane lokalnie przez FFmpeg do formatów roboczych.
 - Start zadania.
