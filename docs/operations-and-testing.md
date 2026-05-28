@@ -39,6 +39,7 @@ Minimalne dane diagnostyczne zadania:
 - Sprawdzić, czy każdy dokument z indeksu istnieje.
 - Sprawdzić, czy nie ma sprzecznych nazw statusów i artefaktów.
 - Sprawdzić, czy linki do źródeł są aktualne.
+- Sprawdzić, czy dokumenty frontendowe odwołują się do [UI.md](UI.md) jako źródła design systemu.
 
 ## Przyszłe testy jednostkowe
 
@@ -83,6 +84,7 @@ Minimalne dane diagnostyczne zadania:
 - Eksport bez covera.
 - Eksport z opcją usunięcia artefaktów po sukcesie.
 - Import projektu z ponownie wgranym audio o innej długości i weryfikacja ostrzeżenia.
+- Weryfikacja zgodności UI z [UI.md](UI.md): kolory, typografia, stany hover/focus/disabled, kontrast oraz reduced motion.
 
 ## Kryteria akceptacji MVP
 

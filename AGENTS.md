@@ -26,6 +26,7 @@
 
 - Najpierw czytaj istniejącą strukturę repozytorium i dopasowuj się do niej.
 - Preferuj małe, jasno opisane zmiany zamiast szerokich refaktorów.
+- Dla zmian frontendowych traktuj `docs/UI.md` jako źródło prawdy dla wyglądu, kolorów, typografii, komponentów i stanów interaktywnych.
 - Dla logiki AI/audio dokumentuj wersje modeli, wejścia, wyjścia, jednostki czasu oraz sposób obsługi błędów.
 - Dla modułów GPU opisuj wariant CPU tylko jako tryb awaryjny, jeśli jakość lub czas działania pozostają akceptowalne.
 - Dla eksportu UltraStar zapisuj decyzje zgodne z formatem `.txt` i utrzymuj zgodność wsteczną, jeśli jest potrzebna.

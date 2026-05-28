@@ -4,6 +4,8 @@
 
 Edytor ma umożliwić szybkie doprowadzenie wyniku AI do jakości grywalnego pliku UltraStar. Interfejs powinien skupiać się na pracy nad utworem, nie na stronie marketingowej.
 
+Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave opisanym w [UI.md](UI.md). Ten plik jest źródłem prawdy dla kolorów, typografii, spacingu, radiusów, glow, komponentów, stanów hover/focus/disabled oraz zasad kontrastu i reduced motion.
+
 ## Widoki
 
 ### Upload
@@ -97,6 +99,9 @@ Edytor powinien wizualnie oznaczać:
 - Interfejs powinien obsługiwać długie utwory bez renderowania całej osi czasu naraz.
 - Tekst w przyciskach i panelach nie może nachodzić na inne elementy przy małej szerokości ekranu.
 - MVP nie wymaga widoku porównania oryginalnego wyniku AI z poprawioną wersją.
+- Przyciski, pola formularzy, checkboxy, radio, tooltipy, chipy, listy i karty powinny używać wariantów z [UI.md](UI.md), chyba że dany element wymaga specjalnego wzorca edytora audio.
+- Statusy jakości AI powinny używać kolorów semantycznych z [UI.md](UI.md): success, warning, error i info.
+- Animacje glow muszą mieć wariant reduced-motion zgodny z [UI.md](UI.md).
 
 ## Eksport w UI
 

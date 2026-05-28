@@ -34,6 +34,7 @@ Upload UI / Project Import
 - Udostępnia edytor tekstu, sylab, fraz, nut i timingów.
 - Pozwala odsłuchać oryginał, wokal i instrumental.
 - Uruchamia eksport jednej lub wielu paczek ZIP po zatwierdzeniu wersji finalnej.
+- Stosuje design system RetroWave opisany w [UI.md](UI.md) dla kolorów, typografii, komponentów i stanów.
 
 ### Backend API
 

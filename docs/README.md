@@ -43,6 +43,7 @@ Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lo
 - [Pipeline przetwarzania](processing-pipeline.md)
 - [Stos modeli AI](model-stack.md)
 - [Kontrakty danych](data-contracts.md)
+- [Design system UI](UI.md)
 - [Edytor UI](editor-ui.md)
 - [Eksport UltraStar](ultrastar-export.md)
 - [Operacje i testowanie](operations-and-testing.md)
