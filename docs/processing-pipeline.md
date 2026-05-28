@@ -62,7 +62,7 @@ Wymagania:
 - Wartość BPM utworu musi być edytowalna przed eksportem.
 - Eksporter wylicza `#BPM` UltraStar z wykrytego BPM utworu, zamiast używać stałej technicznej wartości.
 - Jeśli detekcja jest niepewna, interfejs oznacza BPM jako wymagający sprawdzenia.
-- Rekomendowany kandydat do MVP: Essentia `RhythmExtractor2013`.
+- Do detekcji BPM używać Essentia `RhythmExtractor2013`.
 
 ## 4. Separacja wokalu
 

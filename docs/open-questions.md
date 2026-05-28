@@ -1,6 +1,6 @@
 # Otwarte pytania
 
-Większość decyzji produktowych została już określona. Poniżej zostają tylko kwestie, które warto doprecyzować przed implementacją albo w trakcie spike'a technicznego.
+Na tym etapie nie ma pytań blokujących start implementacji. Poniżej są decyzje przyjęte w specyfikacji.
 
 ## Decyzje przyjęte
 
@@ -20,14 +20,5 @@ Większość decyzji produktowych została już określona. Poniżej zostają ty
 - Import `mukai-project.json` nie powtarza BPM, transkrypcji, alignacji ani pitch detection.
 - Paczka instrumentalna zawiera `#VOCALS` wskazujący osobny plik wokalu.
 - ZIP-y dla różnych profili eksportu mają różne nazwy, a zawartość używa wspólnego schematu nazw.
-
-## Do doprecyzowania
-
-1. Którą bibliotekę do wykrywania BPM wybrać: Essentia `RhythmExtractor2013`, librosa `beat_track`, czy madmom RNN/DBN?
-2. Czy w paczce instrumentalnej `#AUDIO` ma wskazywać ten sam plik co `#INSTRUMENTAL`, czy osobny miks referencyjny zgodny z oczekiwaniami konkretnego odtwarzacza?
-
-## Propozycje domyślne
-
-- Wybrać Essentia `RhythmExtractor2013` jako główną bibliotekę BPM, bo zwraca BPM, pozycje beatów, confidence i rozkład estymacji.
-- Zachować librosa `beat_track` jako prosty fallback lub narzędzie porównawcze w testach.
-- W paczce instrumentalnej ustawić `#AUDIO` na plik używany do odtwarzania, a `#INSTRUMENTAL` na ten sam plik instrumentalny, plus `#VOCALS` na osobny stem wokalu.
+- Do detekcji BPM używać Essentia `RhythmExtractor2013`.
+- W paczce instrumentalnej `#AUDIO` i `#INSTRUMENTAL` wskazują ten sam plik instrumentalny, a `#VOCALS` wskazuje osobny stem wokalu.

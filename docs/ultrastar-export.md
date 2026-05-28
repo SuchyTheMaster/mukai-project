@@ -85,7 +85,7 @@ Używać nowych tagów `#AUDIO`, `#VOCALS`, `#INSTRUMENTAL`. Nie generować star
 Warianty audio:
 
 - W paczce z oryginalnym audio `#AUDIO` wskazuje oryginalne audio skonwertowane do MP3. Jeśli w paczce są stems, `#VOCALS` i `#INSTRUMENTAL` wskazują osobne pliki wokalu i instrumentalu.
-- W paczce instrumentalnej `#AUDIO` wskazuje plik MP3 używany do odtwarzania, a `#INSTRUMENTAL` dodatkowo wskazuje osobny plik instrumentalu.
+- W paczce instrumentalnej `#AUDIO` wskazuje plik MP3 używany do odtwarzania, a `#INSTRUMENTAL` wskazuje ten sam plik instrumentalny.
 - Paczka instrumentalna zawiera też `#VOCALS` wskazujący osobny plik wokalu, nawet jeśli użytkownik eksportuje tylko wersję bez wokalu.
 - Jeśli cover nie jest ustawiony, nie generować tagu `#COVER` i nie dodawać pliku covera do ZIP-a.
 

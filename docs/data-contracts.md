@@ -162,6 +162,7 @@
   "coverAssetId": null,
   "includeVocalsInInstrumentalPackage": true,
   "includeInstrumentalTag": true,
+  "instrumentalPackageAudioRouting": "audio_and_instrumental_same_file",
   "deleteArtifactsAfterSuccessfulExport": false
 }
 ```
@@ -177,6 +178,10 @@
 - identyfikator assetu: eksport z wybranym coverem.
 
 `includeProjectJson` jest zawsze `true` w MVP.
+
+`instrumentalPackageAudioRouting`:
+
+- `audio_and_instrumental_same_file`: w paczce instrumentalnej `#AUDIO` i `#INSTRUMENTAL` wskazują ten sam plik instrumentalny, a `#VOCALS` wskazuje osobny stem wokalu.
 
 ## MukaiProject
 

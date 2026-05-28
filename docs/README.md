@@ -33,7 +33,7 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Separacja źródeł: Demucs v4 z wyborem użytkownika: szybki `htdemucs` albo dokładniejszy `htdemucs_ft`.
 - Transkrypcja: WhisperX z wyborem użytkownika: dokładniejszy `large-v3` albo szybszy `large-v3-turbo`.
 - Detekcja wysokości: `torchcrepe` zamiast oryginalnego pakietu CREPE, bo daje ten sam kierunek modelu w PyTorch, obsługuje GPU i łatwiej pasuje do stosu Demucs/WhisperX.
-- Detekcja BPM: rekomendowana Essentia `RhythmExtractor2013`; decyzja do potwierdzenia po wyborze użytkownika.
+- Detekcja BPM: Essentia `RhythmExtractor2013`.
 
 Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lokalnie dostępne binaria. Specyfikacja nie przewiduje zewnętrznych API.
 
@@ -57,6 +57,4 @@ Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lo
 - torchcrepe: https://github.com/maxrmorrison/torchcrepe
 - FFmpeg: https://ffmpeg.org/
 - Essentia RhythmExtractor2013: https://essentia.upf.edu/reference/std_RhythmExtractor2013.html
-- librosa beat_track: https://librosa.org/doc/main/generated/librosa.beat.beat_track.html
-- madmom beats: https://madmom.readthedocs.io/en/v0.16.1/modules/features/beats.html
 - UltraStar format: https://usdx.eu/format/

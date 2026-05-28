@@ -11,7 +11,7 @@ Założenia:
 - Profil CPU jest trybem awaryjnym, nie domyślnym.
 - Aplikacja nie korzysta z zewnętrznych API.
 - FFmpeg jest wymaganym narzędziem lokalnym do konwersji audio.
-- Rekomendowanym kandydatem do detekcji BPM jest Essentia `RhythmExtractor2013`.
+- Wybraną biblioteką do detekcji BPM jest Essentia `RhythmExtractor2013`.
 
 Minimalne dane diagnostyczne zadania:
 

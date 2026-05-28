@@ -59,24 +59,16 @@ Wymagania:
 - Worker dostaje audio przygotowane przez FFmpeg do wymagań torchcrepe.
 - Surowe ramki F0 są przechowywane niezależnie od nut po segmentacji.
 
-## BPM: lokalna detekcja tempa
-
-Rekomendacja do wyboru:
-
-1. Essentia `RhythmExtractor2013` jako główny kandydat dla MVP.
-2. librosa `beat_track` jako prostszy fallback albo narzędzie porównawcze.
-3. madmom RNN/DBN beat tracking jako opcja po spike'u kompatybilności środowiska.
-
-Uzasadnienie rekomendacji:
-
-- Essentia `RhythmExtractor2013` zwraca BPM, pozycje beatów, confidence i rozkład estymacji, co pasuje do UI z ostrzeżeniem o niepewnym BPM.
-- Essentia wymaga sygnału 44100 Hz, więc FFmpeg musi przygotować osobny input do detekcji BPM.
-- librosa jest najprostsza do uruchomienia w Pythonie i ma dynamic programming beat tracker, ale zwykle wymaga więcej własnej logiki wokół confidence i half-time/double-time.
-- madmom ma mocne algorytmy RNN/DBN, ale przed wyborem trzeba sprawdzić kompatybilność z aktualnym Pythonem i kontenerem.
+## BPM: Essentia RhythmExtractor2013
 
 Decyzja:
 
-- Do czasu wyboru przez użytkownika specyfikacja traktuje Essentia `RhythmExtractor2013` jako rekomendowany wariant.
+- Do lokalnej detekcji BPM używać Essentia `RhythmExtractor2013`.
+
+Uzasadnienie:
+
+- Essentia `RhythmExtractor2013` zwraca BPM, pozycje beatów, confidence i rozkład estymacji, co pasuje do UI z ostrzeżeniem o niepewnym BPM.
+- Essentia wymaga sygnału 44100 Hz, więc FFmpeg musi przygotować osobny input do detekcji BPM.
 
 ## Benchmark akceptacyjny modeli
 
@@ -106,5 +98,3 @@ Metryki:
 - torchcrepe: https://github.com/maxrmorrison/torchcrepe
 - FFmpeg: https://ffmpeg.org/
 - Essentia RhythmExtractor2013: https://essentia.upf.edu/reference/std_RhythmExtractor2013.html
-- librosa beat_track: https://librosa.org/doc/main/generated/librosa.beat.beat_track.html
-- madmom beats: https://madmom.readthedocs.io/en/v0.16.1/modules/features/beats.html
