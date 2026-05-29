@@ -27,10 +27,10 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 
 ### Import Projektu
 
-- Użytkownik może wczytać `mukai-project.json`.
-- Jeśli oryginalne audio jest niedostępne, UI prosi o ponowne wgranie pliku audio.
-- Jeśli ponownie wgrany plik audio ma inną długość niż zapisana w JSON-ie, UI pokazuje ostrzeżenie przed kontynuacją.
-- Import nie uruchamia ponownie BPM, transkrypcji, alignacji ani pitch detection.
+- Użytkownik może wczytać ZIP projektu utworzony przez opcję `Wyeksportuj projekt`.
+- UI pokazuje błąd, jeśli archiwum nie ma wymaganej struktury, brakuje w nim artefaktów albo hashe nie zgadzają się z manifestem.
+- Import odtwarza stan tak, jakby pliki były już wgrane i przetworzone przez pipeline.
+- Import nie uruchamia ponownie normalizacji audio, BPM, separacji, transkrypcji, alignacji ani pitch detection.
 
 ### Status zadania
 
@@ -80,6 +80,7 @@ Akcje globalne:
 - Zapis wersji roboczej.
 - Walidacja przed eksportem.
 - Eksport po zatwierdzeniu.
+- Wyeksportuj projekt.
 - Skróty klawiaturowe nie są wymagane w MVP.
 
 ## Stany jakości
@@ -109,12 +110,14 @@ Edytor powinien wizualnie oznaczać:
 
 - Użytkownik może zaznaczyć jeden lub wiele formatów docelowych: UltraStar Deluxe, UltraStar Play, Vocaluxe.
 - Użytkownik może zaznaczyć jeden lub oba warianty paczki: oryginalne audio albo audio bez wokalu.
-- Każda paczka eksportowana jest jako ZIP zawierający cały katalog utworu.
+- Każda paczka karaoke jest eksportowana jako ZIP zawierający cały katalog utworu.
+- Paczki karaoke nie zawierają `mukai-project.json` ani innych danych projektu.
 - Domyślna nazwa katalogu pochodzi z nazwy pliku źródłowego i może zostać zmieniona przed eksportem.
 - Użytkownik może wybrać cover z importu, jeśli jest dostępny, albo wgrać inny cover przed eksportem.
 - Jeśli cover nie jest ustawiony, eksport przebiega bez covera.
-- Użytkownik może zaznaczyć opcję usunięcia plików audio i artefaktów roboczych po pomyślnym eksporcie.
 - ZIP-y dla różnych profili eksportu mają różne nazwy, ale katalog i pliki wewnątrz używają tego samego schematu nazw.
+- Osobna akcja `Wyeksportuj projekt` generuje ZIP zawierający cały `Job`, oryginalny plik, artefakty i manifesty JSON potrzebne do odtworzenia projektu.
+- Przed akcją `Wyeksportuj projekt` UI powinien jasno poinformować, że po udanym eksporcie lokalny `Job` i artefakty zostaną usunięte.
 
 ## Minimalna walidacja przed eksportem
 

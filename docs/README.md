@@ -4,7 +4,7 @@ Ostatnia weryfikacja źródeł: 2026-05-28.
 
 ## Cel aplikacji
 
-Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików karaoke dla UltraStar Deluxe, UltraStar Play i Vocaluxe. Użytkownik wgrywa utwór audio, aplikacja izoluje wokal, rozpoznaje tekst z czasami, wykrywa wysokości śpiewanych nut, pozwala ręcznie poprawić wynik i eksportuje wybrane paczki ZIP.
+Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików karaoke dla UltraStar Deluxe, UltraStar Play i Vocaluxe. Użytkownik wgrywa utwór audio, aplikacja izoluje wokal, rozpoznaje tekst z czasami, wykrywa wysokości śpiewanych nut, pozwala ręcznie poprawić wynik i eksportuje wybrane paczki ZIP. Aplikacja pozwala też osobno wyeksportować pełny projekt jako ZIP do późniejszego importu.
 
 ## Zakres MVP
 
@@ -15,8 +15,9 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Transkrypcja wokalu z czasami fraz oraz słów z wyborem profilu WhisperX.
 - Detekcja wysokości dźwięku z wokalu i segmentacja do nut.
 - Edytor tekstu, sylab, timingów, typów nut i pitch.
-- Import i kontynuacja pracy z `mukai-project.json`.
-- Eksport jednej lub wielu paczek ZIP zgodnych z wybranymi odtwarzaczami.
+- Import i kontynuacja pracy z ZIP-em projektu utworzonym przez opcję `Wyeksportuj projekt`.
+- Eksport jednej lub wielu paczek ZIP zgodnych z wybranymi odtwarzaczami, bez danych projektu w tych paczkach.
+- Osobny eksport pełnego projektu jako ZIP zawierający `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
 
 ## Poza zakresem pierwszej wersji
 

@@ -161,26 +161,22 @@
   "zipNamePattern": "{baseFilename} [{target} {variant}].zip",
   "targets": ["ultrastar_deluxe", "ultrastar_play", "vocaluxe"],
   "variants": ["original_audio", "instrumental"],
-  "includeProjectJson": true,
   "coverAssetId": null,
   "includeVocalsInInstrumentalPackage": true,
   "includeInstrumentalTag": true,
-  "instrumentalPackageAudioRouting": "audio_and_instrumental_same_file",
-  "deleteArtifactsAfterSuccessfulExport": false
+  "instrumentalPackageAudioRouting": "audio_and_instrumental_same_file"
 }
 ```
 
 `variants`:
 
-- `original_audio`: `.txt` + playback MP3 zawierający oryginalne audio + opcjonalny cover + JSON projektu.
-- `instrumental`: `.txt` + playback MP3 zawierający audio bez wokalu + osobny plik wokalu + opcjonalny cover + JSON projektu.
+- `original_audio`: `.txt` + playback MP3 zawierający oryginalne audio + opcjonalny cover.
+- `instrumental`: `.txt` + playback MP3 zawierający audio bez wokalu + osobny plik wokalu + opcjonalny cover.
 
 `coverAssetId`:
 
 - `null`: eksport bez covera.
 - identyfikator assetu: eksport z wybranym coverem.
-
-`includeProjectJson` jest zawsze `true` w MVP.
 
 `internalDirectoryName` i `baseFilename`:
 
@@ -191,26 +187,55 @@
 
 - `audio_and_instrumental_same_file`: w paczce instrumentalnej `#AUDIO` i `#INSTRUMENTAL` wskazują ten sam plik instrumentalny, a `#VOCALS` wskazuje osobny stem wokalu.
 
+Paczki karaoke nie zawierają `mukai-project.json` ani innych danych projektu.
+
+## ProjectExport
+
+```json
+{
+  "archiveNamePattern": "{baseFilename} [mukai-project].zip",
+  "includeOriginalAudio": true,
+  "includeAllJobArtifacts": true,
+  "includeJobManifest": true,
+  "deleteJobAfterSuccessfulExport": true
+}
+```
+
+Zasady:
+
+- `ProjectExport` odpowiada osobnej akcji `Wyeksportuj projekt`, niezależnej od `ExportSelection`.
+- `includeOriginalAudio`, `includeAllJobArtifacts`, `includeJobManifest` i `deleteJobAfterSuccessfulExport` są zawsze `true` w MVP.
+- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja usuwa lokalny rekord `Job` oraz wszystkie artefakty tego zadania.
+- Zwykły eksport paczek karaoke nie ustawia ani nie wykonuje `deleteJobAfterSuccessfulExport`.
+
 ## MukaiProject
 
-`mukai-project.json` musi pozwalać kontynuować pracę bez ponownego wykrywania BPM, transkrypcji, timingów i pitch.
+`mukai-project.json` jest manifestem wewnątrz ZIP-a projektu. Nie jest dodawany do paczek karaoke i nie jest samodzielnym formatem importu w MVP.
+
+ZIP projektu musi pozwalać kontynuować pracę bez ponownego uruchamiania normalizacji audio, separacji, wykrywania BPM, transkrypcji, timingów i pitch.
 
 ```json
 {
   "schemaVersion": "1.0.0",
   "projectId": "proj_01J...",
+  "job": {
+    "jobId": "job_01J...",
+    "restoredStatus": "awaiting_review"
+  },
   "sourceAudio": {
     "originalFilename": "source-file.mp3",
+    "archivePath": "source/source-file.mp3",
     "durationSec": 213.42,
-    "sha256": "...",
-    "available": true
+    "sha256": "..."
   },
-  "artifactAvailability": {
-    "vocals": false,
-    "instrumental": false,
-    "pitchFrames": true,
-    "transcript": true
-  },
+  "artifacts": [
+    {
+      "type": "vocals",
+      "archivePath": "artifacts/vocals.wav",
+      "sha256": "...",
+      "sizeBytes": 123456
+    }
+  ],
   "metadata": {},
   "modelSettings": {},
   "tempo": {},
@@ -224,10 +249,11 @@
 
 Import:
 
-- Jeśli `vocals` i `instrumental` są niedostępne, ale `sourceAudio.available` jest `true`, aplikacja uruchamia ponownie tylko separację.
-- Jeśli `sourceAudio.available` jest `false`, aplikacja prosi o ponowne wgranie audio.
-- Jeśli długość ponownie wgranego audio różni się od `sourceAudio.durationSec`, aplikacja pokazuje ostrzeżenie.
-- Import nie uruchamia ponownie BPM, ASR, alignacji ani pitch detection.
+- Import przyjmuje ZIP projektu utworzony przez opcję `Wyeksportuj projekt`.
+- Import waliduje, że każdy wpis z `sourceAudio` i `artifacts` istnieje w archiwum i ma zgodny hash.
+- Import odtwarza `Job` i artefakty tak, jakby odpowiednie etapy pipeline'u były już zakończone.
+- Import nie uruchamia ponownie normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
+- Jeśli wymagany plik nie istnieje albo hash się nie zgadza, import kończy się błędem zamiast próbować przeliczać brakujący etap.
 
 ## Arrangement
 

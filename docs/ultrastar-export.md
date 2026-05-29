@@ -2,19 +2,20 @@
 
 ## Cel
 
-Eksporter zamienia zatwierdzony `Arrangement` na jedną lub wiele paczek ZIP. Każda paczka zawiera katalog z plikiem `.txt`, audio w MP3 oraz JSON-em projektu, który można później wczytać w aplikacji i kontynuować pracę nad utworem. Cover jest dodawany tylko wtedy, gdy użytkownik go ustawił.
+Eksporter karaoke zamienia zatwierdzony `Arrangement` na jedną lub wiele paczek ZIP. Każda paczka karaoke zawiera katalog z plikiem `.txt` oraz audio w MP3. Cover jest dodawany tylko wtedy, gdy użytkownik go ustawił. Paczki karaoke nie zawierają `mukai-project.json` ani innych danych projektu.
+
+Eksport projektu jest osobną akcją `Wyeksportuj projekt`. Ta akcja generuje oddzielny ZIP projektu do późniejszego importu w Mukai.
 
 Użytkownik wybiera:
 
 - format docelowy: UltraStar Deluxe, UltraStar Play, Vocaluxe;
 - wariant audio: oryginalne audio albo audio bez wokalu;
 - nazwę katalogu/paczki, domyślnie pochodzącą z nazwy pliku źródłowego;
-- cover z importu, jeśli jest dostępny, albo wgrany ręcznie; jeśli cover nie jest ustawiony, paczka nie zawiera covera;
-- opcjonalne usunięcie artefaktów roboczych po pomyślnym eksporcie.
+- cover z importu, jeśli jest dostępny, albo wgrany ręcznie; jeśli cover nie jest ustawiony, paczka nie zawiera covera.
 
 ZIP-y dla różnych profili eksportu i wariantów audio mają różne nazwy. Katalog i pliki wewnątrz ZIP-a używają konsekwentnie tej samej nazwy bazowej niezależnie od profilu docelowego i wariantu; zawartość pliku playback MP3 zależy od wariantu.
 
-## Struktura paczki ZIP
+## Struktura paczki karaoke ZIP
 
 Przykład ZIP dla profilu UltraStar Deluxe i wariantu oryginalnego:
 
@@ -27,8 +28,7 @@ Zawartość:
 ```text
 Artist - Song Title/
 ├── Artist - Song Title.txt
-├── Artist - Song Title.mp3
-└── mukai-project.json
+└── Artist - Song Title.mp3
 ```
 
 Jeśli ustawiono cover, zawartość zawiera dodatkowo:
@@ -49,8 +49,7 @@ Zawartość:
 Artist - Song Title/
 ├── Artist - Song Title.txt
 ├── Artist - Song Title.mp3
-├── Artist - Song Title [vocals].mp3
-└── mukai-project.json
+└── Artist - Song Title [vocals].mp3
 ```
 
 ## Format bazowy
@@ -223,25 +222,73 @@ Eksporter powinien mieć osobne profile dla:
 - UltraStar Play;
 - Vocaluxe.
 
-Profile mogą różnić się szczegółami tagów, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement` i zapisują JSON projektu do ponownego importu.
+Profile mogą różnić się szczegółami tagów, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement`; dane projektu nie są zapisywane w paczkach karaoke.
 
-Nazwa ZIP-a zawiera profil eksportu i wariant audio, np. `[ultrastar-deluxe original]`, `[ultrastar-play instrumental]`, `[vocaluxe original]`. Wewnętrzny katalog i nazwy plików zachowują tę samą nazwę bazową, żeby import projektu nie zależał od profilu docelowego ani wariantu audio.
+Nazwa ZIP-a zawiera profil eksportu i wariant audio, np. `[ultrastar-deluxe original]`, `[ultrastar-play instrumental]`, `[vocaluxe original]`. Wewnętrzny katalog i nazwy plików zachowują tę samą nazwę bazową.
 
-## `mukai-project.json`
+## Eksport projektu
 
-Każda paczka zawiera `mukai-project.json`.
+Akcja `Wyeksportuj projekt` jest oddzielna od eksportu paczek karaoke. Nie modyfikuje zawartości paczek UltraStar, tylko tworzy osobny ZIP projektu.
 
-Plik musi zawierać:
+Przykładowa nazwa:
+
+```text
+Artist - Song Title [mukai-project].zip
+```
+
+Przykładowa zawartość archiwum dla projektu po zatwierdzeniu edycji:
+
+```text
+mukai-project.json
+job.json
+source/
+└── source-file.mp3
+artifacts/
+├── audio_metadata.json
+├── mix.wav
+├── worker_inputs/
+├── vocals.wav
+├── instrumental.wav
+├── separation.json
+├── transcript.raw.json
+├── transcript.aligned.json
+├── pitch.frames.json
+├── pitch.notes.json
+├── draft.arrangement.json
+└── review.approved.json
+exports/
+└── validation-report.json
+```
+
+ZIP projektu musi zawierać:
 
 - pełną edycję użytkownika;
+- rekord `Job` ze statusem, datami, metadanymi i profilami modeli;
 - ustawienia modeli;
 - metadane;
 - wybory eksportu;
 - wykryte BPM i wynikowe `#BPM`;
 - transkrypcję i czasy;
-- pitch frames, note events i finalny arrangement.
+- pitch frames, note events i finalny arrangement;
+- oryginalny plik źródłowy;
+- wszystkie artefakty zapisane dla `Job` i potrzebne do odtworzenia stanu po wykonanych etapach pipeline'u;
+- manifest artefaktów z typami, ścieżkami w archiwum, hashami, rozmiarami i czasami utworzenia.
 
-Import `mukai-project.json` nie uruchamia ponownie BPM, ASR, alignacji ani pitch detection. Uruchamia ponownie tylko separację audio, jeśli brakuje rozdzielonych plików, ale dostępne jest oryginalne audio albo użytkownik wgra je ponownie.
+Jeśli `Job` nie ma jeszcze któregoś artefaktu, archiwum nie musi go sztucznie tworzyć. Musi jednak zawierać komplet artefaktów wymaganych dla statusu zapisanego w manifeście.
+
+Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja usuwa lokalny `Job`, oryginalny plik, artefakty i eksporty zapisane dla tego zadania.
+
+## Import projektu
+
+Import projektu przyjmuje ZIP utworzony przez `Wyeksportuj projekt`. Import nie przyjmuje pojedynczego `mukai-project.json` jako samodzielnego formatu MVP.
+
+Import:
+
+- waliduje strukturę archiwum, manifest i hashe artefaktów;
+- odtwarza `Job`, oryginalny plik i artefakty w magazynie aplikacji;
+- ustawia stan tak, jakby etapy pipeline'u były już wykonane;
+- nie uruchamia ponownie normalizacji audio, BPM, separacji, ASR, alignacji ani pitch detection;
+- kończy się błędem, jeśli archiwum nie zawiera wymaganych plików albo nie przejdzie walidacji.
 
 ## Źródło formatu
 

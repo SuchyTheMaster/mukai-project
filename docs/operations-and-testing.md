@@ -27,11 +27,11 @@ Minimalne dane diagnostyczne zadania:
 
 - Pliki audio użytkownika przechowywać w katalogu danych aplikacji, nie w repozytorium.
 - Artefakty zadań powinny mieć TTL albo ręczny mechanizm czyszczenia.
-- Jeśli użytkownik zaznaczy opcję czyszczenia, pliki audio i artefakty robocze mogą zostać usunięte po pomyślnym eksporcie.
 - Eksport powinien być odtwarzalny z `review.approved.json`.
-- Paczka ZIP powinna zawierać `mukai-project.json`, żeby można było kontynuować pracę nad utworem po imporcie.
-- `mukai-project.json` przechowuje pełną edycję, ustawienia modeli, metadane, wybory eksportu, BPM, transkrypcję, czasy i pitch/nuty.
-- Import `mukai-project.json` nie powinien ponownie uruchamiać BPM, ASR, alignacji ani pitch detection.
+- Paczki karaoke ZIP nie powinny zawierać `mukai-project.json` ani innych danych projektu.
+- Osobny ZIP projektu z akcji `Wyeksportuj projekt` powinien zawierać pełny `Job`, oryginalny plik, artefakty, manifest `mukai-project.json`, ustawienia modeli, metadane, wybory eksportu, BPM, transkrypcję, czasy i pitch/nuty.
+- Po pomyślnym eksporcie projektu lokalny rekord `Job`, oryginalny plik i artefakty tego zadania powinny zostać usunięte.
+- Import ZIP-a projektu nie powinien ponownie uruchamiać normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
 - W logach nie zapisywać pełnych ścieżek użytkownika, jeśli mogą ujawniać dane prywatne.
 
 ## Testy dokumentacji na obecnym etapie
@@ -48,8 +48,8 @@ Minimalne dane diagnostyczne zadania:
 - Walidacja wykrytego muzycznego BPM i wynikowego `#BPM` UltraStar.
 - Walidacja `Arrangement`.
 - Walidacja `ExportSelection`.
-- Walidacja kompletności `mukai-project.json`.
-- Walidacja ostrzeżenia przy ponownym imporcie audio o innej długości.
+- Walidacja kompletności ZIP-a projektu, manifestu `mukai-project.json` i hashy artefaktów.
+- Walidacja, że import nie przyjmuje pojedynczego `mukai-project.json` jako samodzielnego formatu MVP.
 - Serializacja i migracje kontraktów JSON.
 - Tokenizacja tekstu do linii UltraStar.
 
@@ -66,9 +66,11 @@ Minimalne dane diagnostyczne zadania:
 - Eksport ZIP dla UltraStar Deluxe, UltraStar Play i Vocaluxe.
 - Eksport wariantu z oryginalnym audio i wariantu instrumentalnego.
 - Weryfikacja, że różne profile eksportu zmieniają nazwę ZIP, ale nie zmieniają bazowej nazwy katalogu i plików wewnątrz paczki.
-- Ponowny import `mukai-project.json`.
-- Ponowny import projektu po usunięciu stems i uruchomienie tylko separacji.
-- Ponowny import projektu po usunięciu oryginalnego audio i ponowne wgranie audio.
+- Weryfikacja, że paczki karaoke nie zawierają `mukai-project.json`.
+- Eksport ZIP-a projektu przez `Wyeksportuj projekt`.
+- Weryfikacja, że po udanym eksporcie projektu lokalny `Job` i artefakty zostały usunięte.
+- Ponowny import ZIP-a projektu bez uruchamiania normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
+- Ponowny import ZIP-a projektu z brakującym artefaktem i oczekiwany błąd walidacji.
 - Eksport bez covera.
 - Eksport instrumentalny z tagami `#AUDIO`, `#VOCALS` i `#INSTRUMENTAL`.
 
@@ -83,8 +85,8 @@ Minimalne dane diagnostyczne zadania:
 - Edycja frazy, zapis, odświeżenie strony i eksport.
 - Eksport z niestandardowym coverem.
 - Eksport bez covera.
-- Eksport z opcją usunięcia artefaktów po sukcesie.
-- Import projektu z ponownie wgranym audio o innej długości i weryfikacja ostrzeżenia.
+- Eksport projektu i weryfikacja ostrzeżenia, że lokalny `Job` oraz artefakty zostaną usunięte po sukcesie.
+- Import projektu z ZIP-a i weryfikacja, że edytor otwiera odtworzony stan bez ponownego przetwarzania.
 - Weryfikacja zgodności UI z [UI.md](UI.md): kolory, typografia, stany hover/focus/disabled, kontrast oraz reduced motion.
 
 ## Kryteria akceptacji MVP
@@ -93,7 +95,8 @@ Minimalne dane diagnostyczne zadania:
 - Draft pokazuje tekst, czasy i nuty w jednym zsynchronizowanym widoku.
 - Użytkownik może poprawić tekst, sylaby, typ nuty i pitch.
 - Użytkownik może wybrać profile `htdemucs`/`htdemucs_ft` oraz `large-v3`/`large-v3-turbo`.
-- Eksportowana paczka ZIP zawiera katalog z `.txt`, MP3 i JSON-em projektu; cover jest dodawany tylko wtedy, gdy został ustawiony.
+- Eksportowana paczka karaoke ZIP zawiera katalog z `.txt` i MP3 bez JSON-a projektu; cover jest dodawany tylko wtedy, gdy został ustawiony.
 - Jeśli cover nie został ustawiony, eksportowana paczka ZIP nie zawiera covera.
-- `mukai-project.json` pozwala kontynuować ręczną edycję bez ponownego ASR/pitch/BPM.
+- Osobna akcja `Wyeksportuj projekt` tworzy ZIP projektu pozwalający kontynuować ręczną edycję bez ponownego ASR/pitch/BPM.
+- Po pomyślnym eksporcie projektu lokalny `Job` i artefakty zostają usunięte.
 - Wynik można ręcznie wczytać w wybranym kompatybilnym programie karaoke.

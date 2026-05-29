@@ -2,12 +2,12 @@
 
 ## Widok ogólny
 
-Aplikacja działa w Dockerze i składa się z interfejsu webowego, backendu API, kolejki zadań, workerów AI używających GPU, magazynu artefaktów oraz eksportera paczek karaoke. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Ewentualne zabezpieczenia sieciowe są poza zakresem MVP i mogą zostać zaprojektowane później.
+Aplikacja działa w Dockerze i składa się z interfejsu webowego, backendu API, kolejki zadań, workerów AI używających GPU, magazynu artefaktów, eksportera paczek karaoke oraz eksportera/importera projektu. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Ewentualne zabezpieczenia sieciowe są poza zakresem MVP i mogą zostać zaprojektowane później.
 
 Każde przetwarzanie utworu jest reprezentowane jako `Job`, który przechodzi przez jawne statusy i zapisuje pośrednie artefakty.
 
 ```text
-Upload UI / Project Import
+Upload UI
   -> API
   -> Job Queue
   -> Audio Preprocessor
@@ -17,7 +17,12 @@ Upload UI / Project Import
   -> Pitch Worker
   -> Alignment/Segmentation Worker
   -> Review Editor
-  -> Karaoke Package Exporter
+  -> Karaoke Package Exporter / Project Exporter
+
+Project ZIP Import
+  -> API
+  -> Artifact Restore
+  -> Review Editor
 ```
 
 ## Komponenty
@@ -29,18 +34,20 @@ Upload UI / Project Import
 - Pozwala wybrać szybki albo dokładniejszy model separacji.
 - Pozwala wybrać szybki albo dokładniejszy model transkrypcji.
 - Pozwala opcjonalnie wskazać język utworu.
-- Pozwala wczytać `mukai-project.json` i kontynuować pracę nad utworem.
+- Pozwala wczytać ZIP projektu utworzony przez opcję `Wyeksportuj projekt` i kontynuować pracę nad utworem.
 - Pokazuje status zadania i błędy.
 - Udostępnia edytor tekstu, sylab, fraz, nut i timingów.
 - Pozwala odsłuchać oryginał, wokal i instrumental.
-- Uruchamia eksport jednej lub wielu paczek ZIP po zatwierdzeniu wersji finalnej.
+- Uruchamia eksport jednej lub wielu paczek karaoke ZIP po zatwierdzeniu wersji finalnej.
+- Udostępnia osobną akcję `Wyeksportuj projekt`, która pakuje pełny `Job` do ZIP-a projektu.
 - Stosuje design system RetroWave opisany w [UI.md](UI.md) dla kolorów, typografii, komponentów i stanów.
 
 ### Backend API
 
 - Waliduje upload i metadane.
 - Tworzy `Job`.
-- Obsługuje import projektu z `mukai-project.json`.
+- Obsługuje import projektu z ZIP-a projektu.
+- Obsługuje eksport projektu jako ZIP zawierający pełny `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
 - Udostępnia statusy, artefakty i zapis edycji.
 - Zabezpiecza ścieżki plików przed dostępem poza katalogiem roboczym aplikacji.
 - Nie wykonuje ciężkich obliczeń synchronicznie w żądaniu HTTP.
@@ -59,15 +66,17 @@ Upload UI / Project Import
 - Worker ASR: WhisperX.
 - Worker pitch detection: torchcrepe.
 - Worker alignacji: łączy tekst, słowa, nuty i frazy.
-- Worker eksportu: generuje ZIP-y dla wybranych wariantów i odtwarzaczy.
-- Worker importu projektu: odtwarza stan edycji z JSON-a bez ponownego uruchamiania BPM, transkrypcji i pitch detection.
+- Worker eksportu karaoke: generuje ZIP-y dla wybranych wariantów i odtwarzaczy, bez danych projektu w paczkach karaoke.
+- Worker eksportu projektu: generuje ZIP projektu zawierający pełny `Job`, wszystkie wymagane artefakty, oryginalny plik i manifesty JSON.
+- Worker importu projektu: odtwarza `Job` i artefakty z ZIP-a projektu bez ponownego uruchamiania normalizacji, BPM, separacji, transkrypcji, alignacji ani pitch detection.
 
 ### Magazyn artefaktów
 
 - Przechowuje oryginalny plik, znormalizowane audio, stems, transkrypcję, pitch frames, nuty, wersje edycji i eksporty.
 - Każdy artefakt ma typ, hash, czas utworzenia i parametry procesu.
 - Pliki audio użytkownika nie powinny trafiać do repozytorium.
-- Po pomyślnym eksporcie może usunąć pliki audio i artefakty, jeśli użytkownik zaznaczył taką opcję przed eksportem.
+- Po pomyślnym eksporcie projektu usuwa lokalny rekord `Job`, oryginalny plik oraz wszystkie artefakty tego zadania. ZIP projektu jest wtedy jedyną kopią potrzebną do późniejszego importu.
+- Zwykły eksport paczek karaoke nie usuwa automatycznie `Job` ani artefaktów.
 
 ## Statusy zadania
 
@@ -80,6 +89,8 @@ Upload UI / Project Import
 - `aligning`
 - `awaiting_review`
 - `exporting`
+- `exporting_project`
+- `importing_project`
 - `completed`
 - `failed`
 - `cancelled`

@@ -9,7 +9,7 @@ Wejście:
 - Profile modeli: separacja szybka albo dokładniejsza, transkrypcja szybka albo dokładniejsza.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
 - Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
-- Opcjonalny import `mukai-project.json` jako kontynuacja wcześniejszej pracy.
+- Opcjonalny import ZIP-a projektu utworzonego przez opcję `Wyeksportuj projekt` jako kontynuacja wcześniejszej pracy.
 
 Walidacja:
 
@@ -91,7 +91,7 @@ Wymagania:
 - Używać GPU, jeśli jest dostępne.
 - Obsługiwać brak pamięci GPU przez zmniejszenie segmentu albo przez czytelny błąd.
 - Nie zakładać, że separacja jest idealna; dalsze moduły muszą tolerować bleeding instrumentów.
-- Zapisać wybrany model w artefaktach i w JSON-ie ustawień projektu.
+- Zapisać wybrany model w artefaktach i manifestach projektu.
 
 ## 5. Transkrypcja i alignacja tekstu
 
@@ -175,27 +175,31 @@ Wynik:
 
 ## 9. Eksport
 
-Eksporter generuje:
+Eksporter karaoke generuje:
 
 - Jedną albo wiele paczek ZIP.
-- Każda paczka zawiera katalog z plikiem UltraStar `.txt`, audio w MP3 i JSON-em projektu do ponownego wczytania; cover jest dodawany tylko wtedy, gdy został ustawiony.
+- Każda paczka zawiera katalog z plikiem UltraStar `.txt` i audio w MP3; cover jest dodawany tylko wtedy, gdy został ustawiony.
+- Paczki karaoke nie zawierają `mukai-project.json` ani innych danych potrzebnych do odtworzenia projektu w Mukai.
 - Dostępne warianty audio: oryginalne audio albo instrumental bez wokalu.
 - Dostępne formaty docelowe: UltraStar Deluxe, UltraStar Play, Vocaluxe.
 - Raport walidacji eksportu.
-- Po pomyślnym eksporcie opcjonalnie usuwa pliki audio i artefakty robocze, jeśli użytkownik zaznaczył taką opcję.
 
-## 10. Ponowny import projektu
+Osobna akcja `Wyeksportuj projekt` generuje ZIP projektu:
+
+- ZIP projektu zawiera cały `Job`: oryginalny plik, artefakty wszystkich wykonanych etapów, zapis edycji, ustawienia modeli, metadane, raporty walidacji i pliki JSON potrzebne do odtworzenia projektu.
+- ZIP projektu musi zawierać wszystkie składowe wymagane do odtworzenia stanu bez ponownego uruchamiania przetwarzania.
+- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja usuwa lokalny `Job` oraz wszystkie jego artefakty.
+
+## 10. Ponowny import projektu z ZIP-a
 
 Wejście:
 
-- `mukai-project.json`.
-- Opcjonalnie oryginalny plik audio, jeśli nie jest już dostępny w artefaktach.
+- ZIP projektu utworzony przez opcję `Wyeksportuj projekt`.
 
 Zasady:
 
-- JSON zawsze zawiera pełną edycję, ustawienia modeli, metadane, wykryte BPM, transkrypcję, czasy, pitch/nuty i wybory eksportu.
-- Import JSON-a nie uruchamia ponownie wykrywania BPM, transkrypcji, alignacji, czasów ani pitch detection.
-- Jeśli usunięto tylko rozdzielone audio, aplikacja uruchamia ponownie wyłącznie separację Demucs na podstawie dostępnego oryginalnego audio.
-- Jeśli usunięto oryginalne audio, import pozwala użytkownikowi wgrać je ponownie i dopiero wtedy ponownie rozdzielić wokal oraz instrumental.
-- Jeśli długość ponownie wgranego audio różni się od długości zapisanej w JSON-ie, aplikacja pokazuje ostrzeżenie przed kontynuacją.
-- Ostrzeżenie o innej długości audio nie zmienia automatycznie timingów; użytkownik decyduje, czy kontynuować.
+- Import przyjmuje archiwum ZIP projektu, a nie pojedynczy plik JSON.
+- Manifesty JSON w ZIP-ie zawierają pełną edycję, ustawienia modeli, metadane, wykryte BPM, transkrypcję, czasy, pitch/nuty, wybory eksportu i listę artefaktów z hashami.
+- Import odtwarza stan tak, jakby pliki były już wgrane i przetworzone przez poszczególne etapy pipeline'u.
+- Import nie uruchamia ponownie normalizacji audio, BPM, separacji, transkrypcji, alignacji, czasów ani pitch detection.
+- Jeśli ZIP projektu nie zawiera wymaganej składowej albo hash artefaktu się nie zgadza, import kończy się błędem zamiast próbować odtwarzać brakujący etap.
