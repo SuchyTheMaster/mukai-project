@@ -9,6 +9,7 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 ## Zakres MVP
 
 - Upload pojedynczego pliku audio w formacie `WAV`, `MP3`, `MP4`, `M4A`, `OGG` albo `FLAC`.
+- Limit uploadu 500 MB z walidacją rozszerzenia, MIME oraz `ffprobe`.
 - Automatyczne uzupełnienie metadanych z tagów pliku audio, jeśli są dostępne.
 - Konwersja audio przez FFmpeg do formatów roboczych wymaganych przez workery.
 - Separacja wokalu i instrumentalnego podkładu z wyborem profilu Demucs.
@@ -18,6 +19,7 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Import i kontynuacja pracy z ZIP-em projektu utworzonym przez opcję `Wyeksportuj projekt`.
 - Eksport jednej lub wielu paczek ZIP zgodnych z wybranymi odtwarzaczami, bez danych projektu w tych paczkach.
 - Osobny eksport pełnego projektu jako ZIP zawierający `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
+- Retencja lokalnego `Job` i artefaktów przez 24 godziny po eksporcie projektu.
 
 ## Poza zakresem pierwszej wersji
 
@@ -38,6 +40,15 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Detekcja BPM: Essentia `RhythmExtractor2013`.
 
 Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lokalnie dostępne binaria. Specyfikacja nie przewiduje zewnętrznych API.
+
+## Rekomendacja stosu aplikacji
+
+- Frontend: React.
+- Backend API: Python/FastAPI.
+- Baza danych: Postgres dla `Job`, metadanych, aktualnego `Arrangement` i wyborów eksportu.
+- Kolejka i koordynacja workerów: Redis.
+- Artefakty: wolumen Docker poza repozytorium aplikacji.
+- Edycja: MVP utrwala tylko aktualny stan; undo/redo działa sesyjnie w edytorze.
 
 ## Dokumenty
 

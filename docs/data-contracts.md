@@ -6,6 +6,8 @@
 - Eksport UltraStar przelicza sekundy na beaty dopiero na końcu.
 - Każdy artefakt AI ma zapisaną wersję modelu, parametry i hash wejścia.
 - Edycje użytkownika są osobną warstwą względem wyników AI.
+- MVP utrwala tylko aktualny stan edycji `Arrangement`; historia undo/redo jest sesyjna po stronie edytora i nie jest kontraktem trwałego storage.
+- Rekordy `Job`, metadane, wybory eksportu i aktualny `Arrangement` są przechowywane w Postgresie, a pliki artefaktów w katalogu danych aplikacji poza repozytorium.
 
 ## Job
 
@@ -27,6 +29,11 @@
     "separationModel": "htdemucs_ft",
     "transcriptionModel": "large-v3",
     "pitch": "default"
+  },
+  "retention": {
+    "projectExportedAt": null,
+    "cleanupEligibleAt": null,
+    "cleanupReason": null
   }
 }
 ```
@@ -79,13 +86,18 @@
 
 ```json
 {
-  "songBpm": 123.45,
+  "detectedSongBpm": 123.45,
+  "acceptedSongBpm": 123.45,
   "ultrastarBpm": 493.8,
+  "gapMs": 12345,
   "confidence": 0.68,
   "method": "auto_detected",
-  "requiresReview": true
+  "requiresReview": true,
+  "beatPositionsSec": [12.345, 12.466]
 }
 ```
+
+`detectedSongBpm` pochodzi z detektora BPM. `acceptedSongBpm` jest wartością zaakceptowaną albo poprawioną przez użytkownika i to z niej eksporter wylicza `ultrastarBpm`. `gapMs` jest domyślnie czasem startu pierwszej zatwierdzonej nuty. `beatPositionsSec` pochodzi z Essentii i może być użyte przez UI do kontroli siatki, ale eksport nadal opiera się na zaakceptowanym BPM.
 
 ## TranscriptSegment
 
@@ -147,9 +159,13 @@
   "startSec": 12.34,
   "endSec": 12.88,
   "midi": 57,
-  "noteType": "normal"
+  "noteType": "normal",
+  "isExtension": false,
+  "extendsTokenId": null
 }
 ```
+
+`KaraokeToken` żyje jako część aktualnego `Arrangement`; w manifeście projektu jest reprezentowany w `arrangement.tokens`. Token może mieć pusty `text` tylko wtedy, gdy `isExtension` ma wartość `true` i `extendsTokenId` wskazuje token, którego sylabę albo samogłoskę przedłuża.
 
 ## ExportSelection
 
@@ -197,16 +213,18 @@ Paczki karaoke nie zawierają `mukai-project.json` ani innych danych projektu.
   "includeOriginalAudio": true,
   "includeAllJobArtifacts": true,
   "includeJobManifest": true,
-  "deleteJobAfterSuccessfulExport": true
+  "retainJobAfterSuccessfulExport": true,
+  "retentionAfterSuccessfulExportHours": 24
 }
 ```
 
 Zasady:
 
 - `ProjectExport` odpowiada osobnej akcji `Wyeksportuj projekt`, niezależnej od `ExportSelection`.
-- `includeOriginalAudio`, `includeAllJobArtifacts`, `includeJobManifest` i `deleteJobAfterSuccessfulExport` są zawsze `true` w MVP.
-- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja usuwa lokalny rekord `Job` oraz wszystkie artefakty tego zadania.
-- Zwykły eksport paczek karaoke nie ustawia ani nie wykonuje `deleteJobAfterSuccessfulExport`.
+- `includeOriginalAudio`, `includeAllJobArtifacts`, `includeJobManifest` i `retainJobAfterSuccessfulExport` są zawsze `true` w MVP.
+- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia `projectExportedAt`, `cleanupEligibleAt = projectExportedAt + 24h` i `cleanupReason = "project_export_ttl"`.
+- Lokalny rekord `Job` oraz artefakty mogą zostać usunięte dopiero przez mechanizm czyszczenia po upływie TTL.
+- Zwykły eksport paczek karaoke nie ustawia retencji po eksporcie projektu.
 
 ## MukaiProject
 
@@ -243,6 +261,9 @@ ZIP projektu musi pozwalać kontynuować pracę bez ponownego uruchamiania norma
   "pitchFrames": [],
   "noteEvents": [],
   "arrangement": {},
+  "retentionPolicy": {
+    "projectExportRetentionHours": 24
+  },
   "exportSelections": []
 }
 ```
@@ -261,18 +282,42 @@ Import:
 {
   "arrangementId": "arr_001",
   "jobId": "job_01J...",
-  "version": 3,
+  "revision": 3,
   "approved": false,
+  "updatedAt": "2026-05-28T00:10:00Z",
   "lines": [
     {
       "lineId": "line_001",
       "startSec": 12.34,
       "endSec": 15.87,
-      "tokens": ["tok_001", "tok_002"]
+      "tokenIds": ["tok_001", "tok_002"]
     }
-  ]
+  ],
+  "tokens": [],
+  "noteEvents": []
 }
 ```
+
+`revision` służy do kontroli współbieżnego zapisu aktualnego stanu i nie oznacza trwałej historii wersji. Eksporter używa aktualnego zatwierdzonego `Arrangement`, jego `tokens` oraz `noteEvents`.
+
+## Artefakty wymagane według statusu
+
+Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pracy:
+
+| Status | Wymagane artefakty |
+| --- | --- |
+| `uploaded` | oryginalny plik źródłowy, `Job`, `SourceMetadata` jeśli wykryto tagi |
+| `preprocessing` | artefakty statusu `uploaded`, `audio_metadata.json`, `mix.wav`, `worker_inputs/bpm.wav`, opcjonalnie `worker_inputs/demucs.wav` |
+| `detecting_bpm` | artefakty statusu `preprocessing` |
+| `separating_vocals` | artefakty statusu `preprocessing`, `tempo.json` |
+| `transcribing` | artefakty statusu `separating_vocals`, `vocals.wav`, `instrumental.wav`, `separation.json`, `worker_inputs/whisperx.wav`, `worker_inputs/torchcrepe.wav` |
+| `detecting_pitch` | artefakty statusu `transcribing`, `transcript.raw.json`, `transcript.aligned.json` |
+| `aligning` | artefakty statusu `detecting_pitch`, `pitch.frames.json`, `pitch.notes.json` |
+| `awaiting_review` | artefakty statusu `aligning`, `draft.arrangement.json` zawierający linie, tokeny i nuty |
+| `exporting` | artefakty statusu `awaiting_review`, aktualny zatwierdzony `Arrangement` |
+| `exporting_project` | artefakty wymagane dla bieżącego statusu `Job` oraz manifest eksportu projektu |
+| `completed` | artefakty ostatniego ukończonego etapu, raport walidacji eksportu jeśli wykonano eksport |
+| `failed` / `cancelled` | artefakty ostatniego poprawnie zakończonego etapu oraz diagnostyka błędu, jeśli istnieje |
 
 ## Typy nut
 

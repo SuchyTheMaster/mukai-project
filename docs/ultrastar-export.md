@@ -98,7 +98,7 @@ Opcjonalne nagłówki dla wariantu `instrumental`:
 #COMMENT:Generated draft reviewed in Mukai
 ```
 
-Używać nowych tagów `#AUDIO`, `#VOCALS`, `#INSTRUMENTAL`. Nie generować starszego tagu `#MP3` w MVP.
+Domyślny profil MVP używa nowych tagów `#AUDIO`, `#VOCALS`, `#INSTRUMENTAL`. Decyzja o wygenerowaniu starszego tagu `#MP3` należy do profilu kompatybilności konkretnego odtwarzacza i musi wynikać z testów zgodności.
 
 Warianty audio:
 
@@ -222,7 +222,7 @@ Eksporter powinien mieć osobne profile dla:
 - UltraStar Play;
 - Vocaluxe.
 
-Profile mogą różnić się szczegółami tagów, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement`; dane projektu nie są zapisywane w paczkach karaoke.
+Profile mogą różnić się szczegółami tagów, w tym użyciem `#AUDIO`, `#MP3`, `#VOCALS` i `#INSTRUMENTAL`, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement`; dane projektu nie są zapisywane w paczkach karaoke. Każdy profil powinien mieć test kompatybilności z docelowym odtwarzaczem albo jasno opisane założenie, jeśli test manualny nie został jeszcze wykonany.
 
 Nazwa ZIP-a zawiera profil eksportu i wariant audio, np. `[ultrastar-deluxe original]`, `[ultrastar-play instrumental]`, `[vocaluxe original]`. Wewnętrzny katalog i nazwy plików zachowują tę samą nazwę bazową.
 
@@ -269,14 +269,15 @@ ZIP projektu musi zawierać:
 - wybory eksportu;
 - wykryte BPM i wynikowe `#BPM`;
 - transkrypcję i czasy;
-- pitch frames, note events i finalny arrangement;
+- pitch frames, note events, karaoke tokens i finalny arrangement;
 - oryginalny plik źródłowy;
 - wszystkie artefakty zapisane dla `Job` i potrzebne do odtworzenia stanu po wykonanych etapach pipeline'u;
 - manifest artefaktów z typami, ścieżkami w archiwum, hashami, rozmiarami i czasami utworzenia.
+- politykę retencji `projectExportRetentionHours: 24`.
 
 Jeśli `Job` nie ma jeszcze któregoś artefaktu, archiwum nie musi go sztucznie tworzyć. Musi jednak zawierać komplet artefaktów wymaganych dla statusu zapisanego w manifeście.
 
-Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja usuwa lokalny `Job`, oryginalny plik, artefakty i eksporty zapisane dla tego zadania.
+Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia `cleanupEligibleAt` na 24 godziny po eksporcie. Lokalny `Job`, oryginalny plik, artefakty i eksporty zapisane dla tego zadania mogą zostać usunięte dopiero po upływie TTL.
 
 ## Import projektu
 

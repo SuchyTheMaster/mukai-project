@@ -14,6 +14,8 @@ Wejście:
 Walidacja:
 
 - Nie nakładać sztywnego limitu czasu trwania utworu na poziomie specyfikacji MVP.
+- Maksymalny rozmiar uploadu w MVP to 500 MB.
+- Backend waliduje rozszerzenie, MIME oraz wynik `ffprobe`; plik jest przyjmowany tylko wtedy, gdy zawiera obsługiwaną ścieżkę audio.
 - Backend zapisuje oryginał jako artefakt niemodyfikowany.
 - Nazwy plików eksportu są normalizowane i nie mogą zawierać ścieżek.
 - Jeśli użytkownik nie poda języka, detekcję języka pozostawić Whisperowi.
@@ -31,9 +33,9 @@ Cel:
 
 Artefakty:
 
-- `mix.wav`: znormalizowane audio robocze.
-- `worker_inputs/demucs.wav`: audio dopasowane do wymagań Demucs, jeśli różni się od `mix.wav`.
-- `worker_inputs/bpm.wav`: audio 44100 Hz dopasowane do wymagań Essentia `RhythmExtractor2013`.
+- `mix.wav`: znormalizowane audio robocze, WAV PCM, 44100 Hz, stereo, bez zmiany długości i offsetu.
+- `worker_inputs/demucs.wav`: WAV PCM, 44100 Hz, stereo, jeśli różni się od `mix.wav`.
+- `worker_inputs/bpm.wav`: WAV PCM, 44100 Hz, mono jako downmix wszystkich kanałów, dopasowane do Essentia `RhythmExtractor2013`.
 - `audio_metadata.json`: sample rate, kanały, duration, loudness, hash.
 
 Decyzje:
@@ -42,6 +44,7 @@ Decyzje:
 - Roboczo używać WAV PCM jako formatu pośredniego.
 - Zachować oryginalny czas trwania i offset bez przycinania początku.
 - Resampling wykonywać oddzielnie dla wymagań modeli, nie nadpisując `mix.wav`.
+- Jeśli worker wymaga mono, tworzyć je jako downmix wszystkich kanałów, a nie przez odrzucenie jednego kanału.
 - Dla `MP4` traktować plik jako kontener z audio; jeśli zawiera wideo, pipeline ignoruje obraz.
 
 ## 3. Detekcja BPM
@@ -82,16 +85,17 @@ Wyjście:
 
 - `vocals.wav`
 - `instrumental.wav` albo stem `other`/miks instrumentalny zależnie od konfiguracji.
-- `worker_inputs/whisperx.wav`: audio przygotowane z `vocals.wav` po separacji.
-- `worker_inputs/torchcrepe.wav`: audio przygotowane z `vocals.wav` po separacji.
+- `worker_inputs/whisperx.wav`: WAV PCM, 16000 Hz, mono jako downmix wszystkich kanałów `vocals.wav`, przygotowany po separacji.
+- `worker_inputs/torchcrepe.wav`: WAV PCM, 16000 Hz, mono jako downmix wszystkich kanałów `vocals.wav`, przygotowany po separacji.
 - `separation.json` z modelem, parametrami i czasem przetwarzania.
 
 Wymagania:
 
 - Używać GPU, jeśli jest dostępne.
-- Obsługiwać brak pamięci GPU przez zmniejszenie segmentu albo przez czytelny błąd.
+- Obsługiwać brak pamięci GPU przez jedną próbę zmniejszenia segmentu; jeśli ponowna próba zawiedzie, zakończyć etap czytelnym błędem infrastruktury.
 - Nie zakładać, że separacja jest idealna; dalsze moduły muszą tolerować bleeding instrumentów.
 - Zapisać wybrany model w artefaktach i manifestach projektu.
+- Zapisać wersje pakietów, modelu, PyTorch/CUDA i parametry segmentu w `separation.json`.
 
 ## 5. Transkrypcja i alignacja tekstu
 
@@ -118,6 +122,7 @@ Wymagania:
 - Uwzględnić, że Whisper pracuje na oknach około 30 sekund; dla długich utworów pipeline musi poprawnie segmentować lub przekazywać audio do WhisperX tak, żeby zachować globalne czasy.
 - Zachować segmenty o niskiej pewności, ale oznaczyć je do ręcznej korekty.
 - Dla piosenek dopuszczać powtórzenia, wydłużone sylaby i fragmenty bez słów.
+- Zapisać wersje WhisperX, modelu ASR, modelu alignacji, PyTorch/CUDA i parametry batch w artefaktach transkrypcji.
 
 ## 6. Detekcja pitch
 
@@ -137,8 +142,10 @@ Wyjście:
 Wymagania:
 
 - Przechowywać ramki F0 niezależnie od nut, żeby edytor mógł pokazać surowy kontur.
-- Użyć progu ciszy i progu periodicity, żeby ograniczyć fałszywe nuty.
+- Domyślnie użyć progu ciszy `-45 dBFS`, progu periodicity `0.5`, kroku ramek `10 ms`, minimalnej długości nuty `80 ms` i scalania przerw do `50 ms`.
+- Powyższe parametry filtracji pitch muszą być dostępne w zaawansowanych ustawieniach i możliwe do samodzielnej zmiany przed uruchomieniem albo ponownym przeliczeniem pitch detection.
 - Konwertować częstotliwość do MIDI i do pitch UltraStar dopiero po filtracji.
+- Zapisać wersję torchcrepe, PyTorch/CUDA, progi i parametry filtracji w `pitch.notes.json`.
 
 ## 7. Łączenie tekstu z nutami
 
@@ -158,6 +165,7 @@ Reguły startowe:
 Wyjście:
 
 - `draft.arrangement.json`.
+- Szkic zawiera linie, `KaraokeToken` oraz `NoteEvent` w strukturze aktualnego `Arrangement`.
 
 ## 8. Edycja ręczna
 
@@ -171,7 +179,8 @@ Użytkownik zatwierdza:
 
 Wynik:
 
-- `review.approved.json`.
+- Jeden aktualny stan edycji zapisany w Postgresie.
+- `review.approved.json` jest zapisywany albo aktualizowany po zatwierdzeniu edycji i nie oznacza trwałej historii wersji.
 
 ## 9. Eksport
 
@@ -188,7 +197,7 @@ Osobna akcja `Wyeksportuj projekt` generuje ZIP projektu:
 
 - ZIP projektu zawiera cały `Job`: oryginalny plik, artefakty wszystkich wykonanych etapów, zapis edycji, ustawienia modeli, metadane, raporty walidacji i pliki JSON potrzebne do odtworzenia projektu.
 - ZIP projektu musi zawierać wszystkie składowe wymagane do odtworzenia stanu bez ponownego uruchamiania przetwarzania.
-- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja usuwa lokalny `Job` oraz wszystkie jego artefakty.
+- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia TTL retencji lokalnego `Job` i artefaktów na 24 godziny.
 
 ## 10. Ponowny import projektu z ZIP-a
 

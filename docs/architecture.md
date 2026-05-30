@@ -2,7 +2,7 @@
 
 ## Widok ogólny
 
-Aplikacja działa w Dockerze i składa się z interfejsu webowego, backendu API, kolejki zadań, workerów AI używających GPU, magazynu artefaktów, eksportera paczek karaoke oraz eksportera/importera projektu. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Ewentualne zabezpieczenia sieciowe są poza zakresem MVP i mogą zostać zaprojektowane później.
+Aplikacja działa w Dockerze i składa się z interfejsu webowego React, backendu API w Pythonie/FastAPI, kolejki zadań Redis, bazy Postgres, workerów AI używających GPU, magazynu artefaktów na wolumenie danych, eksportera paczek karaoke oraz eksportera/importera projektu. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Przy wystawieniu w sieci MVP nadal nie dodaje auth, dlatego upload ma limit 500 MB oraz walidację rozszerzenia, MIME i `ffprobe`.
 
 Każde przetwarzanie utworu jest reprezentowane jako `Job`, który przechodzi przez jawne statusy i zapisuje pośrednie artefakty.
 
@@ -38,13 +38,16 @@ Project ZIP Import
 - Pokazuje status zadania i błędy.
 - Udostępnia edytor tekstu, sylab, fraz, nut i timingów.
 - Pozwala odsłuchać oryginał, wokal i instrumental.
-- Uruchamia eksport jednej lub wielu paczek karaoke ZIP po zatwierdzeniu wersji finalnej.
+- Uruchamia eksport jednej lub wielu paczek karaoke ZIP po zatwierdzeniu aktualnego stanu edycji.
 - Udostępnia osobną akcję `Wyeksportuj projekt`, która pakuje pełny `Job` do ZIP-a projektu.
 - Stosuje design system RetroWave opisany w [UI.md](UI.md) dla kolorów, typografii, komponentów i stanów.
 
 ### Backend API
 
+- Jest aplikacją Python/FastAPI.
 - Waliduje upload i metadane.
+- Odrzuca upload większy niż 500 MB.
+- Waliduje rozszerzenie, MIME oraz wynik `ffprobe`, żeby przyjmować tylko faktyczne pliki audio albo kontenery z obsługiwaną ścieżką audio.
 - Tworzy `Job`.
 - Obsługuje import projektu z ZIP-a projektu.
 - Obsługuje eksport projektu jako ZIP zawierający pełny `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
@@ -53,8 +56,20 @@ Project ZIP Import
 - Nie wykonuje ciężkich obliczeń synchronicznie w żądaniu HTTP.
 - Nie implementuje logowania ani autoryzacji użytkowników w MVP, także przy wystawieniu aplikacji w sieci.
 
+Minimalne API MVP:
+
+- `POST /api/jobs/uploads`: upload audio, metadanych, covera i profili modeli.
+- `POST /api/projects/import`: import ZIP-a projektu.
+- `GET /api/jobs/{jobId}`: status, metadane, błędy i aktualny etap pipeline'u.
+- `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu audio.
+- `PUT /api/jobs/{jobId}/arrangement`: zapis aktualnego `Arrangement`.
+- `POST /api/jobs/{jobId}/exports/validate`: walidacja przed eksportem.
+- `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej albo wielu paczek karaoke.
+- `POST /api/jobs/{jobId}/exports/project`: eksport ZIP-a projektu i ustawienie TTL retencji.
+
 ### Kolejka i orkiestracja
 
+- Używa Redis jako kolejki i mechanizmu koordynacji workerów.
 - Zapewnia pojedynczy punkt kontroli dla zadań GPU.
 - Pozwala wznowić zadanie od ostatniego poprawnego artefaktu.
 - Przechowuje parametry modeli użyte dla danego wyniku.
@@ -72,11 +87,18 @@ Project ZIP Import
 
 ### Magazyn artefaktów
 
-- Przechowuje oryginalny plik, znormalizowane audio, stems, transkrypcję, pitch frames, nuty, wersje edycji i eksporty.
+- Przechowuje oryginalny plik, znormalizowane audio, stems, transkrypcję, pitch frames, nuty, aktualny stan edycji i eksporty.
 - Każdy artefakt ma typ, hash, czas utworzenia i parametry procesu.
 - Pliki audio użytkownika nie powinny trafiać do repozytorium.
-- Po pomyślnym eksporcie projektu usuwa lokalny rekord `Job`, oryginalny plik oraz wszystkie artefakty tego zadania. ZIP projektu jest wtedy jedyną kopią potrzebną do późniejszego importu.
+- Po pomyślnym eksporcie projektu ustawia `cleanupEligibleAt` na 24 godziny po eksporcie. Lokalny rekord `Job`, oryginalny plik i artefakty mogą zostać usunięte dopiero po upływie tego TTL.
 - Zwykły eksport paczek karaoke nie usuwa automatycznie `Job` ani artefaktów.
+
+### Warstwa trwałości
+
+- Postgres przechowuje rekordy `Job`, metadane, statusy, wybory eksportu, diagnostykę etapów i aktualny `Arrangement`.
+- Redis przechowuje kolejkę zadań i krótkotrwałe blokady koordynujące workery GPU.
+- Wolumen danych aplikacji przechowuje pliki audio, artefakty workerów, ZIP-y eksportu i manifesty projektu.
+- Modele i cache modeli są poza repozytorium aplikacji.
 
 ## Statusy zadania
 
@@ -99,7 +121,7 @@ Project ZIP Import
 
 - Czas przetwarzania jest akceptowalny jako proces asynchroniczny.
 - Wynik AI zawsze wymaga możliwości ręcznej korekty.
-- Każda wersja wyniku musi być odtwarzalna z zapisanych parametrów.
+- Aktualny wynik i każdy zapisany artefakt muszą być odtwarzalne z zapisanych parametrów.
 - GPU jest zasobem limitowanym, więc zadania powinny być kolejkowane.
 - Tryb CPU jest awaryjny i może być wyłączony dla dużych modeli.
 - Aplikacja nie korzysta z zewnętrznych API; modele i narzędzia działają lokalnie.

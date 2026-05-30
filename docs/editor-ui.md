@@ -19,6 +19,7 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Wskazówka: dla utworów wielojęzycznych zostaw język pusty, żeby Whisper sam wykrył język.
 - Wybór modelu separacji: szybszy `htdemucs` albo dokładniejszy `htdemucs_ft`.
 - Wybór modelu transkrypcji: szybszy `large-v3-turbo` albo dokładniejszy `large-v3`.
+- Zaawansowane ustawienia pitch: próg ciszy, próg periodicity, krok ramek, minimalna długość nuty i scalanie krótkich przerw.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
 - Podgląd covera jest widoczny od razu po wykryciu grafiki z tagów albo po ręcznym wgraniu pliku.
 - Jeśli użytkownik nie wgra covera, eksportowana paczka nie zawiera covera.
@@ -77,7 +78,7 @@ Pitch:
 Akcje globalne:
 
 - Undo/redo.
-- Zapis wersji roboczej.
+- Zapis aktualnego stanu roboczego.
 - Walidacja przed eksportem.
 - Eksport po zatwierdzeniu.
 - Wyeksportuj projekt.
@@ -98,7 +99,7 @@ Edytor powinien wizualnie oznaczać:
 
 - Odtwarzanie musi być zsynchronizowane z waveformem i piano rollem.
 - Najczęstsze korekty powinny dać się wykonać bez opuszczania głównego widoku.
-- Edycje muszą być zapisywane jako wersje, żeby można było wrócić do poprzedniego stanu.
+- MVP utrwala tylko jeden aktualny stan edycji; undo/redo działa sesyjnie w otwartym edytorze i nie musi przetrwać odświeżenia strony.
 - Interfejs powinien obsługiwać długie utwory bez renderowania całej osi czasu naraz.
 - Tekst w przyciskach i panelach nie może nachodzić na inne elementy przy małej szerokości ekranu.
 - MVP nie wymaga widoku porównania oryginalnego wyniku AI z poprawioną wersją.
@@ -117,7 +118,7 @@ Edytor powinien wizualnie oznaczać:
 - Jeśli cover nie jest ustawiony, eksport przebiega bez covera.
 - ZIP-y dla różnych profili eksportu mają różne nazwy, ale katalog i pliki wewnątrz używają tego samego schematu nazw.
 - Osobna akcja `Wyeksportuj projekt` generuje ZIP zawierający cały `Job`, oryginalny plik, artefakty i manifesty JSON potrzebne do odtworzenia projektu.
-- Przed akcją `Wyeksportuj projekt` UI powinien jasno poinformować, że po udanym eksporcie lokalny `Job` i artefakty zostaną usunięte.
+- Przed akcją `Wyeksportuj projekt` UI powinien jasno poinformować, że po udanym eksporcie lokalny `Job` i artefakty pozostaną dostępne przez 24 godziny, a potem mogą zostać usunięte przez mechanizm czyszczenia.
 
 ## Minimalna walidacja przed eksportem
 

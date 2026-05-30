@@ -89,6 +89,13 @@ Metryki:
 - Czas przetwarzania na minutę audio.
 - Zużycie VRAM.
 
+## Pinowanie i manifesty
+
+- Wersje Demucs, WhisperX, torchcrepe, Essentia, FFmpeg, PyTorch, CUDA oraz wybrane identyfikatory modeli muszą być zapisane w artefaktach etapów i w ZIP-ie projektu.
+- Cache modeli musi znajdować się poza repozytorium aplikacji, najlepiej na osobnym wolumenie danych.
+- Worker powinien zapisać parametry wejścia audio, device, batch/segment, progi filtracji i hash wejścia, żeby wynik dało się odtworzyć albo zdiagnozować bez zgadywania konfiguracji.
+- Przy braku pamięci GPU worker separacji może wykonać jedną automatyczną próbę z mniejszym segmentem; kolejne niepowodzenie jest błędem infrastruktury widocznym w statusie `Job`.
+
 ## Źródła
 
 - Demucs: https://github.com/facebookresearch/demucs
