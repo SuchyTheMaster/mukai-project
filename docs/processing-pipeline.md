@@ -164,8 +164,9 @@ Reguły startowe:
 
 Wyjście:
 
-- `draft.arrangement.json`.
-- Szkic zawiera linie, `KaraokeToken` oraz `NoteEvent` w strukturze aktualnego `Arrangement`.
+- `draft.arrangement.json` jako artefakt szkicu.
+- Aktualny `Arrangement` w Postgresie zainicjalizowany na podstawie szkicu.
+- Szkic zawiera linie, `KaraokeToken` oraz `NoteEvent` w strukturze `Arrangement`.
 
 ## 8. Edycja ręczna
 
@@ -180,7 +181,7 @@ Użytkownik zatwierdza:
 Wynik:
 
 - Jeden aktualny stan edycji zapisany w Postgresie.
-- `review.approved.json` jest zapisywany albo aktualizowany po zatwierdzeniu edycji i nie oznacza trwałej historii wersji.
+- Zatwierdzony `Arrangement` pozostaje w Postgresie; przy eksporcie projektu jest serializowany do `mukai-project.json`.
 
 ## 9. Eksport
 
@@ -197,7 +198,7 @@ Osobna akcja `Wyeksportuj projekt` generuje ZIP projektu:
 
 - ZIP projektu zawiera cały `Job`: oryginalny plik, artefakty wszystkich wykonanych etapów, zapis edycji, ustawienia modeli, metadane, raporty walidacji i pliki JSON potrzebne do odtworzenia projektu.
 - ZIP projektu musi zawierać wszystkie składowe wymagane do odtworzenia stanu bez ponownego uruchamiania przetwarzania.
-- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia TTL retencji lokalnego `Job` i artefaktów na 24 godziny.
+- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia TTL retencji lokalnego `Job` i artefaktów na 24 godziny oraz przywraca status `awaiting_review`.
 
 ## 10. Ponowny import projektu z ZIP-a
 
@@ -208,7 +209,7 @@ Wejście:
 Zasady:
 
 - Import przyjmuje archiwum ZIP projektu, a nie pojedynczy plik JSON.
-- Manifesty JSON w ZIP-ie zawierają pełną edycję, ustawienia modeli, metadane, wykryte BPM, transkrypcję, czasy, pitch/nuty, wybory eksportu i listę artefaktów z hashami.
+- Manifesty JSON w ZIP-ie zawierają pełną edycję zserializowaną z Postgresa, ustawienia modeli, metadane, `Tempo`, transkrypcję, czasy, pitch/nuty, wybory eksportu i listę artefaktów z hashami.
 - Import odtwarza stan tak, jakby pliki były już wgrane i przetworzone przez poszczególne etapy pipeline'u.
 - Import nie uruchamia ponownie normalizacji audio, BPM, separacji, transkrypcji, alignacji, czasów ani pitch detection.
 - Jeśli ZIP projektu nie zawiera wymaganej składowej albo hash artefaktu się nie zgadza, import kończy się błędem zamiast próbować odtwarzać brakujący etap.

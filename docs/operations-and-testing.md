@@ -26,14 +26,14 @@ Minimalne dane diagnostyczne zadania:
 
 ## Przechowywanie plików
 
-- Pliki audio użytkownika przechowywać w katalogu danych aplikacji, nie w repozytorium.
-- Artefakty zadań powinny mieć TTL albo ręczny mechanizm czyszczenia.
+- Pliki audio użytkownika, artefakty, eksporty oraz cache modeli przechowywać na wolumenie Docker poza repozytorium aplikacji.
+- Artefakty zadań muszą mieć TTL albo ręczny mechanizm czyszczenia.
 - Po eksporcie projektu domyślny TTL lokalnego `Job` i artefaktów wynosi 24 godziny.
-- Eksport powinien być odtwarzalny z `review.approved.json`.
-- Paczki karaoke ZIP nie powinny zawierać `mukai-project.json` ani innych danych projektu.
-- Osobny ZIP projektu z akcji `Wyeksportuj projekt` powinien zawierać pełny `Job`, oryginalny plik, artefakty, manifest `mukai-project.json`, ustawienia modeli, metadane, wybory eksportu, BPM, transkrypcję, czasy i pitch/nuty.
+- Eksport powinien być odtwarzalny z zatwierdzonego `Arrangement` w Postgresie oraz jego serializacji w `mukai-project.json`.
+- Paczki karaoke ZIP nie mogą zawierać `mukai-project.json` ani innych danych projektu.
+- Osobny ZIP projektu z akcji `Wyeksportuj projekt` musi zawierać pełny `Job`, oryginalny plik, artefakty, manifest `mukai-project.json`, ustawienia modeli, metadane, wybory eksportu, `Tempo`, transkrypcję, czasy i pitch/nuty.
 - Po pomyślnym eksporcie projektu lokalny rekord `Job`, oryginalny plik i artefakty tego zadania mogą zostać usunięte dopiero po upływie TTL.
-- Import ZIP-a projektu nie powinien ponownie uruchamiać normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
+- Import ZIP-a projektu nie może ponownie uruchamiać normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
 - W logach nie zapisywać pełnych ścieżek użytkownika, jeśli mogą ujawniać dane prywatne.
 
 ## Upload i ekspozycja sieciowa
@@ -49,6 +49,8 @@ Minimalne dane diagnostyczne zadania:
 - Sprawdzić, czy nie ma sprzecznych nazw statusów i artefaktów.
 - Sprawdzić, czy dokumenty nie zawierają sprzecznych zasad usuwania joba po eksporcie projektu.
 - Sprawdzić, czy dokumenty opisują jeden aktualny stan edycji i sesyjne undo/redo zamiast trwałej historii wersji.
+- Sprawdzić, czy `review.approved.json` nie występuje jako źródło prawdy aktywnego `Arrangement`.
+- Sprawdzić, czy wzory eksportu używają `acceptedSongBpm` i `gapMs`, a nie wykrytego BPM.
 - Sprawdzić, czy linki do źródeł są aktualne.
 - Sprawdzić, czy dokumenty frontendowe odwołują się do [UI.md](UI.md) jako źródła design systemu.
 
@@ -57,9 +59,11 @@ Minimalne dane diagnostyczne zadania:
 - Konwersja `seconds -> UltraStar beats`.
 - Konwersja `MIDI -> UltraStar pitch`.
 - Walidacja uploadu: limit 500 MB, MIME, rozszerzenie i `ffprobe`.
-- Walidacja wykrytego muzycznego BPM i wynikowego `#BPM` UltraStar.
+- Walidacja `acceptedSongBpm`/`gapMs -> UltraStar beats`.
+- Walidacja wykrytego muzycznego BPM, zaakceptowanego BPM i wynikowego `#BPM` UltraStar.
 - Walidacja `Arrangement`.
 - Walidacja `ExportSelection`.
+- Walidacja profili tagów UltraStar, w tym fallbacku `#MP3` dla UltraStar Deluxe.
 - Walidacja kompletności ZIP-a projektu, manifestu `mukai-project.json` i hashy artefaktów.
 - Walidacja, że import nie przyjmuje pojedynczego `mukai-project.json` jako samodzielnego formatu MVP.
 - Serializacja i migracje kontraktów JSON.
@@ -79,15 +83,17 @@ Minimalne dane diagnostyczne zadania:
 - Eksport ZIP dla UltraStar Deluxe, UltraStar Play i Vocaluxe.
 - Eksport wariantu z oryginalnym audio i wariantu instrumentalnego.
 - Weryfikacja, że różne profile eksportu zmieniają nazwę ZIP, ale nie zmieniają bazowej nazwy katalogu i plików wewnątrz paczki.
+- Weryfikacja, że po udanym eksporcie karaoke `Job` wraca do `awaiting_review`.
 - Weryfikacja, że paczki karaoke nie zawierają `mukai-project.json`.
 - Eksport ZIP-a projektu przez `Wyeksportuj projekt`.
+- Weryfikacja, że po udanym eksporcie projektu `Job` wraca do `awaiting_review`.
 - Weryfikacja, że po udanym eksporcie projektu lokalny `Job` i artefakty mają ustawiony TTL 24h.
 - Weryfikacja, że mechanizm czyszczenia usuwa lokalny `Job` i artefakty dopiero po upływie TTL.
 - Ponowny import ZIP-a projektu bez uruchamiania normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
 - Ponowny import ZIP-a projektu z brakującym artefaktem i oczekiwany błąd walidacji.
 - Eksport bez covera.
 - Eksport instrumentalny z tagami `#AUDIO`, `#VOCALS` i `#INSTRUMENTAL`.
-- Eksport profili UltraStar Deluxe, UltraStar Play i Vocaluxe z właściwymi tagami kompatybilności.
+- Eksport profili UltraStar Deluxe, UltraStar Play i Vocaluxe z właściwymi tagami kompatybilności, w tym `#MP3` jako fallback dla UltraStar Deluxe.
 
 ## Przyszłe testy manualne
 

@@ -47,7 +47,7 @@ Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lo
 - Backend API: Python/FastAPI.
 - Baza danych: Postgres dla `Job`, metadanych, aktualnego `Arrangement` i wyborów eksportu.
 - Kolejka i koordynacja workerów: Redis.
-- Artefakty: wolumen Docker poza repozytorium aplikacji.
+- Pliki audio, artefakty, eksporty i cache modeli: wolumen Docker poza repozytorium aplikacji.
 - Edycja: MVP utrwala tylko aktualny stan; undo/redo działa sesyjnie w edytorze.
 
 ## Dokumenty

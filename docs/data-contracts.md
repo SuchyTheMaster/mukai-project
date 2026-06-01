@@ -7,7 +7,8 @@
 - Każdy artefakt AI ma zapisaną wersję modelu, parametry i hash wejścia.
 - Edycje użytkownika są osobną warstwą względem wyników AI.
 - MVP utrwala tylko aktualny stan edycji `Arrangement`; historia undo/redo jest sesyjna po stronie edytora i nie jest kontraktem trwałego storage.
-- Rekordy `Job`, metadane, wybory eksportu i aktualny `Arrangement` są przechowywane w Postgresie, a pliki artefaktów w katalogu danych aplikacji poza repozytorium.
+- Rekordy `Job`, metadane, wybory eksportu i aktualny `Arrangement` są przechowywane w Postgresie, a pliki audio, artefakty, eksporty oraz cache modeli są przechowywane na wolumenie Docker poza repozytorium.
+- Pola BPM i `#GAP` należą do kontraktu `Tempo`; nie duplikować ich w `Job.metadata`.
 
 ## Job
 
@@ -21,9 +22,7 @@
     "title": "Song Title",
     "artist": "Artist",
     "language": "pl",
-    "languageMode": "forced",
-    "detectedSongBpm": 123.45,
-    "ultrastarBpm": 493.8
+    "languageMode": "forced"
   },
   "profiles": {
     "separationModel": "htdemucs_ft",
@@ -165,7 +164,7 @@
 }
 ```
 
-`KaraokeToken` żyje jako część aktualnego `Arrangement`; w manifeście projektu jest reprezentowany w `arrangement.tokens`. Token może mieć pusty `text` tylko wtedy, gdy `isExtension` ma wartość `true` i `extendsTokenId` wskazuje token, którego sylabę albo samogłoskę przedłuża.
+`KaraokeToken` żyje jako część aktualnego `Arrangement`; w manifeście projektu jest reprezentowany w `arrangement.tokens`. Token może mieć pusty `text` tylko wtedy, gdy `isExtension` ma wartość `true` i `extendsTokenId` wskazuje token, którego sylabę albo samogłoskę przedłuża. Eksporter nie tworzy tekstu przedłużeń heurystycznie.
 
 ## ExportSelection
 
@@ -268,6 +267,8 @@ ZIP projektu musi pozwalać kontynuować pracę bez ponownego uruchamiania norma
 }
 ```
 
+W `MukaiProject` pola najwyższego poziomu `pitchFrames` i `noteEvents` przechowują wynik AI przed ręczną korektą, a `arrangement` przechowuje serializowany aktualny stan edycji z Postgresa.
+
 Import:
 
 - Import przyjmuje ZIP projektu utworzony przez opcję `Wyeksportuj projekt`.
@@ -300,6 +301,15 @@ Import:
 
 `revision` służy do kontroli współbieżnego zapisu aktualnego stanu i nie oznacza trwałej historii wersji. Eksporter używa aktualnego zatwierdzonego `Arrangement`, jego `tokens` oraz `noteEvents`.
 
+Aktywny `Arrangement` jest przechowywany wyłącznie w Postgresie. `mukai-project.json` zawiera jego serializowany snapshot na potrzeby eksportu projektu i późniejszego importu; ten snapshot nie jest osobnym źródłem prawdy podczas pracy nad aktywnym `Job`.
+
+## Semantyka statusów eksportu
+
+- `exporting` i `exporting_project` są statusami przejściowymi.
+- Po udanym eksporcie paczek karaoke `Job` wraca do `awaiting_review`, a ZIP-y i raport walidacji są zapisywane jako artefakty eksportu.
+- Po udanym eksporcie projektu `Job` wraca do `awaiting_review` i ma ustawione `projectExportedAt`, `cleanupEligibleAt` oraz `cleanupReason`.
+- `completed` jest statusem zarezerwowanym poza normalnym flow MVP i nie jest ustawiany po zwykłym eksporcie karaoke ani po eksporcie projektu.
+
 ## Artefakty wymagane według statusu
 
 Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pracy:
@@ -313,10 +323,10 @@ Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pr
 | `transcribing` | artefakty statusu `separating_vocals`, `vocals.wav`, `instrumental.wav`, `separation.json`, `worker_inputs/whisperx.wav`, `worker_inputs/torchcrepe.wav` |
 | `detecting_pitch` | artefakty statusu `transcribing`, `transcript.raw.json`, `transcript.aligned.json` |
 | `aligning` | artefakty statusu `detecting_pitch`, `pitch.frames.json`, `pitch.notes.json` |
-| `awaiting_review` | artefakty statusu `aligning`, `draft.arrangement.json` zawierający linie, tokeny i nuty |
+| `awaiting_review` | artefakty statusu `aligning`, aktualny `Arrangement` w Postgresie |
 | `exporting` | artefakty statusu `awaiting_review`, aktualny zatwierdzony `Arrangement` |
 | `exporting_project` | artefakty wymagane dla bieżącego statusu `Job` oraz manifest eksportu projektu |
-| `completed` | artefakty ostatniego ukończonego etapu, raport walidacji eksportu jeśli wykonano eksport |
+| `completed` | status zarezerwowany poza normalnym flow MVP; jeśli zostanie użyty później, wymaga artefaktów ostatniego ukończonego etapu |
 | `failed` / `cancelled` | artefakty ostatniego poprawnie zakończonego etapu oraz diagnostyka błędu, jeśli istnieje |
 
 ## Typy nut

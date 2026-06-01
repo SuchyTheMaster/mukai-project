@@ -2,7 +2,7 @@
 
 ## Widok ogólny
 
-Aplikacja działa w Dockerze i składa się z interfejsu webowego React, backendu API w Pythonie/FastAPI, kolejki zadań Redis, bazy Postgres, workerów AI używających GPU, magazynu artefaktów na wolumenie danych, eksportera paczek karaoke oraz eksportera/importera projektu. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Przy wystawieniu w sieci MVP nadal nie dodaje auth, dlatego upload ma limit 500 MB oraz walidację rozszerzenia, MIME i `ffprobe`.
+Aplikacja działa w Dockerze i składa się z interfejsu webowego React, backendu API w Pythonie/FastAPI, kolejki zadań Redis, bazy Postgres, workerów AI używających GPU, magazynu artefaktów na wolumenie Docker poza repozytorium, eksportera paczek karaoke oraz eksportera/importera projektu. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Przy wystawieniu w sieci MVP nadal nie dodaje auth, dlatego upload ma limit 500 MB oraz walidację rozszerzenia, MIME i `ffprobe`.
 
 Każde przetwarzanie utworu jest reprezentowane jako `Job`, który przechodzi przez jawne statusy i zapisuje pośrednie artefakty.
 
@@ -64,8 +64,8 @@ Minimalne API MVP:
 - `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu audio.
 - `PUT /api/jobs/{jobId}/arrangement`: zapis aktualnego `Arrangement`.
 - `POST /api/jobs/{jobId}/exports/validate`: walidacja przed eksportem.
-- `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej albo wielu paczek karaoke.
-- `POST /api/jobs/{jobId}/exports/project`: eksport ZIP-a projektu i ustawienie TTL retencji.
+- `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej albo wielu paczek karaoke; po sukcesie `Job` wraca do `awaiting_review`.
+- `POST /api/jobs/{jobId}/exports/project`: eksport ZIP-a projektu, ustawienie TTL retencji i powrót `Job` do `awaiting_review`.
 
 ### Kolejka i orkiestracja
 
@@ -87,7 +87,7 @@ Minimalne API MVP:
 
 ### Magazyn artefaktów
 
-- Przechowuje oryginalny plik, znormalizowane audio, stems, transkrypcję, pitch frames, nuty, aktualny stan edycji i eksporty.
+- Przechowuje oryginalny plik, znormalizowane audio, stems, transkrypcję, pitch frames, nuty, eksporty i snapshoty wymagane przez ZIP projektu.
 - Każdy artefakt ma typ, hash, czas utworzenia i parametry procesu.
 - Pliki audio użytkownika nie powinny trafiać do repozytorium.
 - Po pomyślnym eksporcie projektu ustawia `cleanupEligibleAt` na 24 godziny po eksporcie. Lokalny rekord `Job`, oryginalny plik i artefakty mogą zostać usunięte dopiero po upływie tego TTL.
@@ -97,8 +97,7 @@ Minimalne API MVP:
 
 - Postgres przechowuje rekordy `Job`, metadane, statusy, wybory eksportu, diagnostykę etapów i aktualny `Arrangement`.
 - Redis przechowuje kolejkę zadań i krótkotrwałe blokady koordynujące workery GPU.
-- Wolumen danych aplikacji przechowuje pliki audio, artefakty workerów, ZIP-y eksportu i manifesty projektu.
-- Modele i cache modeli są poza repozytorium aplikacji.
+- Wolumen Docker poza repozytorium przechowuje pliki audio, artefakty workerów, ZIP-y eksportu, manifesty projektu, modele i cache modeli.
 
 ## Statusy zadania
 
@@ -113,9 +112,11 @@ Minimalne API MVP:
 - `exporting`
 - `exporting_project`
 - `importing_project`
-- `completed`
+- `completed` (poza normalnym flow MVP)
 - `failed`
 - `cancelled`
+
+`exporting` i `exporting_project` są statusami przejściowymi. Po udanym eksporcie paczek karaoke albo ZIP-a projektu `Job` wraca do `awaiting_review`; eksport projektu dodatkowo ustawia pola retencji. `completed` jest zarezerwowany na przyszłe przepływy i nie jest ustawiany po zwykłym eksporcie w MVP.
 
 ## Założenia niefunkcjonalne
 

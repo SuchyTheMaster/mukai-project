@@ -67,6 +67,12 @@ Nagłówki dla wariantu `original_audio`:
 #GAP:12345
 ```
 
+Dodatkowy fallback dla profilu `ultrastar_deluxe`:
+
+```text
+#MP3:Artist - Song Title.mp3
+```
+
 Opcjonalne nagłówki dla wariantu `original_audio`:
 
 ```text
@@ -89,6 +95,12 @@ Nagłówki dla wariantu `instrumental`:
 #GAP:12345
 ```
 
+Dodatkowy fallback dla profilu `ultrastar_deluxe`:
+
+```text
+#MP3:Artist - Song Title.mp3
+```
+
 Opcjonalne nagłówki dla wariantu `instrumental`:
 
 ```text
@@ -98,7 +110,11 @@ Opcjonalne nagłówki dla wariantu `instrumental`:
 #COMMENT:Generated draft reviewed in Mukai
 ```
 
-Domyślny profil MVP używa nowych tagów `#AUDIO`, `#VOCALS`, `#INSTRUMENTAL`. Decyzja o wygenerowaniu starszego tagu `#MP3` należy do profilu kompatybilności konkretnego odtwarzacza i musi wynikać z testów zgodności.
+Polityka tagów MVP:
+
+- UltraStar Play i Vocaluxe używają `#AUDIO` jako głównego tagu playback.
+- UltraStar Deluxe używa `#AUDIO` oraz fallbacku `#MP3` wskazującego ten sam plik MP3.
+- Wariant instrumentalny używa `#INSTRUMENTAL` dla instrumentalnego playbacku i `#VOCALS` dla osobnego stemu wokalu.
 
 Warianty audio:
 
@@ -116,8 +132,9 @@ Aplikacja wykrywa realne BPM utworu, ale do tagu `#BPM` eksportuje BPM UltraStar
 Definicje:
 
 ```text
-song_bpm = detected_song_bpm
-ultrastar_bpm = song_bpm * 4
+song_bpm = acceptedSongBpm
+ultrastar_bpm = acceptedSongBpm * 4
+gap_ms = gapMs
 beat_ms = 60000 / ultrastar_bpm
 start_beat = round((start_sec * 1000 - gap_ms) / beat_ms)
 length_beats = max(1, round((end_sec - start_sec) * 1000 / beat_ms))
@@ -125,10 +142,10 @@ length_beats = max(1, round((end_sec - start_sec) * 1000 / beat_ms))
 
 Rekomendacja MVP:
 
-- Wykryć realne BPM utworu.
-- Wyliczyć `#BPM` jako UltraStar BPM na podstawie wykrytego BPM utworu.
-- Pozwolić użytkownikowi poprawić BPM przed eksportem; UI powinien jasno pokazać realne BPM i wynikowe `#BPM`.
-- Ustawić `#GAP` na czas startu pierwszej zatwierdzonej nuty w milisekundach.
+- Wykryć realne BPM utworu i zapisać je jako `Tempo.detectedSongBpm`.
+- Wyliczyć `#BPM` jako UltraStar BPM na podstawie `Tempo.acceptedSongBpm`.
+- Pozwolić użytkownikowi poprawić BPM przed eksportem; UI musi jasno pokazać wykryte BPM, zaakceptowane BPM i wynikowe `#BPM`.
+- Użyć `Tempo.gapMs` jako `#GAP`; domyślnie jest to czas startu pierwszej zatwierdzonej nuty w milisekundach.
 - Eksportować absolutne beaty bez `#RELATIVE`.
 
 Jeśli detekcja BPM jest niepewna, UI powinien oznaczyć ją do sprawdzenia, ale nie blokować eksportu, o ile użytkownik zaakceptuje wartość.
@@ -191,7 +208,7 @@ E
 
 - Tekst tokenu nie może zawierać znaku nowej linii.
 - Spacje powinny być kontrolowane przez tokenizację eksportera.
-- Przedłużone sylaby mogą być reprezentowane jako kolejne tokeny bez nowego słowa albo przez konwencję uzgodnioną po testach z UltraStar.
+- Przedłużone sylaby są reprezentowane przez `KaraokeToken.isExtension=true` i `extendsTokenId`; eksporter nie zgaduje tekstu przedłużeń.
 - Znaki diakrytyczne są dozwolone dzięki UTF-8.
 
 ## Walidacja eksportu
@@ -199,11 +216,13 @@ E
 Eksporter musi zgłosić błąd, jeśli:
 
 - brakuje `TITLE`, `ARTIST`, `AUDIO`;
+- profil `ultrastar_deluxe` nie zawiera `#MP3`;
 - nuta ma długość mniejszą niż 1 beat;
 - frazy są poza kolejnością;
 - token nie ma przypisanego pitch;
 - wynikowy plik nie kończy się `E`.
 - tag `#VOCALS` albo `#INSTRUMENTAL` wskazuje plik, którego nie ma w paczce.
+- profil UltraStar Deluxe wygenerował `#MP3`, który nie wskazuje tego samego pliku co `#AUDIO`.
 
 Eksporter powinien zgłosić ostrzeżenie, jeśli:
 
@@ -216,13 +235,19 @@ Walidacja przez parser konkretnego odtwarzacza nie jest wymagana w MVP.
 
 ## Warianty kompatybilności
 
-Eksporter powinien mieć osobne profile dla:
+Eksporter musi mieć osobne profile dla:
 
 - UltraStar Deluxe;
 - UltraStar Play;
 - Vocaluxe.
 
-Profile mogą różnić się szczegółami tagów, w tym użyciem `#AUDIO`, `#MP3`, `#VOCALS` i `#INSTRUMENTAL`, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement`; dane projektu nie są zapisywane w paczkach karaoke. Każdy profil powinien mieć test kompatybilności z docelowym odtwarzaczem albo jasno opisane założenie, jeśli test manualny nie został jeszcze wykonany.
+Profile różnią się wyłącznie polityką tagów kompatybilności, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement`; dane projektu nie są zapisywane w paczkach karaoke. Każdy profil musi mieć test kompatybilności z docelowym odtwarzaczem albo jawnie opisane założenie, jeśli test manualny nie został jeszcze wykonany.
+
+Polityka profili:
+
+- `ultrastar_play`: generuje `#AUDIO`; w wariancie instrumentalnym dodatkowo `#INSTRUMENTAL` i `#VOCALS`.
+- `vocaluxe`: generuje `#AUDIO`; w wariancie instrumentalnym dodatkowo `#INSTRUMENTAL` i `#VOCALS`.
+- `ultrastar_deluxe`: generuje `#AUDIO` oraz fallback `#MP3` wskazujący ten sam plik; w wariancie instrumentalnym dodatkowo `#INSTRUMENTAL` i `#VOCALS`.
 
 Nazwa ZIP-a zawiera profil eksportu i wariant audio, np. `[ultrastar-deluxe original]`, `[ultrastar-play instrumental]`, `[vocaluxe original]`. Wewnętrzny katalog i nazwy plików zachowują tę samą nazwę bazową.
 
@@ -254,30 +279,29 @@ artifacts/
 ├── transcript.aligned.json
 ├── pitch.frames.json
 ├── pitch.notes.json
-├── draft.arrangement.json
-└── review.approved.json
+└── draft.arrangement.json
 exports/
 └── validation-report.json
 ```
 
 ZIP projektu musi zawierać:
 
-- pełną edycję użytkownika;
+- pełną edycję użytkownika zserializowaną z aktualnego `Arrangement` w Postgresie do `mukai-project.json`;
 - rekord `Job` ze statusem, datami, metadanymi i profilami modeli;
 - ustawienia modeli;
 - metadane;
 - wybory eksportu;
-- wykryte BPM i wynikowe `#BPM`;
+- `Tempo`, w tym `detectedSongBpm`, `acceptedSongBpm`, wynikowe `#BPM` i `gapMs`;
 - transkrypcję i czasy;
 - pitch frames, note events, karaoke tokens i finalny arrangement;
 - oryginalny plik źródłowy;
 - wszystkie artefakty zapisane dla `Job` i potrzebne do odtworzenia stanu po wykonanych etapach pipeline'u;
-- manifest artefaktów z typami, ścieżkami w archiwum, hashami, rozmiarami i czasami utworzenia.
+- manifest artefaktów z typami, ścieżkami w archiwum, hashami, rozmiarami i czasami utworzenia;
 - politykę retencji `projectExportRetentionHours: 24`.
 
 Jeśli `Job` nie ma jeszcze któregoś artefaktu, archiwum nie musi go sztucznie tworzyć. Musi jednak zawierać komplet artefaktów wymaganych dla statusu zapisanego w manifeście.
 
-Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia `cleanupEligibleAt` na 24 godziny po eksporcie. Lokalny `Job`, oryginalny plik, artefakty i eksporty zapisane dla tego zadania mogą zostać usunięte dopiero po upływie TTL.
+Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia `cleanupEligibleAt` na 24 godziny po eksporcie i przywraca status `Job` do `awaiting_review`. Lokalny `Job`, oryginalny plik, artefakty i eksporty zapisane dla tego zadania mogą zostać usunięte dopiero po upływie TTL.
 
 ## Import projektu
 
