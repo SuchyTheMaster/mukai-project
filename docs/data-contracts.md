@@ -67,6 +67,48 @@
 }
 ```
 
+## UploadInspection
+
+`UploadInspection` jest odpowiedzią z `POST /api/uploads/inspect`. Służy wyłącznie do wstępnego uzupełnienia formularza i nie tworzy `Job`.
+
+```json
+{
+  "uploadDraftId": "draft_01J...",
+  "originalFilename": "source-file.mp3",
+  "audio": {
+    "durationSec": 213.42,
+    "sampleRate": 44100,
+    "channels": 2,
+    "codec": "mp3",
+    "container": "mp3"
+  },
+  "metadata": {
+    "title": "Song Title",
+    "artist": "Artist",
+    "album": "Album",
+    "year": "2026",
+    "genre": "Pop",
+    "source": "audio_tags",
+    "tagEncoding": "utf16",
+    "missingFields": ["language"]
+  },
+  "embeddedCover": {
+    "coverDraftId": "cover_01J...",
+    "mimeType": "image/jpeg",
+    "sizeBytes": 123456,
+    "previewUrl": "/api/uploads/drafts/draft_01J/cover"
+  }
+}
+```
+
+Zasady:
+
+- `uploadDraftId` wskazuje tymczasowy wynik inspekcji i może zostać użyty przy `POST /api/jobs/uploads`.
+- `metadata` zawiera wyłącznie wartości odczytane z pliku; użytkownik może nadpisać je w formularzu przed utworzeniem `Job`.
+- `embeddedCover` ma wartość `null`, jeśli plik nie zawiera okładki.
+- Preflight musi poprawnie dekodować tagi UTF-8, UTF-16 oraz przypadki mieszane bez uszkadzania znaków narodowych.
+- Odczyt tagów powinien używać biblioteki metadanych audio, np. Mutagen; `ffprobe` nie jest jedynym źródłem tagów tekstowych ani covera.
+
 ## SourceMetadata
 
 ```json
@@ -77,9 +119,31 @@
   "year": "2026",
   "genre": "Pop",
   "source": "audio_tags",
+  "tagEncoding": "utf16",
   "missingFields": ["language"]
 }
 ```
+
+`tagEncoding`:
+
+- `utf8`: tagi tekstowe odczytano jako UTF-8.
+- `utf16`: tagi tekstowe odczytano jako UTF-16.
+- `mixed`: plik zawierał tagi w więcej niż jednym kodowaniu albo biblioteka metadanych raportuje mieszane źródła.
+- `unknown`: kodowanie nie jest dostępne, ale wartości zostały znormalizowane do tekstu aplikacji.
+
+## EmbeddedCover
+
+```json
+{
+  "coverDraftId": "cover_01J...",
+  "mimeType": "image/jpeg",
+  "sizeBytes": 123456,
+  "previewUrl": "/api/uploads/drafts/draft_01J/cover",
+  "source": "audio_tags"
+}
+```
+
+`EmbeddedCover` jest tymczasowym coverem wykrytym w tagach audio podczas preflightu. Jeśli użytkownik nie wskaże ręcznie innego covera, `POST /api/jobs/uploads` promuje go do normalnego assetu covera dla `Job`. Ręczny cover wskazany w formularzu ma pierwszeństwo przed `EmbeddedCover`.
 
 ## Tempo
 
@@ -316,7 +380,7 @@ Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pr
 
 | Status | Wymagane artefakty |
 | --- | --- |
-| `uploaded` | oryginalny plik źródłowy, `Job`, `SourceMetadata` jeśli wykryto tagi |
+| `uploaded` | oryginalny plik źródłowy, `Job`, `SourceMetadata` jeśli wykryto tagi, cover asset jeśli użyto covera z tagów albo ręcznego uploadu |
 | `preprocessing` | artefakty statusu `uploaded`, `audio_metadata.json`, `mix.wav`, `worker_inputs/bpm.wav`, opcjonalnie `worker_inputs/demucs.wav` |
 | `detecting_bpm` | artefakty statusu `preprocessing` |
 | `separating_vocals` | artefakty statusu `preprocessing`, `tempo.json` |

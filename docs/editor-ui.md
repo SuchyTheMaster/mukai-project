@@ -13,16 +13,21 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Pole wyboru pliku audio.
 - Obsługiwane formaty: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
 - Metadane: tytuł, artysta, opcjonalny język, opcjonalny rok/gatunek.
-- Jeśli plik audio zawiera metadane, formularz importu automatycznie uzupełnia dostępne pola.
-- Jeśli plik audio zawiera osadzony cover utworu albo albumu, formularz importu automatycznie ustawia go jako wstępny cover.
-- Jeśli metadane nie istnieją, pola pozostają puste do ręcznego uzupełnienia.
+- Po wyborze pliku audio frontend wysyła go do `POST /api/uploads/inspect`, żeby pobrać tagi, dane techniczne audio i osadzony cover przed utworzeniem `Job`.
+- Jeśli plik audio zawiera metadane, formularz automatycznie uzupełnia tytuł, artystę, album, rok i gatunek.
+- Tagi tekstowe muszą być poprawnie odczytane i pokazane niezależnie od tego, czy w pliku są zapisane jako UTF-8, UTF-16 czy mieszane kodowanie obsługiwane przez bibliotekę metadanych.
+- Każde pole uzupełnione z tagów pozostaje edytowalne i użytkownik może nadpisać wartość przed startem zadania.
+- Jeśli plik audio zawiera osadzony cover utworu albo albumu, formularz automatycznie ustawia go jako wstępny cover.
+- Cover z tagów jest widoczny tak samo jak cover wskazany z dysku: jest wybrany, pokazany w podglądzie i zostanie użyty w eksporcie, jeśli użytkownik go nie zastąpi.
+- Ręcznie wskazany cover zastępuje cover wykryty w tagach.
+- Jeśli metadane albo cover nie istnieją, pola pozostają do ręcznego uzupełnienia, a eksport bez covera pozostaje poprawny.
 - Wskazówka: dla utworów wielojęzycznych zostaw język pusty, żeby Whisper sam wykrył język.
 - Wybór modelu separacji: szybszy `htdemucs` albo dokładniejszy `htdemucs_ft`.
 - Wybór modelu transkrypcji: szybszy `large-v3-turbo` albo dokładniejszy `large-v3`.
 - Zaawansowane ustawienia pitch: próg ciszy, próg periodicity, krok ramek, minimalna długość nuty i scalanie krótkich przerw.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
 - Podgląd covera jest widoczny od razu po wykryciu grafiki z tagów albo po ręcznym wgraniu pliku.
-- Jeśli użytkownik nie wgra covera, eksportowana paczka nie zawiera covera.
+- Jeśli preflight nie wykrył covera i użytkownik nie wgra ręcznego covera, eksportowana paczka nie zawiera covera.
 - Informacja, że audio zostanie przekonwertowane lokalnie przez FFmpeg do formatów roboczych.
 - Start zadania.
 

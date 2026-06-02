@@ -24,6 +24,14 @@ Minimalne dane diagnostyczne zadania:
 - hash wejścia;
 - komunikat błędu bez prywatnych danych.
 
+## Powtarzalne buildy frontendu
+
+- Paczki Node w `package.json` muszą mieć przypięte konkretne wersje; nie używać `latest`.
+- `package-lock.json` jest częścią repozytorium i musi być aktualizowany razem ze zmianami zależności.
+- Dockerfile frontendu instaluje zależności przez `npm ci`, żeby build używał lockfile.
+- Po zmianie zależności albo konfiguracji frontendu testem akceptacyjnym jest `docker compose build frontend`.
+- Nie podbijać wersji zależności przez automatyczne `npm audit fix --force` bez osobnej decyzji, bo może to zmienić graf zależności i zachowanie builda.
+
 ## Przechowywanie plików
 
 - Pliki audio użytkownika, artefakty, eksporty oraz cache modeli przechowywać na wolumenie Docker poza repozytorium aplikacji.
@@ -41,6 +49,7 @@ Minimalne dane diagnostyczne zadania:
 - MVP nie dodaje wbudowanego logowania ani autoryzacji nawet przy wystawieniu aplikacji w sieci.
 - Maksymalny rozmiar uploadu to 500 MB.
 - Backend waliduje rozszerzenie, MIME oraz wynik `ffprobe`; pliki bez obsługiwanej ścieżki audio są odrzucane.
+- Backendowy preflight uploadu odczytuje tagi i osadzony cover przed utworzeniem `Job`; tagi muszą być poprawnie dekodowane dla UTF-8, UTF-16 i przypadków mieszanych.
 - Nazwy plików są normalizowane i nie mogą zawierać ścieżek ani znaków sterujących.
 
 ## Testy dokumentacji na obecnym etapie
@@ -53,12 +62,16 @@ Minimalne dane diagnostyczne zadania:
 - Sprawdzić, czy wzory eksportu używają `acceptedSongBpm` i `gapMs`, a nie wykrytego BPM.
 - Sprawdzić, czy linki do źródeł są aktualne.
 - Sprawdzić, czy dokumenty frontendowe odwołują się do [UI.md](UI.md) jako źródła design systemu.
+- Sprawdzić, czy dokumenty uploadu spójnie opisują `POST /api/uploads/inspect`, `UploadInspection`, `EmbeddedCover` i pierwszeństwo ręcznego covera.
+- Sprawdzić, czy dokumenty UI spójnie rozróżniają `docs/assets/` jako źródło pierwotne dla agenta i `frontend/public/brand/` jako katalog wynikowy dla aplikacji.
 
 ## Przyszłe testy jednostkowe
 
 - Konwersja `seconds -> UltraStar beats`.
 - Konwersja `MIDI -> UltraStar pitch`.
 - Walidacja uploadu: limit 500 MB, MIME, rozszerzenie i `ffprobe`.
+- Walidacja preflightu uploadu: odczyt tagów UTF-8, UTF-16 i mieszanych oraz brak uszkodzonych znaków narodowych.
+- Walidacja `EmbeddedCover`: wykrycie MIME, rozmiaru i promocja covera z tagów do assetu `Job`, jeśli użytkownik nie wskaże ręcznego covera.
 - Walidacja `acceptedSongBpm`/`gapMs -> UltraStar beats`.
 - Walidacja wykrytego muzycznego BPM, zaakceptowanego BPM i wynikowego `#BPM` UltraStar.
 - Walidacja `Arrangement`.
@@ -73,8 +86,13 @@ Minimalne dane diagnostyczne zadania:
 
 - Upload krótkiego pliku w każdym formacie: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
 - Odrzucenie uploadu większego niż 500 MB oraz pliku podszywającego się pod audio mimo niezgodnego `ffprobe`.
+- Preflight plików z tagami ID3 UTF-8, ID3 UTF-16, FLAC/Vorbis comments i MP4/M4A tags.
+- Preflight pliku z osadzonym coverem i weryfikacja, że ręczny cover zastępuje cover z tagów.
 - Konwersja FFmpeg do wejść workerów.
 - Uzupełnianie pól importu z metadanych audio.
+- Weryfikacja, że `docker compose build frontend` przechodzi na przypiętych wersjach zależności i `package-lock.json`.
+- Weryfikacja, że agent przygotowuje logo i favicon z materiałów źródłowych w `docs/assets/`, a frontend ładuje wynikowe pliki z `frontend/public/brand/`.
+- Weryfikacja, że brak wynikowych assetów aplikacyjnych nie psuje builda, jeśli branding nie jest jeszcze wdrażany.
 - Przejście przez pipeline na mockowanych workerach z Postgres i Redis.
 - Separacja Demucs na krótkim fragmencie testowym.
 - WhisperX na fragmencie wokalu z oczekiwanym językiem.
@@ -106,6 +124,7 @@ Minimalne dane diagnostyczne zadania:
 - Edycja frazy, zapis, odświeżenie strony i eksport.
 - Eksport z niestandardowym coverem.
 - Eksport bez covera.
+- Weryfikacja nagłówka `MuKaI - Music to Karaoke AI Creator` z logo przygotowanym ze źródła w `docs/assets/` i udostępnionym aplikacji w `frontend/public/brand/`.
 - Eksport projektu i weryfikacja ostrzeżenia, że lokalny `Job` oraz artefakty będą dostępne przez 24 godziny po sukcesie.
 - Import projektu z ZIP-a i weryfikacja, że edytor otwiera odtworzony stan bez ponownego przetwarzania.
 - Undo/redo działa w bieżącej sesji edytora, ale po odświeżeniu zostaje tylko aktualny zapisany stan.

@@ -5,25 +5,38 @@
 Wejście:
 
 - Plik audio: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
-- Metadane: tytuł, artysta, opcjonalny język, opcjonalny rok/gatunek.
+- Metadane: tytuł, artysta, opcjonalny język, opcjonalny album, rok i gatunek.
 - Profile modeli: separacja szybka albo dokładniejsza, transkrypcja szybka albo dokładniejsza.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
 - Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
 - Opcjonalny import ZIP-a projektu utworzonego przez opcję `Wyeksportuj projekt` jako kontynuacja wcześniejszej pracy.
+
+Preflight uploadu:
+
+- Po wyborze pliku frontend wysyła audio do `POST /api/uploads/inspect`.
+- Preflight nie tworzy `Job`, nie uruchamia pipeline'u i nie zapisuje trwałego stanu projektu.
+- Backend odczytuje tagi audio biblioteką metadanych, np. Mutagen; `ffprobe` pozostaje walidacją techniczną audio i źródłem danych takich jak czas trwania, kodek, sample rate i liczba kanałów.
+- Odczyt tagów musi obsługiwać co najmniej UTF-8, UTF-16 i pliki z mieszanymi tagami, tak żeby polskie znaki i inne znaki narodowe nie były uszkadzane w formularzu.
+- Jeśli tagi zawierają tytuł, artystę, album, rok albo gatunek, backend zwraca je jako `SourceMetadata`, a frontend wypełnia nimi formularz.
+- Jeśli tagi zawierają osadzony cover, backend zwraca go jako tymczasowy `EmbeddedCover`, a frontend pokazuje go jako wybrany cover importu.
+- Jeśli tagi albo cover nie istnieją, preflight kończy się sukcesem z pustymi polami do ręcznego uzupełnienia.
+
+Utworzenie zadania:
+
+- Po akceptacji formularza frontend wysyła `POST /api/jobs/uploads` z `uploadDraftId`, finalnymi metadanymi, profilami modeli, ustawieniami pitch i opcjonalnym ręcznym coverem.
+- Jeśli użytkownik nie wskaże ręcznie covera, a preflight wykrył osadzony cover, finalny `Job` używa covera z tagów jako covera importu.
+- Jeśli użytkownik wskaże ręczny cover, ręczny plik zastępuje cover z tagów.
+- Utworzenie `Job` zapisuje oryginalny plik jako artefakt niemodyfikowany i ustawia status `uploaded`.
 
 Walidacja:
 
 - Nie nakładać sztywnego limitu czasu trwania utworu na poziomie specyfikacji MVP.
 - Maksymalny rozmiar uploadu w MVP to 500 MB.
 - Backend waliduje rozszerzenie, MIME oraz wynik `ffprobe`; plik jest przyjmowany tylko wtedy, gdy zawiera obsługiwaną ścieżkę audio.
-- Backend zapisuje oryginał jako artefakt niemodyfikowany.
 - Nazwy plików eksportu są normalizowane i nie mogą zawierać ścieżek.
 - Jeśli użytkownik nie poda języka, detekcję języka pozostawić Whisperowi.
 - Jeśli utwór jest wielojęzyczny, ekran importu powinien sugerować pozostawienie języka pustego.
-- Jeśli plik audio zawiera metadane, aplikacja od razu uzupełnia odpowiednie pola formularza.
-- Jeśli plik audio zawiera osadzony cover, aplikacja od razu pokazuje jego podgląd i traktuje go jak domyślny cover importu.
-- Jeśli plik audio nie zawiera metadanych, pola pozostają do ręcznego uzupełnienia.
-- Jeśli użytkownik nie wgra covera, eksport nie zawiera covera.
+- Jeśli preflight nie wykrył covera i użytkownik nie wgra ręcznego covera, eksport nie zawiera covera.
 
 ## 2. Normalizacja audio
 

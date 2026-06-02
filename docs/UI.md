@@ -6,6 +6,28 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 
 ---
 
+## Branding / App Header
+
+- Główny nagłówek aplikacji pokazuje nazwę `MuKaI - Music to Karaoke AI Creator`.
+- Logo jest widoczne obok nazwy w głównym headerze pierwszego widoku i globalnego shellu aplikacji; nie może występować wyłącznie jako mała ikona w nawigacji.
+- Logo musi być skalowane do rozmiaru proporcjonalnego względem tekstu, przycisków i spacingu headera, także wtedy, gdy dostarczony oryginał jest duży.
+- Tekst alternatywny logo: `MuKaI - Music to Karaoke AI Creator`.
+- Header pozostaje zgodny z RetroWave: ciemne tło, neonowe akcenty, czytelny kontrast i brak jasnych powierzchni.
+- Jeśli logo nie zostało jeszcze dostarczone, UI może pokazać sam tekst nazwy albo prosty placeholder tekstowy, ale nie generuje zastępczego logo.
+
+## Brand Assets
+
+- `docs/assets/` jest katalogiem źródłowym dla materiałów marki dostarczonych agentowi do przygotowania UI.
+- Agent AI wdrażający UI ma najpierw sprawdzić `docs/assets/`, np. `docs/assets/logo.png`, i na tej podstawie przygotować assety używane przez aplikację.
+- Frontend nie importuje i nie linkuje bezpośrednio plików z `docs/assets/`; katalog ten nie jest źródłem runtime ani builda aplikacji.
+- Wynikowe assety aplikacyjne umieszczać w `frontend/public/brand/`.
+- Domyślna wynikowa nazwa logo: `frontend/public/brand/mukai-logo.png`.
+- Domyślna wynikowa nazwa favicony: `frontend/public/brand/favicon.png`.
+- Jeśli dostępnych jest kilka wariantów źródłowego logo, użyć wariantu PNG najlepiej pasującego do headera i zachować proporcjonalne skalowanie w UI.
+- Faviconę ładować z `frontend/public/brand/favicon.png`.
+- Nie generować ani nie zastępować logo, jeśli plik źródłowy nie został dostarczony w `docs/assets/`.
+- Brak logo albo favicony nie może powodować błędu builda.
+
 ## Colors
 
 - **Hot Pink** (#FF006E): Primary CTA, hero elements

@@ -30,7 +30,8 @@ Project ZIP Import
 ### Frontend
 
 - Przyjmuje plik audio i metadane utworu.
-- Uzupełnia pola tytułu, artysty i innych metadanych z tagów pliku audio, jeśli są dostępne.
+- Po wyborze pliku audio wysyła go do inspekcji uploadu i uzupełnia pola tytułu, artysty i innych metadanych z tagów, jeśli są dostępne.
+- Pokazuje osadzony cover z tagów tak samo jak cover wybrany z dysku i pozwala zastąpić go ręcznie wskazanym plikiem.
 - Pozwala wybrać szybki albo dokładniejszy model separacji.
 - Pozwala wybrać szybki albo dokładniejszy model transkrypcji.
 - Pozwala opcjonalnie wskazać język utworu.
@@ -46,8 +47,10 @@ Project ZIP Import
 
 - Jest aplikacją Python/FastAPI.
 - Waliduje upload i metadane.
+- Udostępnia preflight uploadu, który odczytuje tagi audio i osadzony cover bez tworzenia `Job`.
 - Odrzuca upload większy niż 500 MB.
 - Waliduje rozszerzenie, MIME oraz wynik `ffprobe`, żeby przyjmować tylko faktyczne pliki audio albo kontenery z obsługiwaną ścieżką audio.
+- Odczytuje tagi audio biblioteką metadanych, np. Mutagen; `ffprobe` pozostaje walidacją techniczną ścieżki audio i źródłem danych technicznych.
 - Tworzy `Job`.
 - Obsługuje import projektu z ZIP-a projektu.
 - Obsługuje eksport projektu jako ZIP zawierający pełny `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
@@ -58,7 +61,8 @@ Project ZIP Import
 
 Minimalne API MVP:
 
-- `POST /api/jobs/uploads`: upload audio, metadanych, covera i profili modeli.
+- `POST /api/uploads/inspect`: preflight wybranego pliku audio, odczyt tagów, technicznych danych audio i osadzonego covera bez tworzenia `Job`.
+- `POST /api/jobs/uploads`: utworzenie `Job` z `uploadDraftId`, zaakceptowanych metadanych, covera i profili modeli.
 - `POST /api/projects/import`: import ZIP-a projektu.
 - `GET /api/jobs/{jobId}`: status, metadane, błędy i aktualny etap pipeline'u.
 - `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu audio.
