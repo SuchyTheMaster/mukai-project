@@ -65,7 +65,7 @@ Główny tryb pracy zakłada GPU NVIDIA dostępne dla workerów Dockera. Jeśli 
 - [Design system UI](UI.md)
 - [Edytor UI](editor-ui.md)
 - [Eksport UltraStar](ultrastar-export.md)
-- [Wdrożenie etapu 2](implementation-stage-2.md)
+- [Etapy potencjalnego wdrożenia](implementation-steps/00-index.md)
 - [Operacje i testowanie](operations-and-testing.md)
 
 ## Źródła
