@@ -6,6 +6,15 @@ Edytor ma umożliwić szybkie doprowadzenie wyniku AI do jakości grywalnego pli
 
 Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave opisanym w [UI.md](UI.md). Ten plik jest źródłem prawdy dla kolorów, typografii, spacingu, radiusów, glow, komponentów, stanów hover/focus/disabled oraz zasad kontrastu i reduced motion.
 
+## Shell aplikacji
+
+- Na samej górze aplikacji widoczny jest header z logo, napisem `MUKAI` i mniejszym napisem `Music to Karaoke AI Creator`.
+- Lewa pływająca kolumna ma na górze sekcję uploadu audio z kompaktowym podsumowaniem wybranego pliku, a niżej panel aktualnego etapu pracy.
+- Panel aktualnego etapu pokazuje nazwę etapu, cover, przycisk resetu tego etapu, metadane, ustawienia modeli, ustawienia pitch i najważniejsze parametry techniczne wejścia.
+- Prawa pływająca kolumna pokazuje wszystkie spodziewane etapy pipeline'u od uploadu do eksportu. Etapy są rozróżnione kolorami na wykonane, przetwarzane, oczekujące i błędne.
+- Centralny obszar roboczy pokazuje aktywny widok: upload, status przetwarzania, edytor albo eksport.
+- Na małych ekranach prawa kolumna etapów musi zmienić się w zwijany panel albo poziomy pasek, żeby nie zasłaniać formularzy ani edytora.
+
 ## Widoki
 
 ### Upload
@@ -15,15 +24,18 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Metadane: tytuł, artysta, opcjonalny język, opcjonalny rok/gatunek.
 - Po wyborze pliku audio frontend wysyła go do `POST /api/uploads/inspect`, żeby pobrać tagi, dane techniczne audio i osadzony cover przed utworzeniem `Job`.
 - Jeśli plik audio zawiera metadane, formularz automatycznie uzupełnia tytuł, artystę, album, rok i gatunek.
+- Po preflight UI pokazuje dane techniczne pliku źródłowego: format/kontener z pola `container`, `codec`, `channels`, `sampleRate` jako częstotliwość próbkowania oraz `durationSec`.
 - Tagi tekstowe muszą być poprawnie odczytane i pokazane niezależnie od tego, czy w pliku są zapisane jako UTF-8, UTF-16 czy mieszane kodowanie obsługiwane przez bibliotekę metadanych.
 - Każde pole uzupełnione z tagów pozostaje edytowalne i użytkownik może nadpisać wartość przed startem zadania.
 - Jeśli plik audio zawiera osadzony cover utworu albo albumu, formularz automatycznie ustawia go jako wstępny cover.
 - Cover z tagów jest widoczny tak samo jak cover wskazany z dysku: jest wybrany, pokazany w podglądzie i zostanie użyty w eksporcie, jeśli użytkownik go nie zastąpi.
+- Kliknięcie podglądu covera otwiera wybór pliku z dysku.
 - Ręcznie wskazany cover zastępuje cover wykryty w tagach.
+- Przycisk `Przywróć domyślny` przywraca cover wykryty w tagach; jeśli tagi nie zawierały covera, czyści wybór covera.
 - Jeśli metadane albo cover nie istnieją, pola pozostają do ręcznego uzupełnienia, a eksport bez covera pozostaje poprawny.
 - Wskazówka: dla utworów wielojęzycznych zostaw język pusty, żeby Whisper sam wykrył język.
-- Wybór modelu separacji: szybszy `htdemucs` albo dokładniejszy `htdemucs_ft`.
-- Wybór modelu transkrypcji: szybszy `large-v3-turbo` albo dokładniejszy `large-v3`.
+- Wybór modelu separacji: domyślnie dokładniejszy `htdemucs_ft`, opcjonalnie szybszy `htdemucs`.
+- Wybór modelu transkrypcji: domyślnie dokładniejszy `large-v3`, opcjonalnie szybszy `large-v3-turbo`.
 - Zaawansowane ustawienia pitch: próg ciszy, próg periodicity, krok ramek, minimalna długość nuty i scalanie krótkich przerw.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
 - Podgląd covera jest widoczny od razu po wykryciu grafiki z tagów albo po ręcznym wgraniu pliku.
@@ -40,9 +52,12 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 
 ### Status zadania
 
-- Pasek etapów pipeline'u.
-- Log skrócony z ostatnim błędem.
-- Czas trwania zadania i orientacyjny postęp.
+- Pasek etapów pipeline'u pokazuje od razu wszystkie spodziewane etapy, także oczekujące.
+- Etap przetwarzania audio jest widoczny jako podetapy: preprocessing/FFmpeg, BPM, Demucs, WhisperX, pitch detection oraz alignment/draft.
+- Każdy podetap ma własny kolor statusu: wykonany, przetwarzany, oczekujący albo błędny.
+- Długie operacje pokazują pasek postępu. Jeśli backend zna postęp i ETA, UI pokazuje procent i pozostały czas; jeśli ma tylko estymację, pokazuje szacowany procent; jeśli nie zna postępu, pokazuje pasek indeterminate oraz czas trwania.
+- Po zakończeniu podetapu UI pokazuje przy nim akcje pobrania dostępnych artefaktów.
+- Log skrócony z ostatnim błędem zawiera krótki komunikat oraz kompaktowy, rozwijany tekst szczegółowego logu diagnostycznego bez sekretów i prywatnych ścieżek.
 - Link do edytora po statusie `awaiting_review`.
 
 ### Edytor
@@ -84,6 +99,7 @@ Akcje globalne:
 
 - Undo/redo.
 - Zapis aktualnego stanu roboczego.
+- Reset aktualnego etapu pracy, jeśli status zadania pozwala na przeliczenie od tego etapu.
 - Walidacja przed eksportem.
 - Eksport po zatwierdzeniu.
 - Wyeksportuj projekt.

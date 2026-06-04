@@ -24,6 +24,69 @@ Minimalne dane diagnostyczne zadania:
 - hash wejścia;
 - komunikat błędu bez prywatnych danych.
 
+## Orkiestracja workerów
+
+- Docelowo ciężkie operacje działają jako osobne serwisy Docker: `worker-separate-stems`, `worker-transcribe` i `worker-pitch`.
+- Lżejszy worker koordynujący może wykonywać normalizację FFmpeg, przygotowanie wejść workerów, BPM i publikację kolejnych zdarzeń.
+- Wszystkie workery używają wspólnego wolumenu artefaktów `mukai_artifacts` oraz wspólnego wolumenu cache modeli `mukai_model_cache`.
+- Redis pozostaje kolejką i miejscem krótkotrwałych blokad, żeby kilka ciężkich workerów nie próbowało jednocześnie używać jednego GPU bez skonfigurowanej współbieżności.
+- Każdy worker raportuje rolę, urządzenie, wersje bibliotek, parametry modelu, czasy start/koniec, postęp i skrócony log diagnostyczny zgodnie ze `StageSnapshot`.
+- Jeśli host ma jedno GPU, domyślna konfiguracja powinna dopuszczać tylko jedną ciężką operację GPU naraz; większa współbieżność wymaga osobnej decyzji i testów VRAM.
+
+## Troubleshooting GPU NVIDIA w Dockerze na WSL/Debianie
+
+Źródła odniesienia:
+
+- NVIDIA Container Toolkit install guide: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+- CUDA on WSL User Guide: https://docs.nvidia.com/cuda/wsl-user-guide/index.html
+
+Procedura dla Docker Engine uruchamianego w dystrybucji Debian na WSL:
+
+1. W Windows zainstalować aktualny sterownik NVIDIA z obsługą WSL 2. W WSL nie instalować linuksowego sterownika NVIDIA; Windows udostępnia sterownik do WSL.
+2. Zaktualizować WSL z PowerShell: `wsl.exe --update`, a potem uruchomić dystrybucję Debian.
+3. W Debianie sprawdzić, czy WSL widzi GPU: `/usr/lib/wsl/lib/nvidia-smi`. Jeśli polecenie działa, problem dotyczy najczęściej runtime'u kontenerów.
+4. Zainstalować wymagania repozytorium NVIDIA:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg2
+```
+
+5. Dodać repozytorium NVIDIA Container Toolkit:
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+```
+
+6. Zainstalować toolkit:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+```
+
+7. Skonfigurować runtime Docker i zrestartować demona:
+
+```bash
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Jeśli dystrybucja WSL nie używa `systemd`, zamiast restartu przez `systemctl` użyć właściwego sposobu startu Docker Engine dla tej dystrybucji, np. restart usługi albo ponowne uruchomienie WSL.
+
+8. Uruchomić smoke test z aktualnym obrazem CUDA:
+
+```bash
+docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
+```
+
+9. Jeśli smoke test działa, ale workery Mukai nadal nie widzą GPU, sprawdzić `docker compose` pod kątem `NVIDIA_VISIBLE_DEVICES=all`, `NVIDIA_DRIVER_CAPABILITIES=compute,utility`, rezerwacji urządzeń GPU oraz logów `worker-separate-stems`, `worker-transcribe` i `worker-pitch`.
+
 ## Powtarzalne buildy frontendu
 
 - Paczki Node w `package.json` muszą mieć przypięte konkretne wersje; nie używać `latest`.
@@ -64,6 +127,9 @@ Minimalne dane diagnostyczne zadania:
 - Sprawdzić, czy dokumenty frontendowe odwołują się do [UI.md](UI.md) jako źródła design systemu.
 - Sprawdzić, czy dokumenty uploadu spójnie opisują `POST /api/uploads/inspect`, `UploadInspection`, `EmbeddedCover` i pierwszeństwo ręcznego covera.
 - Sprawdzić, czy dokumenty UI spójnie rozróżniają `docs/assets/` jako źródło pierwotne dla agenta i `frontend/public/brand/` jako katalog wynikowy dla aplikacji.
+- Sprawdzić, czy `docs/assets/favicon.png` jest opisane jako źródło favicon, a runtime/build używa wygenerowanych rozmiarów `256`, `128`, `64`, `32` i `16`.
+- Sprawdzić, czy dokumenty wskazują domyślne modele `htdemucs_ft` i `large-v3`.
+- Sprawdzić, czy dokumenty nie mieszają przejściowego workera etapu 2 z docelowymi rolami `worker-separate-stems`, `worker-transcribe` i `worker-pitch`.
 
 ## Przyszłe testy jednostkowe
 
@@ -91,9 +157,11 @@ Minimalne dane diagnostyczne zadania:
 - Konwersja FFmpeg do wejść workerów.
 - Uzupełnianie pól importu z metadanych audio.
 - Weryfikacja, że `docker compose build frontend` przechodzi na przypiętych wersjach zależności i `package-lock.json`.
-- Weryfikacja, że agent przygotowuje logo i favicon z materiałów źródłowych w `docs/assets/`, a frontend ładuje wynikowe pliki z `frontend/public/brand/`.
+- Weryfikacja, że agent przygotowuje logo, tło i favicony z materiałów źródłowych w `docs/assets/`, a frontend ładuje wynikowe pliki z `frontend/public/brand/`.
+- Weryfikacja, że z `docs/assets/favicon.png` powstają favicony `256x256`, `128x128`, `64x64`, `32x32` i `16x16`, a frontend deklaruje je w standardowych linkach favicon.
 - Weryfikacja, że brak wynikowych assetów aplikacyjnych nie psuje builda, jeśli branding nie jest jeszcze wdrażany.
 - Przejście przez pipeline na mockowanych workerach z Postgres i Redis.
+- Przejście przez pipeline na mockowanych rolach `worker-separate-stems`, `worker-transcribe` i `worker-pitch` z weryfikacją `StageSnapshot`, postępu, błędu i artefaktów do pobrania.
 - Separacja Demucs na krótkim fragmencie testowym.
 - WhisperX na fragmencie wokalu z oczekiwanym językiem.
 - WhisperX bez wymuszonego języka.
@@ -124,7 +192,12 @@ Minimalne dane diagnostyczne zadania:
 - Edycja frazy, zapis, odświeżenie strony i eksport.
 - Eksport z niestandardowym coverem.
 - Eksport bez covera.
-- Weryfikacja nagłówka `MuKaI - Music to Karaoke AI Creator` z logo przygotowanym ze źródła w `docs/assets/` i udostępnionym aplikacji w `frontend/public/brand/`.
+- Weryfikacja nagłówka `MUKAI - Music to Karaoke AI Creator` z logo przygotowanym ze źródła w `docs/assets/` i udostępnionym aplikacji w `frontend/public/brand/`.
+- Weryfikacja, że `frontend/public/brand/mukai-background.png` pochodzi z `docs/assets/background.png` i jest subtelnie użyte w prawym górnym rogu tła.
+- Weryfikacja shellu aplikacji: górny header, lewa kolumna uploadu i aktualnego etapu, centralny obszar pracy oraz prawa kolumna etapów.
+- Weryfikacja, że preflight uzupełnia metadane, pokazuje dane techniczne audio i pozwala przywrócić domyślny cover z tagów albo wyczyścić cover.
+- Weryfikacja kolorów etapów, pasków postępu, ETA lub stanu indeterminate, logu błędu i pobierania artefaktów przy podetapach.
+- Smoke test GPU w kontenerze CUDA przez `docker run --rm --gpus all ... nvidia-smi` przed uruchomieniem ciężkich workerów.
 - Eksport projektu i weryfikacja ostrzeżenia, że lokalny `Job` oraz artefakty będą dostępne przez 24 godziny po sukcesie.
 - Import projektu z ZIP-a i weryfikacja, że edytor otwiera odtworzony stan bez ponownego przetwarzania.
 - Undo/redo działa w bieżącej sesji edytora, ale po odświeżeniu zostaje tylko aktualny zapisany stan.
@@ -135,7 +208,7 @@ Minimalne dane diagnostyczne zadania:
 - Użytkownik może wgrać utwór i otrzymać draft do edycji.
 - Draft pokazuje tekst, czasy i nuty w jednym zsynchronizowanym widoku.
 - Użytkownik może poprawić tekst, sylaby, typ nuty i pitch.
-- Użytkownik może wybrać profile `htdemucs`/`htdemucs_ft` oraz `large-v3`/`large-v3-turbo`.
+- Użytkownik może wybrać profile `htdemucs`/`htdemucs_ft` oraz `large-v3`/`large-v3-turbo`, a domyślnie ustawione są dokładniejsze `htdemucs_ft` i `large-v3`.
 - Eksportowana paczka karaoke ZIP zawiera katalog z `.txt` i MP3 bez JSON-a projektu; cover jest dodawany tylko wtedy, gdy został ustawiony.
 - Jeśli cover nie został ustawiony, eksportowana paczka ZIP nie zawiera covera.
 - Osobna akcja `Wyeksportuj projekt` tworzy ZIP projektu pozwalający kontynuować ręczną edycję bez ponownego ASR/pitch/BPM.

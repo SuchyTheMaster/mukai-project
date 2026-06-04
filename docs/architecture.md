@@ -31,12 +31,16 @@ Project ZIP Import
 
 - Przyjmuje plik audio i metadane utworu.
 - Po wyborze pliku audio wysyła go do inspekcji uploadu i uzupełnia pola tytułu, artysty i innych metadanych z tagów, jeśli są dostępne.
-- Pokazuje osadzony cover z tagów tak samo jak cover wybrany z dysku i pozwala zastąpić go ręcznie wskazanym plikiem.
-- Pozwala wybrać szybki albo dokładniejszy model separacji.
-- Pozwala wybrać szybki albo dokładniejszy model transkrypcji.
+- Pokazuje dane techniczne z preflightu: format/kontener, kodek, kanały, częstotliwość próbkowania i czas trwania.
+- Pokazuje osadzony cover z tagów tak samo jak cover wybrany z dysku, pozwala zastąpić go ręcznie wskazanym plikiem i przywrócić domyślny cover z tagów.
+- Domyślnie wybiera dokładniejsze modele `htdemucs_ft` i `large-v3`, a szybsze profile zostawia jako ręczny wybór użytkownika.
 - Pozwala opcjonalnie wskazać język utworu.
 - Pozwala wczytać ZIP projektu utworzony przez opcję `Wyeksportuj projekt` i kontynuować pracę nad utworem.
-- Pokazuje status zadania i błędy.
+- Pokazuje cały stage rail z etapami wykonanymi, przetwarzanymi, oczekującymi i błędnymi.
+- Pokazuje postęp, ETA albo stan indeterminate dla czasochłonnych etapów.
+- Pokazuje błędy jako krótki komunikat oraz kompaktowy rozwijany log diagnostyczny.
+- Udostępnia pobieranie artefaktów obok zakończonych podetapów.
+- Udostępnia reset aktualnego etapu, jeśli backend pozwala przeliczyć pracę od tego miejsca.
 - Udostępnia edytor tekstu, sylab, fraz, nut i timingów.
 - Pozwala odsłuchać oryginał, wokal i instrumental.
 - Uruchamia eksport jednej lub wielu paczek karaoke ZIP po zatwierdzeniu aktualnego stanu edycji.
@@ -66,6 +70,7 @@ Minimalne API MVP:
 - `POST /api/projects/import`: import ZIP-a projektu.
 - `GET /api/jobs/{jobId}`: status, metadane, błędy i aktualny etap pipeline'u.
 - `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu audio.
+- `POST /api/jobs/{jobId}/stages/{stage}/reset`: planowany reset wskazanego etapu i ponowne kolejkowanie zależnych etapów.
 - `PUT /api/jobs/{jobId}/arrangement`: zapis aktualnego `Arrangement`.
 - `POST /api/jobs/{jobId}/exports/validate`: walidacja przed eksportem.
 - `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej albo wielu paczek karaoke; po sukcesie `Job` wraca do `awaiting_review`.
@@ -74,17 +79,19 @@ Minimalne API MVP:
 ### Kolejka i orkiestracja
 
 - Używa Redis jako kolejki i mechanizmu koordynacji workerów.
-- Zapewnia pojedynczy punkt kontroli dla zadań GPU.
+- Zapewnia pojedynczy punkt kontroli dla zadań GPU i ograniczeń współbieżności.
 - Pozwala wznowić zadanie od ostatniego poprawnego artefaktu.
 - Przechowuje parametry modeli użyte dla danego wyniku.
 - Odróżnia błędy użytkownika od błędów infrastruktury.
+- Rozdziela ciężkie operacje na osobne role workerów w Dockerze, żeby separacja, transkrypcja i pitch detection mogły mieć własne zależności, logi i limity zasobów.
+- Lekkie etapy, takie jak publikacja zdarzeń, normalizacja, przygotowanie wejść i koordynacja, mogą pozostać w workerze orkiestrującym.
 
 ### Workery AI
 
-- Worker separacji: Demucs.
-- Worker ASR: WhisperX.
-- Worker pitch detection: torchcrepe.
-- Worker alignacji: łączy tekst, słowa, nuty i frazy.
+- `worker-separate-stems`: separacja wokalu i instrumentalnego podkładu przez Demucs.
+- `worker-transcribe`: transkrypcja i forced alignment tekstu przez WhisperX.
+- `worker-pitch`: pitch detection i segmentacja nut przez torchcrepe.
+- `worker-aligner`: łączenie tekstu, słów, nut i fraz w szkic karaoke.
 - Worker eksportu karaoke: generuje ZIP-y dla wybranych wariantów i odtwarzaczy, bez danych projektu w paczkach karaoke.
 - Worker eksportu projektu: generuje ZIP projektu zawierający pełny `Job`, wszystkie wymagane artefakty, oryginalny plik i manifesty JSON.
 - Worker importu projektu: odtwarza `Job` i artefakty z ZIP-a projektu bez ponownego uruchamiania normalizacji, BPM, separacji, transkrypcji, alignacji ani pitch detection.

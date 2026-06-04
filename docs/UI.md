@@ -8,25 +8,43 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 
 ## Branding / App Header
 
-- Główny nagłówek aplikacji pokazuje nazwę `MuKaI - Music to Karaoke AI Creator`.
+- Główny nagłówek aplikacji pokazuje logo oraz nazwę `MUKAI`; bezpośrednio przy nazwie albo pod nią widoczny jest mniejszy napis `Music to Karaoke AI Creator`.
 - Logo jest widoczne obok nazwy w głównym headerze pierwszego widoku i globalnego shellu aplikacji; nie może występować wyłącznie jako mała ikona w nawigacji.
 - Logo musi być skalowane do rozmiaru proporcjonalnego względem tekstu, przycisków i spacingu headera, także wtedy, gdy dostarczony oryginał jest duży.
-- Tekst alternatywny logo: `MuKaI - Music to Karaoke AI Creator`.
+- Tekst alternatywny logo: `MUKAI - Music to Karaoke AI Creator`.
 - Header pozostaje zgodny z RetroWave: ciemne tło, neonowe akcenty, czytelny kontrast i brak jasnych powierzchni.
 - Jeśli logo nie zostało jeszcze dostarczone, UI może pokazać sam tekst nazwy albo prosty placeholder tekstowy, ale nie generuje zastępczego logo.
+
+## App Shell Layout
+
+- Globalny shell ma stały górny header z brandingiem `MUKAI` i nie zastępuje go stroną marketingową.
+- Po lewej stronie znajduje się pływająca kolumna robocza. Jej górny panel zawiera upload audio i krótkie podsumowanie pliku, a niżej znajduje się panel aktualnego etapu z nazwą etapu, coverem, metadanymi, ustawieniami modeli, ustawieniami pitch oraz akcją resetu etapu.
+- Główny obszar pracy pomiędzy kolumnami pokazuje właściwą zawartość aktywnego widoku: upload, status przetwarzania, edytor albo eksport.
+- Po prawej stronie znajduje się pływająca kolumna etapów pipeline'u. Pokazuje od razu wszystkie spodziewane etapy, a nie tylko etap bieżący.
+- Na małych ekranach prawa kolumna etapów musi zmienić się w zwijany panel albo poziomy pasek, tak żeby nie zasłaniać formularzy, edytora ani przycisków.
+- `docs/assets/background.png` jest źródłem subtelnego fragmentu tła umieszczanego w prawym górnym rogu aplikacji. Tło musi wtapiać się w `surface-base`, nie obniżać kontrastu tekstu i nie zastępować ciemnej bazy RetroWave.
 
 ## Brand Assets
 
 - `docs/assets/` jest katalogiem źródłowym dla materiałów marki dostarczonych agentowi do przygotowania UI.
-- Agent AI wdrażający UI ma najpierw sprawdzić `docs/assets/`, np. `docs/assets/logo.png`, i na tej podstawie przygotować assety używane przez aplikację.
+- `docs/assets/logo.png` jest źródłem logotypu dla headera.
+- `docs/assets/background.png` jest źródłem dekoracyjnego fragmentu tła.
+- `docs/assets/favicon.png` jest jedynym źródłem favicon.
+- Agent AI wdrażający UI ma najpierw sprawdzić `docs/assets/` i na tej podstawie przygotować assety używane przez aplikację.
 - Frontend nie importuje i nie linkuje bezpośrednio plików z `docs/assets/`; katalog ten nie jest źródłem runtime ani builda aplikacji.
 - Wynikowe assety aplikacyjne umieszczać w `frontend/public/brand/`.
 - Domyślna wynikowa nazwa logo: `frontend/public/brand/mukai-logo.png`.
-- Domyślna wynikowa nazwa favicony: `frontend/public/brand/favicon.png`.
+- Domyślna wynikowa nazwa tła: `frontend/public/brand/mukai-background.png`.
+- Favicony generować z `docs/assets/favicon.png` jako skalowane pliki runtime/build:
+  - `frontend/public/brand/favicon-256.png`
+  - `frontend/public/brand/favicon-128.png`
+  - `frontend/public/brand/favicon-64.png`
+  - `frontend/public/brand/favicon-32.png`
+  - `frontend/public/brand/favicon-16.png`
+- Frontend ma używać powyższych plików w standardowych deklaracjach favicon z atrybutem `sizes`; nie używać `docs/assets/favicon.png` bezpośrednio w buildzie ani runtime.
 - Jeśli dostępnych jest kilka wariantów źródłowego logo, użyć wariantu PNG najlepiej pasującego do headera i zachować proporcjonalne skalowanie w UI.
-- Faviconę ładować z `frontend/public/brand/favicon.png`.
 - Nie generować ani nie zastępować logo, jeśli plik źródłowy nie został dostarczony w `docs/assets/`.
-- Brak logo albo favicony nie może powodować błędu builda.
+- Brak logo, tła albo wygenerowanych favicon nie może powodować błędu builda, ale implementacja musi wtedy pokazać fallback tekstowy dla logo i pominąć brakujące deklaracje favicon.
 
 ## Colors
 
@@ -167,6 +185,13 @@ radius-pill corners. 11px medium. 4px/12px padding.
 - **Upcoming**: #FFD700 at 15% fill, #FFD700 text.
 - **Ended**: #FF3366 at 15% fill, #FF3366 text.
 - **Featured**: #FF006E at 15% fill, #FF006E text.
+- **Done**: success-fill, success text.
+- **Processing**: info-fill, info text plus subtle reduced-motion-safe pulse.
+- **Pending**: transparent or surface-sunken fill, content-tertiary text, border-default border.
+- **Failed**: error-fill, error text.
+
+### Progress Bars
+surface-sunken track, radius-pill corners, 6px height for compact stage rows and 10px for focused panels. Determinate fill uses electric blue; completed fill uses success; failed fill uses error. Indeterminate progress may animate a restrained blue highlight and must become static under reduced motion.
 ---
 
 ### Lists

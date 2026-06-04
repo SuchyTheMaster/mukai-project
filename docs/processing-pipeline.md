@@ -6,7 +6,7 @@ Wejście:
 
 - Plik audio: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
 - Metadane: tytuł, artysta, opcjonalny język, opcjonalny album, rok i gatunek.
-- Profile modeli: separacja szybka albo dokładniejsza, transkrypcja szybka albo dokładniejsza.
+- Profile modeli: domyślnie dokładniejsza separacja `htdemucs_ft` i dokładniejsza transkrypcja `large-v3`; użytkownik może ręcznie wybrać szybsze profile `htdemucs` i `large-v3-turbo`.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
 - Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
 - Opcjonalny import ZIP-a projektu utworzonego przez opcję `Wyeksportuj projekt` jako kontynuacja wcześniejszej pracy.
@@ -18,7 +18,9 @@ Preflight uploadu:
 - Backend odczytuje tagi audio biblioteką metadanych, np. Mutagen; `ffprobe` pozostaje walidacją techniczną audio i źródłem danych takich jak czas trwania, kodek, sample rate i liczba kanałów.
 - Odczyt tagów musi obsługiwać co najmniej UTF-8, UTF-16 i pliki z mieszanymi tagami, tak żeby polskie znaki i inne znaki narodowe nie były uszkadzane w formularzu.
 - Jeśli tagi zawierają tytuł, artystę, album, rok albo gatunek, backend zwraca je jako `SourceMetadata`, a frontend wypełnia nimi formularz.
-- Jeśli tagi zawierają osadzony cover, backend zwraca go jako tymczasowy `EmbeddedCover`, a frontend pokazuje go jako wybrany cover importu.
+- Jeśli tagi zawierają osadzony cover, backend zwraca go jako tymczasowy `EmbeddedCover`, a frontend pokazuje go jako wybrany cover importu w sekcji cover.
+- Frontend pokazuje od razu techniczne dane źródła: format/kontener z pola `container`, kodek, kanały, częstotliwość próbkowania i czas trwania.
+- Kliknięcie covera w UI pozwala wybrać plik z dysku. Akcja `Przywróć domyślny` przywraca cover z tagów albo czyści cover, jeśli tagi go nie zawierały.
 - Jeśli tagi albo cover nie istnieją, preflight kończy się sukcesem z pustymi polami do ręcznego uzupełnienia.
 
 Utworzenie zadania:
@@ -37,6 +39,16 @@ Walidacja:
 - Jeśli użytkownik nie poda języka, detekcję języka pozostawić Whisperowi.
 - Jeśli utwór jest wielojęzyczny, ekran importu powinien sugerować pozostawienie języka pustego.
 - Jeśli preflight nie wykrył covera i użytkownik nie wgra ręcznego covera, eksport nie zawiera covera.
+
+## Orkiestracja, statusy i postęp
+
+- UI pokazuje od razu wszystkie oczekiwane etapy pipeline'u, także te, które jeszcze nie wystartowały.
+- Etap przetwarzania audio jest w UI rozbity na podetapy: preprocessing/FFmpeg, BPM, Demucs, WhisperX, pitch detection i alignment/draft.
+- Każdy podetap zapisuje `StageSnapshot` w `Job.processing`, jeśli ma postęp, wynik, błąd albo artefakty widoczne dla użytkownika.
+- Długie operacje zapisują `progressMode`, `progressPercent` i `etaSec`, jeśli worker potrafi je wiarygodnie określić. Jeśli nie, status pozostaje `indeterminate`, a UI pokazuje czas trwania.
+- Błędy etapów muszą zawierać krótki komunikat dla użytkownika i kompaktowy log diagnostyczny bez sekretów, tokenów i prywatnych ścieżek.
+- Po zakończeniu podetapu artefakty są przypisywane do `producedByStage` i `producedBySubstep`, żeby UI mogło pokazać przycisk pobrania przy właściwym podetapie.
+- Reset etapu jest operacją planowaną przez `POST /api/jobs/{jobId}/stages/{stage}/reset`; reset unieważnia artefakty wskazanego etapu i dalszych etapów zależnych, zachowując oryginalne audio, metadane i cover.
 
 ## 2. Normalizacja audio
 
@@ -105,6 +117,7 @@ Wyjście:
 Wymagania:
 
 - Używać GPU, jeśli jest dostępne.
+- Docelowo wykonywać separację w osobnym workerze Docker `worker-separate-stems`.
 - Obsługiwać brak pamięci GPU przez jedną próbę zmniejszenia segmentu; jeśli ponowna próba zawiedzie, zakończyć etap czytelnym błędem infrastruktury.
 - Nie zakładać, że separacja jest idealna; dalsze moduły muszą tolerować bleeding instrumentów.
 - Zapisać wybrany model w artefaktach i manifestach projektu.
@@ -130,6 +143,7 @@ Wyjście:
 
 Wymagania:
 
+- Docelowo wykonywać transkrypcję i forced alignment w osobnym workerze Docker `worker-transcribe`.
 - Wymuszać język, jeśli użytkownik podał go w uploadzie.
 - Nie wymuszać języka dla utworów wielojęzycznych ani wtedy, gdy użytkownik zostawi pole języka puste.
 - Uwzględnić, że Whisper pracuje na oknach około 30 sekund; dla długich utworów pipeline musi poprawnie segmentować lub przekazywać audio do WhisperX tak, żeby zachować globalne czasy.
@@ -154,6 +168,7 @@ Wyjście:
 
 Wymagania:
 
+- Docelowo wykonywać pitch detection w osobnym workerze Docker `worker-pitch`.
 - Przechowywać ramki F0 niezależnie od nut, żeby edytor mógł pokazać surowy kontur.
 - Domyślnie użyć progu ciszy `-45 dBFS`, progu periodicity `0.5`, kroku ramek `10 ms`, minimalnej długości nuty `80 ms` i scalania przerw do `50 ms`.
 - Powyższe parametry filtracji pitch muszą być dostępne w zaawansowanych ustawieniach i możliwe do samodzielnej zmiany przed uruchomieniem albo ponownym przeliczeniem pitch detection.

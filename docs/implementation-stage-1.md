@@ -28,6 +28,7 @@ Ten etap dodaje pierwszy działający fragment aplikacji:
 - Cache modeli jest przygotowany jako wolumen `mukai_model_cache`, ale nie jest jeszcze używany przez worker AI.
 - Frontend powinien utrzymywać przypięte wersje paczek Node i `package-lock.json`; Dockerfile frontendu powinien używać `npm ci`.
 - Pliki marki dostarczone przez użytkownika powinny trafić do `docs/assets/` jako materiały źródłowe dla agenta. Agent przygotowuje z nich wynikowe assety aplikacyjne w katalogach frontendu, np. `frontend/public/brand/`, zgodnie z [UI.md](UI.md).
+- Docelowe domyślne wartości formularza to dokładniejsze modele: `separationModel=htdemucs_ft` i `transcriptionModel=large-v3`; szybsze profile pozostają dostępne jako ręczny wybór.
 
 ## Endpoint uploadu
 

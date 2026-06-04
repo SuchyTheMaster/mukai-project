@@ -29,6 +29,20 @@
     "transcriptionModel": "large-v3",
     "pitch": "default"
   },
+  "processing": {
+    "separating_vocals.demucs": {
+      "stage": "separating_vocals",
+      "substep": "demucs",
+      "status": "running",
+      "startedAt": "2026-05-28T00:03:00Z",
+      "progressMode": "estimated",
+      "progressPercent": 42,
+      "etaSec": 180,
+      "message": "Separacja wokalu",
+      "artifactIds": [],
+      "workerRole": "worker-separate-stems"
+    }
+  },
   "retention": {
     "projectExportedAt": null,
     "cleanupEligibleAt": null,
@@ -52,6 +66,57 @@
 - `large-v3`: dokładniejszy.
 - `large-v3-turbo`: szybszy.
 
+Domyślne wartości w UI:
+
+- `separationModel`: `htdemucs_ft`.
+- `transcriptionModel`: `large-v3`.
+
+## StageSnapshot
+
+`Job.processing` przechowuje mapę snapshotów etapów i podetapów pipeline'u. UI używa jej do prawej kolumny etapów, pasków postępu, komunikatów błędów i akcji pobierania artefaktów.
+
+Klucz mapy powinien być nazwą etapu, a jeśli etap ma kilka widocznych podetapów, formatem `{stage}.{substep}`, np. `preprocessing.ffmpeg` albo `separating_vocals.demucs`.
+
+```json
+{
+  "stage": "separating_vocals",
+  "substep": "demucs",
+  "status": "running",
+  "startedAt": "2026-05-28T00:03:00Z",
+  "finishedAt": null,
+  "progressMode": "estimated",
+  "progressPercent": 42,
+  "etaSec": 180,
+  "message": "Separacja wokalu",
+  "logExcerpt": null,
+  "artifactIds": [],
+  "workerRole": "worker-separate-stems"
+}
+```
+
+`status`:
+
+- `pending`: etap jest spodziewany, ale jeszcze nie rozpoczęty.
+- `running`: etap jest aktualnie przetwarzany.
+- `completed`: etap zakończył się sukcesem.
+- `failed`: etap zakończył się błędem.
+- `skipped`: etap świadomie pominięto, np. po imporcie projektu.
+
+`progressMode`:
+
+- `determinate`: `progressPercent` pochodzi z mierzalnego postępu.
+- `estimated`: `progressPercent` jest szacunkiem backendu lub workera.
+- `indeterminate`: worker nie zna procentu; UI pokazuje animację albo statyczny stan oczekiwania pod reduced motion.
+
+Zasady:
+
+- `progressPercent` ma zakres `0..100`; przy `indeterminate` może mieć wartość `null`.
+- `etaSec` ma wartość `null`, jeśli nie da się wiarygodnie oszacować pozostałego czasu.
+- `message` jest krótkim komunikatem dla UI.
+- `logExcerpt` zawiera kompaktowy fragment diagnostyczny bez sekretów, tokenów i prywatnych ścieżek.
+- `artifactIds` wskazuje artefakty gotowe do pobrania przy danym etapie lub podetapie.
+- `workerRole` opisuje docelową rolę workera, np. `orchestrator`, `worker-separate-stems`, `worker-transcribe`, `worker-pitch`, `worker-aligner`, `worker-export`.
+
 ## AudioAsset
 
 ```json
@@ -63,9 +128,17 @@
   "durationSec": 213.42,
   "sampleRate": 44100,
   "channels": 2,
-  "sha256": "..."
+  "sha256": "...",
+  "producedByStage": "separating_vocals",
+  "producedBySubstep": "demucs"
 }
 ```
+
+Zasady:
+
+- `producedByStage` jest nazwą statusu/etapu pipeline'u, który utworzył artefakt.
+- `producedBySubstep` jest nazwą podetapu widocznego w UI, np. `ffmpeg`, `bpm`, `demucs`, `whisperx`, `pitch_detection`, `alignment`.
+- UI pobiera artefakty przez `GET /api/jobs/{jobId}/artifacts/{assetId}`; pola `producedByStage` i `producedBySubstep` służą tylko do grupowania przycisków pobierania przy podetapach.
 
 ## UploadInspection
 
@@ -106,6 +179,7 @@ Zasady:
 - `uploadDraftId` wskazuje tymczasowy wynik inspekcji i może zostać użyty przy `POST /api/jobs/uploads`.
 - `metadata` zawiera wyłącznie wartości odczytane z pliku; użytkownik może nadpisać je w formularzu przed utworzeniem `Job`.
 - `embeddedCover` ma wartość `null`, jeśli plik nie zawiera okładki.
+- Sekcja `audio` jest źródłem danych technicznych widocznych po preflight: `container` jako format/kontener, `codec`, `channels`, `sampleRate` jako częstotliwość próbkowania oraz `durationSec`.
 - Preflight musi poprawnie dekodować tagi UTF-8, UTF-16 oraz przypadki mieszane bez uszkadzania znaków narodowych.
 - Odczyt tagów powinien używać biblioteki metadanych audio, np. Mutagen; `ffprobe` nie jest jedynym źródłem tagów tekstowych ani covera.
 
@@ -144,6 +218,40 @@ Zasady:
 ```
 
 `EmbeddedCover` jest tymczasowym coverem wykrytym w tagach audio podczas preflightu. Jeśli użytkownik nie wskaże ręcznie innego covera, `POST /api/jobs/uploads` promuje go do normalnego assetu covera dla `Job`. Ręczny cover wskazany w formularzu ma pierwszeństwo przed `EmbeddedCover`.
+
+UI traktuje `EmbeddedCover` jako domyślny cover uploadu. Akcja `Przywróć domyślny` przywraca ten cover, jeśli istnieje; jeśli `embeddedCover` ma wartość `null`, akcja czyści ręczny wybór covera.
+
+## Reset etapu
+
+Docelowy kontrakt resetu etapu:
+
+`POST /api/jobs/{jobId}/stages/{stage}/reset`
+
+```json
+{
+  "resetFromStage": "separating_vocals",
+  "reason": "user_requested"
+}
+```
+
+Odpowiedź:
+
+```json
+{
+  "jobId": "job_01J...",
+  "status": "separating_vocals",
+  "resetFromStage": "separating_vocals",
+  "invalidatedStages": ["separating_vocals", "transcribing", "detecting_pitch", "aligning"],
+  "queued": true
+}
+```
+
+Zasady:
+
+- Reset zachowuje oryginalny plik audio, zaakceptowane metadane, cover oraz aktualne ustawienia modeli i pitch, chyba że użytkownik zmieni je przed resetem.
+- Reset unieważnia artefakty wybranego etapu i wszystkich dalszych etapów zależnych.
+- Reset jest niedostępny podczas aktywnego przetwarzania, dopóki nie zostanie dodany osobny kontrakt anulowania albo pauzowania.
+- Reset nie usuwa eksportów projektu ani paczek karaoke już pobranych przez użytkownika.
 
 ## Tempo
 

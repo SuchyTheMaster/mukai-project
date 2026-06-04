@@ -7,6 +7,8 @@ Profile wybierane przez użytkownika:
 - `htdemucs`: profil szybszy.
 - `htdemucs_ft`: profil dokładniejszy.
 
+Domyślny wybór UI: `htdemucs_ft`.
+
 Uzasadnienie:
 
 - Demucs v4 jest modelem separacji źródeł dla muzyki i obsługuje separację wokalu.
@@ -25,6 +27,8 @@ Profile wybierane przez użytkownika:
 
 - `large-v3`: profil dokładniejszy.
 - `large-v3-turbo`: profil szybszy.
+
+Domyślny wybór UI: `large-v3`.
 
 Uzasadnienie:
 
