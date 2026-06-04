@@ -33,6 +33,20 @@ Minimalne dane diagnostyczne zadania:
 - Każdy worker raportuje rolę, urządzenie, wersje bibliotek, parametry modelu, czasy start/koniec, postęp i skrócony log diagnostyczny zgodnie ze `StageSnapshot`.
 - Jeśli host ma jedno GPU, domyślna konfiguracja powinna dopuszczać tylko jedną ciężką operację GPU naraz; większa współbieżność wymaga osobnej decyzji i testów VRAM.
 
+## Build obrazu workera
+
+- Obraz `worker` budować przez `docker compose build worker`; zależności AI nie są instalowane na hoście.
+- Obraz workera nie może przypadkowo pobierać pełnego stosu CUDA przez zwykłe `torch==...` z domyślnego PyPI bez jawnej decyzji technicznej. Taki zapis potrafi dociągnąć wielogigabajtowy graf zależności, np. `torch`, `nvidia-cudnn-cu12`, `nvidia-cublas-cu12`, `nvidia-cufft-cu12`, `nvidia-nccl-cu12` i `triton`, przez co build trwa kilkanaście minut i jest podatny na timeouty, przerwane pobrania oraz brak miejsca.
+- Wariant PyTorch/CUDA dla workera musi być zadeklarowany w jednym z dwóch kontrolowanych sposobów:
+  - obraz bazowy PyTorch/CUDA, np. `pytorch/pytorch:<wersja>-cuda<wersja>-cudnn<wersja>-runtime`, a `requirements-worker.txt` nie instaluje ponownie `torch` i `torchaudio`;
+  - jawny indeks wheelów PyTorch w Dockerfile, np. `--index-url https://download.pytorch.org/whl/cu124` albo wariant CPU dla profilu awaryjnego, z przypiętymi wersjami `torch` i `torchaudio`.
+- Wybór wariantu GPU/CPU, wersji PyTorch, wersji CUDA i źródła wheelów musi być zapisany w dokumentacji przy zmianie Dockerfile albo `requirements-worker.txt`.
+- Ciężkie zależności AI powinny być rozdzielone według ról workerów, kiedy projekt przejdzie z przejściowego workera `worker` na docelowe `worker-separate-stems`, `worker-transcribe` i `worker-pitch`. Workery nie powinny instalować bibliotek, których dana rola nie używa.
+- `requirements-worker.txt` może zawierać zależności AI takie jak Demucs, torchcrepe, WhisperX albo Essentia, ale nie powinien ukrywać wyboru wariantu PyTorch/CUDA. PyTorch jest elementem środowiska wykonawczego workera GPU, nie zwykłą drobną zależnością aplikacyjną.
+- Pierwszy build workera nadal może być długi, ale akceptowalny build musi mieć kontrolowany i przewidywalny graf zależności. Jeśli build pobiera kilka GB wheelów CUDA z PyPI, traktować to jako problem specyfikacji obrazu, nie jako normalny stan docelowy.
+- Jeśli build kończy się na kroku `pip install --no-cache-dir -r requirements-worker.txt` z kodem `2`, uruchomić diagnostycznie `docker compose build worker --progress=plain`, żeby zobaczyć pełny błąd `pip`. Sam skrót Compose `exit code: 2` nie wskazuje, czy problemem jest sieć, resolver zależności, brak miejsca czy przerwanie pobierania.
+- Przy błędach `No space left on device`, przerwanych pobraniach dużych wheelów CUDA albo timeoutach najpierw sprawdzić storage Dockera i łączność z PyPI. Nie przenosić instalacji zależności workera na hosta.
+
 ## Troubleshooting GPU NVIDIA w Dockerze na WSL/Debianie
 
 Źródła odniesienia:
@@ -92,6 +106,8 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Paczki Node w `package.json` muszą mieć przypięte konkretne wersje; nie używać `latest`.
 - `package-lock.json` jest częścią repozytorium i musi być aktualizowany razem ze zmianami zależności.
 - Dockerfile frontendu instaluje zależności przez `npm ci`, żeby build używał lockfile.
+- Build frontendu wykonywać na poziomie Dockera przez `docker compose build frontend`. Nie traktować hostowego `npm ci` ani hostowego `npm run build` jako testu akceptacyjnego projektu.
+- Host może służyć co najwyżej do wygenerowania albo aktualizacji `package-lock.json`, jeśli zmieniają się zależności; katalog `frontend/node_modules` nie jest artefaktem projektu i nie powinien być wymagany do pracy aplikacji.
 - Po zmianie zależności albo konfiguracji frontendu testem akceptacyjnym jest `docker compose build frontend`.
 - Nie podbijać wersji zależności przez automatyczne `npm audit fix --force` bez osobnej decyzji, bo może to zmienić graf zależności i zachowanie builda.
 
@@ -130,6 +146,7 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Sprawdzić, czy `docs/assets/favicon.png` jest opisane jako źródło favicon, a runtime/build używa wygenerowanych rozmiarów `256`, `128`, `64`, `32` i `16`.
 - Sprawdzić, czy dokumenty wskazują domyślne modele `htdemucs_ft` i `large-v3`.
 - Sprawdzić, czy dokumenty nie mieszają przejściowego workera etapu 2 z docelowymi rolami `worker-separate-stems`, `worker-transcribe` i `worker-pitch`.
+- Sprawdzić, czy specyfikacja builda workera eliminuje niekontrolowane pobieranie pełnego stosu PyTorch/CUDA przez `torch==...` z domyślnego PyPI i wskazuje jawny wariant obrazu bazowego albo indeks wheelów PyTorch.
 
 ## Przyszłe testy jednostkowe
 
@@ -162,6 +179,7 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Weryfikacja, że brak wynikowych assetów aplikacyjnych nie psuje builda, jeśli branding nie jest jeszcze wdrażany.
 - Przejście przez pipeline na mockowanych workerach z Postgres i Redis.
 - Przejście przez pipeline na mockowanych rolach `worker-separate-stems`, `worker-transcribe` i `worker-pitch` z weryfikacją `StageSnapshot`, postępu, błędu i artefaktów do pobrania.
+- Weryfikacja `docker compose build worker --progress=plain`, że PyTorch/CUDA pochodzi z jawnie wybranego obrazu bazowego albo jawnego indeksu wheelów, a nie z przypadkowego grafu zależności domyślnego PyPI.
 - Separacja Demucs na krótkim fragmencie testowym.
 - WhisperX na fragmencie wokalu z oczekiwanym językiem.
 - WhisperX bez wymuszonego języka.
@@ -193,7 +211,7 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Eksport z niestandardowym coverem.
 - Eksport bez covera.
 - Weryfikacja nagłówka `MUKAI - Music to Karaoke AI Creator` z logo przygotowanym ze źródła w `docs/assets/` i udostępnionym aplikacji w `frontend/public/brand/`.
-- Weryfikacja, że `frontend/public/brand/mukai-background.png` pochodzi z `docs/assets/background.png` i jest subtelnie użyte w prawym górnym rogu tła.
+- Weryfikacja, że `frontend/public/brand/mukai-background.png` pochodzi z `docs/assets/background.png` i jest subtelnie użyte jako tło u góry, wyśrodkowane poziomo (`top center`), bez kotwiczenia do lewej ani prawej strony.
 - Weryfikacja shellu aplikacji: górny header, lewa kolumna uploadu i aktualnego etapu, centralny obszar pracy oraz prawa kolumna etapów.
 - Weryfikacja, że preflight uzupełnia metadane, pokazuje dane techniczne audio i pozwala przywrócić domyślny cover z tagów albo wyczyścić cover.
 - Weryfikacja kolorów etapów, pasków postępu, ETA lub stanu indeterminate, logu błędu i pobierania artefaktów przy podetapach.

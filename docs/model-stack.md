@@ -100,6 +100,14 @@ Metryki:
 - Worker powinien zapisać parametry wejścia audio, device, batch/segment, progi filtracji i hash wejścia, żeby wynik dało się odtworzyć albo zdiagnozować bez zgadywania konfiguracji.
 - Przy braku pamięci GPU worker separacji może wykonać jedną automatyczną próbę z mniejszym segmentem; kolejne niepowodzenie jest błędem infrastruktury widocznym w statusie `Job`.
 
+## Wariant PyTorch/CUDA w Dockerze
+
+- PyTorch i CUDA są częścią środowiska wykonawczego workerów AI, dlatego ich wariant musi być wybierany jawnie, a nie pozostawiony resolverowi `pip`.
+- Dla workerów GPU preferować obraz bazowy PyTorch/CUDA albo jawny indeks wheelów PyTorch zgodny z docelową wersją CUDA. Nie dodawać zwykłego `torch==...` do `requirements-worker.txt`, jeśli Dockerfile nie wskazuje kontrolowanego źródła pakietów.
+- Dla profilu CPU używać osobnego wariantu obrazu albo osobnego requirements, oznaczonego jako tryb awaryjny. CPU nie jest domyślną ścieżką jakościową ani wydajnościową.
+- Zmiana wersji PyTorch, torchaudio, CUDA albo źródła wheelów wymaga aktualizacji tej dokumentacji i ponownego smoke testu `docker compose build worker --progress=plain`.
+- Manifesty etapów muszą zapisywać nie tylko wersję `torch`, ale też wariant CUDA/CPU oraz źródło środowiska, np. obraz bazowy albo indeks wheelów.
+
 ## Źródła
 
 - Demucs: https://github.com/facebookresearch/demucs

@@ -22,7 +22,7 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 - Główny obszar pracy pomiędzy kolumnami pokazuje właściwą zawartość aktywnego widoku: upload, status przetwarzania, edytor albo eksport.
 - Po prawej stronie znajduje się pływająca kolumna etapów pipeline'u. Pokazuje od razu wszystkie spodziewane etapy, a nie tylko etap bieżący.
 - Na małych ekranach prawa kolumna etapów musi zmienić się w zwijany panel albo poziomy pasek, tak żeby nie zasłaniać formularzy, edytora ani przycisków.
-- `docs/assets/background.png` jest źródłem subtelnego fragmentu tła umieszczanego w prawym górnym rogu aplikacji. Tło musi wtapiać się w `surface-base`, nie obniżać kontrastu tekstu i nie zastępować ciemnej bazy RetroWave.
+- `docs/assets/background.png` jest źródłem subtelnego fragmentu tła umieszczanego u góry i wyśrodkowanego poziomo (`top center`). Tło nie powinno być kotwiczone do lewej ani prawej strony. Musi wtapiać się w `surface-base`, nie obniżać kontrastu tekstu i nie zastępować ciemnej bazy RetroWave.
 
 ## Brand Assets
 
