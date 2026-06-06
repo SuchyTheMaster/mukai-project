@@ -1,0 +1,175 @@
+services:
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql://mukai:mukai@postgres:5432/mukai
+      REDIS_URL: redis://redis:6379/0
+      ARTIFACT_ROOT: /app/artifacts
+      MODEL_CACHE_ROOT: /app/model-cache
+      MAX_UPLOAD_BYTES: 524288000
+      CORS_ORIGINS: '["http://localhost:5173","http://localhost:8080"]'
+    volumes:
+      - mukai_artifacts:/app/artifacts
+      - mukai_model_cache:/app/model-cache
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker-orchestrator:
+    build:
+      context: ./backend
+      dockerfile: Worker.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://mukai:mukai@postgres:5432/mukai
+      REDIS_URL: redis://redis:6379/0
+      ARTIFACT_ROOT: /app/artifacts
+      MODEL_CACHE_ROOT: /app/model-cache
+    volumes:
+      - mukai_artifacts:/app/artifacts
+      - mukai_model_cache:/app/model-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker-separate-stems:
+    build:
+      context: ./backend
+      dockerfile: SeparateStems.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://mukai:mukai@postgres:5432/mukai
+      REDIS_URL: redis://redis:6379/0
+      ARTIFACT_ROOT: /app/artifacts
+      MODEL_CACHE_ROOT: /app/model-cache
+      TORCH_HOME: /app/model-cache/torch
+      XDG_CACHE_HOME: /app/model-cache/xdg
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      ALLOW_CPU_SEPARATION: "true"
+    volumes:
+      - mukai_artifacts:/app/artifacts
+      - mukai_model_cache:/app/model-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
+  worker-transcribe:
+    build:
+      context: ./backend
+      dockerfile: Transcribe.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://mukai:mukai@postgres:5432/mukai
+      REDIS_URL: redis://redis:6379/0
+      ARTIFACT_ROOT: /app/artifacts
+      MODEL_CACHE_ROOT: /app/model-cache
+      TORCH_HOME: /app/model-cache/torch
+      HF_HOME: /app/model-cache/huggingface
+      XDG_CACHE_HOME: /app/model-cache/xdg
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      ALLOW_CPU_TRANSCRIPTION: "true"
+      TRANSCRIPTION_BATCH_SIZE: "16"
+      TRANSCRIPTION_LOW_CONFIDENCE_THRESHOLD: "0.55"
+    volumes:
+      - mukai_artifacts:/app/artifacts
+      - mukai_model_cache:/app/model-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
+  worker-pitch:
+    build:
+      context: ./backend
+      dockerfile: Pitch.Dockerfile
+    environment:
+      DATABASE_URL: postgresql://mukai:mukai@postgres:5432/mukai
+      REDIS_URL: redis://redis:6379/0
+      ARTIFACT_ROOT: /app/artifacts
+      MODEL_CACHE_ROOT: /app/model-cache
+      TORCH_HOME: /app/model-cache/torch
+      XDG_CACHE_HOME: /app/model-cache/xdg
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      ALLOW_CPU_PITCH: "true"
+      PITCH_BATCH_SIZE: "2048"
+    volumes:
+      - mukai_artifacts:/app/artifacts
+      - mukai_model_cache:/app/model-cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities:
+                - gpu
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16.6-alpine
+    environment:
+      POSTGRES_DB: mukai
+      POSTGRES_USER: mukai
+      POSTGRES_PASSWORD: mukai
+    volumes:
+      - mukai_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mukai -d mukai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7.4.1-alpine
+    volumes:
+      - mukai_redis:/data
+
+volumes:
+  mukai_artifacts:
+  mukai_model_cache:
+  mukai_postgres:
+  mukai_redis:
