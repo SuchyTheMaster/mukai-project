@@ -139,7 +139,7 @@ Wejście:
 Wyjście:
 
 - `transcript.raw.json`: segmenty modelu ASR.
-- `transcript.aligned.json`: segmenty, słowa, czasy start/end, confidence.
+- `transcript.aligned.json`: finalne frazy karaoke, słowa, czasy start/end, confidence.
 
 Wymagania:
 
@@ -147,6 +147,13 @@ Wymagania:
 - Wymuszać język, jeśli użytkownik podał go w uploadzie.
 - Nie wymuszać języka dla utworów wielojęzycznych ani wtedy, gdy użytkownik zostawi pole języka puste.
 - Uwzględnić, że Whisper pracuje na oknach około 30 sekund; dla długich utworów pipeline musi poprawnie segmentować lub przekazywać audio do WhisperX tak, żeby zachować globalne czasy.
+- Worker nie może przekazywać do ASR tylko pierwszego okna 30 sekund. Do WhisperX trafia cały `worker_inputs/whisperx.wav`, a podział na okna 30 sekund jest realizowany przez VAD/Cut & Merge WhisperX z globalnymi czasami segmentów.
+- Domyślnie używać Silero VAD przez WhisperX `vad_method="silero"`, z `pyannote` jako trybem alternatywnym.
+- Jeśli wersja WhisperX w obrazie nie obsługuje jawnego `vad_method`, worker nie przerywa transkrypcji i zapisuje w diagnostyce, czy metoda VAD została wymuszona, wstrzyknięta przez `vad_model`, czy użyto domyślnego VAD tej wersji.
+- `transcript.raw.json` zachowuje surowe segmenty ASR bez przepisywania ich na frazy karaoke.
+- Po forced alignment worker buduje finalne `TranscriptSegment` z aligned words: dłuższe przerwy między słowami rozdzielają sentencje/frazy, a krótkie pauzy pozostają w obrębie jednej frazy.
+- Artefakty transkrypcji zapisują czas trwania wejścia, rozmiar okna, oczekiwaną liczbę okien i maksymalny czas końca segmentów, żeby dało się diagnostycznie wykryć wynik ucięty do pierwszych 30 sekund.
+- Artefakty transkrypcji zapisują metodę VAD, opcje VAD, próg pauzy dla fraz i padding fraz.
 - Zachować segmenty o niskiej pewności, ale oznaczyć je do ręcznej korekty.
 - Dla piosenek dopuszczać powtórzenia, wydłużone sylaby i fragmenty bez słów.
 - Zapisać wersje WhisperX, modelu ASR, modelu alignacji, PyTorch/CUDA i parametry batch w artefaktach transkrypcji.
@@ -170,7 +177,7 @@ Wymagania:
 
 - Docelowo wykonywać pitch detection w osobnym workerze Docker `worker-pitch`.
 - Przechowywać ramki F0 niezależnie od nut, żeby edytor mógł pokazać surowy kontur.
-- Domyślnie użyć progu ciszy `-45 dBFS`, progu periodicity `0.5`, kroku ramek `10 ms`, minimalnej długości nuty `80 ms` i scalania przerw do `50 ms`.
+- Domyślnie użyć progu ciszy `-42 dBFS`, progu periodicity `0.55`, kroku ramek `10 ms`, minimalnej długości nuty `120 ms` i scalania przerw do `90 ms`; te wartości są praktycznym punktem startowym dla typowych piosenek i szkicu karaoke.
 - Powyższe parametry filtracji pitch muszą być dostępne w zaawansowanych ustawieniach i możliwe do samodzielnej zmiany przed uruchomieniem albo ponownym przeliczeniem pitch detection.
 - Konwertować częstotliwość do MIDI i do pitch UltraStar dopiero po filtracji.
 - Zapisać wersję torchcrepe, PyTorch/CUDA, progi i parametry filtracji w `pitch.notes.json`.
@@ -185,9 +192,10 @@ Cel:
 Reguły startowe:
 
 - Fraza tekstu wyznacza linię karaoke.
-- Nuty przypisywać do słów na podstawie przecięcia czasowego.
-- Jeśli jedno słowo trwa przez wiele nut, dzielić je na token główny i przedłużenia zgodne z konwencją UltraStar.
-- Jeśli słowo zawiera wiele śpiewanych sylab, tworzyć edytowalne tokeny sylabowe.
+- W ramach frazy dzielić słowa na sylaby przed dopasowaniem nut.
+- Nuty przypisywać do sylab na podstawie przecięcia czasowego w całym utworze.
+- Jeśli jedno słowo trwa przez wiele nut, przypisywać nuty do sylab, a nadmiarowe nuty zapisywać jako przedłużenia zgodne z konwencją UltraStar.
+- Jeśli słowo zawiera wiele śpiewanych sylab, tworzyć edytowalne tokeny sylabowe bez sztucznego wymuszania liczby sylab na liczbę nut.
 - Jeśli pitch jest niepewny, oznaczać nutę jako wymagającą korekty zamiast usuwać ją automatycznie.
 
 Wyjście:

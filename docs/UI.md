@@ -8,19 +8,21 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 
 ## Branding / App Header
 
-- Główny nagłówek aplikacji pokazuje logo oraz nazwę `MUKAI`; bezpośrednio przy nazwie albo pod nią widoczny jest mniejszy napis `Music to Karaoke AI Creator`.
-- Logo jest widoczne obok nazwy w głównym headerze pierwszego widoku i globalnego shellu aplikacji; nie może występować wyłącznie jako mała ikona w nawigacji.
+- Główny branding aplikacji znajduje się na górze lewej kolumny roboczej i pokazuje logo oraz nazwę `MUKAI`; pod nazwą widoczny jest mniejszy napis `Music to Karaoke AI Creator`.
+- Logo jest widoczne obok nazwy w pierwszym widoku i globalnym shellu aplikacji; nie może występować wyłącznie jako mała ikona w nawigacji.
+- W lewym panelu logo ma obszar `80x100px`, grafika wypełnia go w trybie `contain`, napis `MUKAI` ma rozmiar `63px`, a slogan ma rozmiar `13.2px` i pozostaje pod nim z `line-height: 1`.
 - Logo musi być skalowane do rozmiaru proporcjonalnego względem tekstu, przycisków i spacingu headera, także wtedy, gdy dostarczony oryginał jest duży.
 - Tekst alternatywny logo: `MUKAI - Music to Karaoke AI Creator`.
-- Header pozostaje zgodny z RetroWave: ciemne tło, neonowe akcenty, czytelny kontrast i brak jasnych powierzchni.
+- Branding pozostaje zgodny z RetroWave: ciemne tło, neonowe akcenty, czytelny kontrast i brak jasnych powierzchni.
 - Jeśli logo nie zostało jeszcze dostarczone, UI może pokazać sam tekst nazwy albo prosty placeholder tekstowy, ale nie generuje zastępczego logo.
 
 ## App Shell Layout
 
-- Globalny shell ma stały górny header z brandingiem `MUKAI` i nie zastępuje go stroną marketingową.
-- Po lewej stronie znajduje się pływająca kolumna robocza. Jej górny panel zawiera upload audio i krótkie podsumowanie pliku, a niżej znajduje się panel aktualnego etapu z nazwą etapu, coverem, metadanymi, ustawieniami modeli, ustawieniami pitch oraz akcją resetu etapu.
+- Globalny shell nie ma stałego headera pełnej szerokości; branding `MUKAI` zajmuje tylko szerokość lewej kolumny, dzięki czemu środkowa i prawa kolumna zaczynają się od góry strony z zachowaniem paddingu.
+- Po lewej stronie znajduje się pływająca kolumna robocza. Jej górny panel zawiera branding, upload audio, krótkie podsumowanie pliku, podgląd covera oraz akcje covera.
 - Główny obszar pracy pomiędzy kolumnami pokazuje właściwą zawartość aktywnego widoku: upload, status przetwarzania, edytor albo eksport.
-- Po prawej stronie znajduje się pływająca kolumna etapów pipeline'u. Pokazuje od razu wszystkie spodziewane etapy, a nie tylko etap bieżący.
+- Po prawej stronie znajduje się pływająca kolumna etapów pipeline'u. Nad listą pipeline'u pokazuje aktualny etap, a niżej od razu wszystkie spodziewane etapy.
+- W widoku `Dopasowanie` prawa kolumna jest domyślnie ukryta, żeby zwiększyć przestrzeń roboczą edytora, ale użytkownik może ją pokazać i ponownie ukryć.
 - Na małych ekranach prawa kolumna etapów musi zmienić się w zwijany panel albo poziomy pasek, tak żeby nie zasłaniać formularzy, edytora ani przycisków.
 - `docs/assets/background.png` jest źródłem subtelnego fragmentu tła umieszczanego u góry i wyśrodkowanego poziomo (`top center`). Tło nie powinno być kotwiczone do lewej ani prawej strony. Musi wtapiać się w `surface-base`, nie obniżać kontrastu tekstu i nie zastępować ciemnej bazy RetroWave.
 

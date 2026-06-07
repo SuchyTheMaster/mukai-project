@@ -8,10 +8,10 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 
 ## Shell aplikacji
 
-- Na samej górze aplikacji widoczny jest header z logo, napisem `MUKAI` i mniejszym napisem `Music to Karaoke AI Creator`.
-- Lewa pływająca kolumna ma na górze sekcję uploadu audio z kompaktowym podsumowaniem wybranego pliku, a niżej panel aktualnego etapu pracy.
-- Panel aktualnego etapu pokazuje nazwę etapu, cover, przycisk resetu tego etapu, metadane, ustawienia modeli, ustawienia pitch i najważniejsze parametry techniczne wejścia.
-- Prawa pływająca kolumna pokazuje wszystkie spodziewane etapy pipeline'u od uploadu do eksportu. Etapy są rozróżnione kolorami na wykonane, przetwarzane, oczekujące i błędne.
+- Lewa pływająca kolumna ma na górze branding z logo, napisem `MUKAI` i mniejszym napisem `Music to Karaoke AI Creator`, a niżej sekcję uploadu audio z kompaktowym podsumowaniem wybranego pliku i coverem.
+- Branding zajmuje tylko szerokość lewej kolumny; środkowa i prawa kolumna zaczynają się od góry strony z zachowaniem paddingu.
+- Prawa pływająca kolumna pokazuje aktualny etap oraz wszystkie spodziewane etapy pipeline'u od uploadu do eksportu. Etapy są rozróżnione kolorami na wykonane, przetwarzane, oczekujące i błędne.
+- W widoku `Dopasowanie` prawa kolumna jest domyślnie ukryta, ale użytkownik może ją pokazać i ponownie ukryć.
 - Centralny obszar roboczy pokazuje aktywny widok: upload, status przetwarzania, edytor albo eksport.
 - Na małych ekranach prawa kolumna etapów musi zmienić się w zwijany panel albo poziomy pasek, żeby nie zasłaniać formularzy ani edytora.
 
@@ -31,17 +31,20 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Cover z tagów jest widoczny tak samo jak cover wskazany z dysku: jest wybrany, pokazany w podglądzie i zostanie użyty w eksporcie, jeśli użytkownik go nie zastąpi.
 - Kliknięcie podglądu covera otwiera wybór pliku z dysku.
 - Ręcznie wskazany cover zastępuje cover wykryty w tagach.
-- Przycisk `Przywróć domyślny` przywraca cover wykryty w tagach; jeśli tagi nie zawierały covera, czyści wybór covera.
+- Akcja `Z tagów` przywraca cover wykryty w tagach; jeśli tagi nie zawierały covera, czyści wybór covera.
+- W UI importu przycisk ręcznego wgrania covera jest podpisany `Z dysku`, a przywrócenie covera z tagów jest podpisane `Z tagów`; oba znajdują się pod podglądem okładki w lewej kolumnie.
 - Jeśli metadane albo cover nie istnieją, pola pozostają do ręcznego uzupełnienia, a eksport bez covera pozostaje poprawny.
 - Wskazówka: dla utworów wielojęzycznych zostaw język pusty, żeby Whisper sam wykrył język.
 - Wybór modelu separacji: domyślnie dokładniejszy `htdemucs_ft`, opcjonalnie szybszy `htdemucs`.
+- Wybór metody wykrywania mowy/VAD jest widoczny w tym samym wierszu co modele separacji i transkrypcji, w kolejności: separacja, wykrywanie mowy, transkrypcja.
+- Każda z tych trzech pozycji ma ikonę informacyjną z tooltipem, który krótko wyjaśnia cel kroku i wpływ wyboru.
 - Wybór modelu transkrypcji: domyślnie dokładniejszy `large-v3`, opcjonalnie szybszy `large-v3-turbo`.
 - Zaawansowane ustawienia pitch: próg ciszy, próg periodicity, krok ramek, minimalna długość nuty i scalanie krótkich przerw.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
 - Podgląd covera jest widoczny od razu po wykryciu grafiki z tagów albo po ręcznym wgraniu pliku.
 - Jeśli preflight nie wykrył covera i użytkownik nie wgra ręcznego covera, eksportowana paczka nie zawiera covera.
 - Informacja, że audio zostanie przekonwertowane lokalnie przez FFmpeg do formatów roboczych.
-- Start zadania.
+- Główna akcja startu w środkowej kolumnie jest podpisana `Przetwarzaj audio`.
 
 ### Import Projektu
 
@@ -65,9 +68,9 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 Główne obszary:
 
 - Odtwarzacz audio z przełącznikiem oryginał/wokal/instrumental.
-- Waveform z markerami fraz.
-- Lista fraz tekstu z edycją słów i sylab.
-- Piano roll lub siatka nut zsynchronizowana z osią czasu.
+- Jeden wysoki wykres edytora z waveformem w tle, cienkimi markerami fraz i blokami sylab w pitch lane.
+- Lista sentencji tekstu z edycją słów i sylab. `Sentencje` są etykietą UI dla istniejących linii/fraz karaoke w `Arrangement`.
+- Ghost nuty bez tekstu jako półprzezroczyste bloki diagnostyczne w tym samym wykresie.
 - Panel właściwości zaznaczonej frazy, słowa, sylaby albo nuty.
 
 ## Operacje edycyjne
@@ -75,7 +78,8 @@ Główne obszary:
 Tekst:
 
 - Edycja treści frazy.
-- Podział i scalanie fraz.
+- Podział i scalanie fraz. Podział zaznaczonej sentencji/frazy odbywa się w miejscu playheada; jeśli playhead jest poza dzieloną sentencją, UI pokazuje komunikat `Przewiń wskaźnik do miejsca podziału wewnątrz dzielonej sentencji.` z przyciskiem `OK` i nie zmienia danych.
+- Jeśli playhead wypada w środku tokenu podczas podziału sentencji, token jest rozcinany czasowo i tekstowo, a przypisana nuta `NoteEvent` jest dzielona w tym samym czasie z zachowaniem MIDI i oznaczeniem nowej części do recenzji sylabowej.
 - Podział i scalanie słów.
 - Podział i scalanie sylab.
 - Oznaczanie fragmentu jako instrumentalny, freestyle albo rap.
@@ -83,13 +87,16 @@ Tekst:
 Timing:
 
 - Przesuwanie początku i końca frazy.
-- Przesuwanie początku i końca nuty.
-- Dociąganie do siatki beatów.
+- Przesuwanie początku i końca bloku sylaby.
+- Jeśli blok sylaby ma `noteId`, korekta czasu synchronizuje przypisaną nutę.
+- Przyciąganie krawędzi do pobliskich krawędzi bloków, nut, fraz i opcjonalnej siatki.
 - Lokalna korekta offsetu dla całej frazy.
 
 Pitch:
 
-- Przesuwanie nuty w górę/dół o półton.
+- Przesuwanie bloku sylaby w górę/dół po półtonach.
+- Jeśli blok sylaby ma `noteId`, korekta pitch synchronizuje przypisaną nutę.
+- Blok bez nuty jest oznaczony jako brak nuty, pokazany na pomarańczowo i po pierwszym pionowym przesunięciu tworzy ręczną `NoteEvent`.
 - Scalanie krótkich nut.
 - Dzielenie nuty.
 - Ustawienie typu nuty.
@@ -118,7 +125,17 @@ Edytor powinien wizualnie oznaczać:
 
 ## Wymagania UX
 
-- Odtwarzanie musi być zsynchronizowane z waveformem i piano rollem.
+- Odtwarzanie musi być zsynchronizowane z połączonym wykresem waveform/sylaby pitch.
+- Przełączniki `Oryginał`, `Wokal` i `Instrumental` są w nagłówku wykresu, a przycisk `Play`, pasek postępu, zoom, magnes przyciągania i kłódka ograniczenia odtwarzania są w jednym pasku narzędzi nad wykresem.
+- Magnes przełącza przyciąganie elementów na wykresie i pokazuje aktywny stan neonowym świeceniem; tooltip ma treść `przyciągaj elementy na wykresie`.
+- Kłódka przełącza odtwarzanie tylko widocznego zakresu wykresu; tooltip ma treść `ogranicz odtwarzanie do widocznego zakresu`. Gdy opcja jest aktywna, `Play` startuje z bieżącej pozycji w widocznym zakresie albo z początku zakresu, zatrzymuje się na końcu zakresu i wraca playheadem do startu tego odtwarzania bez przewijania wykresu dalej.
+- Pasek pozycji okna wykresu znajduje się nad wykresem i pokazuje widoczny zakres jako uchwyt o szerokości zależnej od zoomu.
+- Lista `Sentencje` pokazuje separator z przyciskiem `+` przed, między i po blokach; dodanie nowej sentencji odbywa się przez inline pole tekstowe, żeby nie tworzyć pustych tokenów.
+- Dwuklik na bloku sentencji w liście albo na markerze sentencji na wykresie zoomuje wykres tak, żeby objąć całą sentencję.
+- Dwuklik na tokenie na wykresie albo w liście `Sentencje` zaznacza token i odtwarza audio tylko od początku do końca tokenu, po czym playhead wraca na początek tokenu.
+- `KaraokeToken` jest podstawowym blokiem edycji na wykresie; `NoteEvent` pozostaje źródłem pitch i diagnostyki, a nuty bez tekstu są widoczne jako ghost bloki.
+- Blok sylaby pokazuje tekst w pierwszym wierszu i samą liczbę MIDI w drugim wierszu; przy braku nuty drugi wiersz pokazuje `brak`, a pełna informacja `MIDI {wartość}` jest widoczna w tooltipie.
+- Uchwyty zmiany granic bloku są widoczne na hover, focus i zaznaczeniu.
 - Najczęstsze korekty powinny dać się wykonać bez opuszczania głównego widoku.
 - MVP utrwala tylko jeden aktualny stan edycji; undo/redo działa sesyjnie w otwartym edytorze i nie musi przetrwać odświeżenia strony.
 - Interfejs powinien obsługiwać długie utwory bez renderowania całej osi czasu naraz.

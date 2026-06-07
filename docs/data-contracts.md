@@ -29,6 +29,14 @@
     "transcriptionModel": "large-v3",
     "pitch": "default"
   },
+  "transcriptionSettings": {
+    "vadMethod": "silero",
+    "vadOnset": 0.5,
+    "vadOffset": 0.363,
+    "vadChunkSizeSec": 30,
+    "sentencePauseMs": 700,
+    "sentencePaddingMs": 80
+  },
   "processing": {
     "separating_vocals.demucs": {
       "stage": "separating_vocals",
@@ -70,6 +78,55 @@ Domyślne wartości w UI:
 
 - `separationModel`: `htdemucs_ft`.
 - `transcriptionModel`: `large-v3`.
+
+## TranscriptionSettings
+
+Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w frazy karaoke. Surowe segmenty ASR pozostają w `transcript.raw.json`, a `transcript.aligned.json` zawiera finalne `TranscriptSegment` zbudowane z aligned words.
+
+```json
+{
+  "vadMethod": "silero",
+  "vadOnset": 0.5,
+  "vadOffset": 0.363,
+  "vadChunkSizeSec": 30,
+  "sentencePauseMs": 700,
+  "sentencePaddingMs": 80
+}
+```
+
+`vadMethod`:
+
+- `silero`: domyślny VAD dla WhisperX.
+- `pyannote`: obsługiwany tryb alternatywny.
+
+Zasady:
+
+- `vadChunkSizeSec` pozostaje domyślnie `30`, żeby pasował do okna kontekstowego Whispera.
+- `sentencePauseMs` jest minimalną przerwą między słowami, która rozdziela finalne frazy karaoke.
+- `sentencePaddingMs` rozszerza start i koniec frazy, ale nie może powodować nachodzenia na sąsiednie frazy.
+- Artefakty transkrypcji zapisują wybraną metodę VAD, parametry VAD oraz parametry grupowania fraz.
+
+## PitchSettings
+
+Domyślne ustawienia pitch są dobrane pod typowe piosenki i późniejsze łączenie słów z nutami w szkicu karaoke: zachowują krok analizy `10 ms`, ale odrzucają bardzo krótkie nuty i scalają drobne przerwy po separacji wokalu.
+
+```json
+{
+  "silenceThresholdDb": -42.0,
+  "periodicityThreshold": 0.55,
+  "frameStepMs": 10,
+  "minNoteLengthMs": 120,
+  "mergeGapMs": 90
+}
+```
+
+Etykiety w UI:
+
+- `silenceThresholdDb`: Czułość na cichy wokal (dB).
+- `periodicityThreshold`: Minimalna pewność tonu (0-1).
+- `frameStepMs`: Dokładność czasu analizy (ms).
+- `minNoteLengthMs`: Najkrótsza nuta karaoke (ms).
+- `mergeGapMs`: Scalanie krótkich przerw (ms).
 
 ## StageSnapshot
 
@@ -183,6 +240,48 @@ Zasady:
 - Preflight musi poprawnie dekodować tagi UTF-8, UTF-16 oraz przypadki mieszane bez uszkadzania znaków narodowych.
 - Odczyt tagów powinien używać biblioteki metadanych audio, np. Mutagen; `ffprobe` nie jest jedynym źródłem tagów tekstowych ani covera.
 
+## CreateJobUpload
+
+`CreateJobUpload` jest JSON-em przekazywanym w polu formularza `payload` przy `POST /api/jobs/uploads`.
+
+```json
+{
+  "uploadDraftId": "draft_01J...",
+  "metadata": {
+    "title": "Song Title",
+    "artist": "Artist",
+    "language": "pl",
+    "languageMode": "forced"
+  },
+  "profiles": {
+    "separationModel": "htdemucs_ft",
+    "transcriptionModel": "large-v3",
+    "pitch": "default"
+  },
+  "transcriptionSettings": {
+    "vadMethod": "silero",
+    "vadOnset": 0.5,
+    "vadOffset": 0.363,
+    "vadChunkSizeSec": 30,
+    "sentencePauseMs": 700,
+    "sentencePaddingMs": 80
+  },
+  "pitchSettings": {
+    "silenceThresholdDb": -42.0,
+    "periodicityThreshold": 0.55,
+    "frameStepMs": 10,
+    "minNoteLengthMs": 120,
+    "mergeGapMs": 90
+  },
+  "useEmbeddedCover": true
+}
+```
+
+Zasady:
+
+- Brak `transcriptionSettings` w payloadzie oznacza użycie wartości domyślnych.
+- `transcriptionSettings` są zapisywane w `Job` i używane przy pierwszym uruchomieniu oraz ponownym przeliczeniu transkrypcji.
+
 ## SourceMetadata
 
 ```json
@@ -272,6 +371,8 @@ Zasady:
 
 ## TranscriptSegment
 
+`TranscriptSegment` reprezentuje finalną frazę/sentencję karaoke po forced alignment i pogrupowaniu słów na podstawie dłuższych pauz. Nie musi odpowiadać jednemu surowemu segmentowi ASR z WhisperX.
+
 ```json
 {
   "segmentId": "seg_001",
@@ -279,17 +380,21 @@ Zasady:
   "endSec": 15.87,
   "text": "pierwsza fraza tekstu",
   "confidence": 0.84,
+  "requiresReview": false,
   "words": [
     {
       "wordId": "word_001",
       "startSec": 12.34,
       "endSec": 12.91,
       "text": "pierwsza",
-      "confidence": 0.81
+      "confidence": 0.81,
+      "requiresReview": false
     }
   ]
 }
 ```
+
+`requiresReview` jest ustawiane bez usuwania tekstu, jeśli segment albo słowo ma niską pewność, brakujące czasy alignacji albo inną diagnostykę wymagającą ręcznej korekty w edytorze.
 
 ## PitchFrame
 
@@ -314,7 +419,8 @@ Zasady:
   "frequencyHz": 220.0,
   "confidence": 0.72,
   "source": "pitch_ai",
-  "requiresReview": false
+  "requiresReview": false,
+  "qualityFlags": []
 }
 ```
 
@@ -332,11 +438,28 @@ Zasady:
   "midi": 57,
   "noteType": "normal",
   "isExtension": false,
-  "extendsTokenId": null
+  "extendsTokenId": null,
+  "requiresReview": false,
+  "qualityFlags": []
 }
 ```
 
 `KaraokeToken` żyje jako część aktualnego `Arrangement`; w manifeście projektu jest reprezentowany w `arrangement.tokens`. Token może mieć pusty `text` tylko wtedy, gdy `isExtension` ma wartość `true` i `extendsTokenId` wskazuje token, którego sylabę albo samogłoskę przedłuża. Eksporter nie tworzy tekstu przedłużeń heurystycznie.
+
+Reguły automatycznego szkicu:
+
+- Jeśli liczba nut w słowie jest równa liczbie sylab, każda sylaba dostaje jedną nutę.
+- Jeśli nut jest więcej niż sylab, nadmiarowe nuty tworzą tokeny przedłużenia z pustym `text`, `isExtension=true` i `extendsTokenId` wskazującym token sylaby.
+- Jeśli nut jest mniej niż sylab, brakujące sylaby pozostają tokenami bez nuty i dostają `missing_note` oraz `needs_syllable_review`.
+- Szkic nie dzieli słowa na sztuczne kawałki tylko po to, żeby liczba tokenów pasowała do liczby nut.
+
+`qualityFlags` oznaczają elementy do ręcznej recenzji bez usuwania danych AI. MVP używa co najmniej:
+
+- `uncertain_pitch`: nuta ma niską pewność detekcji pitch.
+- `missing_note`: tekst nie ma przypisanej nuty.
+- `unassigned_note`: nuta nie ma przypisanego tekstu.
+- `uncertain_text`: segment albo słowo z transkrypcji wymaga korekty.
+- `needs_syllable_review`: słowo zostało rozciągnięte na wiele nut i wymaga ręcznej decyzji sylabowej.
 
 ## ExportSelection
 
@@ -463,11 +586,15 @@ Import:
       "lineId": "line_001",
       "startSec": 12.34,
       "endSec": 15.87,
-      "tokenIds": ["tok_001", "tok_002"]
+      "tokenIds": ["tok_001", "tok_002"],
+      "requiresReview": false,
+      "qualityFlags": []
     }
   ],
   "tokens": [],
-  "noteEvents": []
+  "noteEvents": [],
+  "source": "draft_ai",
+  "qualitySummary": {}
 }
 ```
 
