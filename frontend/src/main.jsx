@@ -39,6 +39,7 @@ const PITCH_TOP_MAX_PCT = 85;
 const SNAP_TIME_SEC = 0.08;
 const SNAP_MIDI = 1;
 const INSERTED_SENTENCE_LENGTH_SEC = 0.6;
+const MIN_TOKEN_NOTE_SEC = 0.02;
 
 const emptyMetadata = {
   title: "",
@@ -68,6 +69,25 @@ const defaultTranscription = {
   vadChunkSizeSec: 30,
   sentencePauseMs: 700,
   sentencePaddingMs: 80,
+};
+
+const defaultSyllabification = {
+  method: "pyphen",
+};
+
+const SYLLABIFICATION_OPTIONS = [
+  ["kokosznicka", "Kokosznicka (tylko dla PL)"],
+  ["pyphen", "Pyphen (multijęzyczny)"],
+  ["heuristic", "Heurystyka"],
+  ["none", "Bez podziału"],
+];
+
+const SYLLABIFICATION_SELECT_LABELS = Object.fromEntries(SYLLABIFICATION_OPTIONS);
+const SYLLABIFICATION_BADGE_LABELS = {
+  kokosznicka: "Kokosznicka",
+  pyphen: "Pyphen",
+  heuristic: "Heurystyka",
+  none: "Bez podziału",
 };
 
 const TRANSCRIPTION_SETTING_FIELDS = [
@@ -131,6 +151,7 @@ const MODEL_TOOLTIPS = {
   separation: "Separacja rozdziela utwór na wokal i instrumental. Dokładniejszy model zwykle daje czystszy wokal, ale działa dłużej.",
   vad: "Wykrywanie mowy wskazuje fragmenty z wokalem przed transkrypcją. Ma wpływ na pominięcie ciszy, oddechów i nieśpiewanych fragmentów.",
   transcription: "Transkrypcja zamienia wokal na tekst. Większy model zwykle lepiej radzi sobie z językiem i wymową, ale potrzebuje więcej czasu.",
+  syllabification: 'Dla polskich piosenek zalecany sylabizator to "Kokosznicka", ale czasami może lepiej sprawdzić się "Pyphen". Dla zagranicznych tylko "Pyphen". Jeżeli jakiś język nie jest obsługiwany przez wybraną metodę, to zostanie użyta metoda heurustyczna. Jeżeli całe słowa piosenki są śpiewane w jednym tonie, to lepiej sprawdzi się tryb bez podziału na sylaby.',
 };
 
 function App() {
@@ -142,6 +163,8 @@ function App() {
   const [profiles, setProfiles] = useState({ separationModel: "htdemucs_ft", transcriptionModel: "large-v3", pitch: "default" });
   const [transcriptionSettings, setTranscriptionSettings] = useState(defaultTranscription);
   const [pitchSettings, setPitchSettings] = useState(defaultPitch);
+  const [syllabificationSettings, setSyllabificationSettings] = useState(defaultSyllabification);
+  const [syllabificationTouched, setSyllabificationTouched] = useState(false);
   const [useEmbeddedCover, setUseEmbeddedCover] = useState(true);
   const [job, setJob] = useState(null);
   const [arrangement, setArrangement] = useState(null);
@@ -182,6 +205,11 @@ function App() {
     if (!isReview) setReviewRailVisible(false);
   }, [isReview]);
 
+  useEffect(() => {
+    if (syllabificationTouched) return;
+    setSyllabificationSettings(defaultSyllabificationForLanguage(metadata.language));
+  }, [metadata.language, syllabificationTouched]);
+
   async function inspect(file) {
     setError(null);
     setBusy(true);
@@ -194,6 +222,8 @@ function App() {
       setInspection(result);
       setMetadata({ ...emptyMetadata, ...result.metadata, language: "", languageMode: "auto" });
       setTranscriptionSettings(defaultTranscription);
+      setSyllabificationTouched(false);
+      setSyllabificationSettings(defaultSyllabificationForLanguage(""));
       setUseEmbeddedCover(Boolean(result.embeddedCover));
       setCoverFile(null);
       setJob(null);
@@ -217,6 +247,7 @@ function App() {
         profiles,
         transcriptionSettings,
         pitchSettings,
+        syllabificationSettings,
         useEmbeddedCover: useEmbeddedCover && !coverFile,
       };
       const form = new FormData();
@@ -322,7 +353,7 @@ function App() {
 
         {job?.metadata && <section>
           <div className="section-title">Ustawienia zadania</div>
-          {job?.metadata && <MetadataSummary metadata={job.metadata} profiles={job.profiles} transcriptionSettings={job.transcriptionSettings} pitchSettings={job.pitchSettings} />}
+          {job?.metadata && <MetadataSummary metadata={job.metadata} profiles={job.profiles} transcriptionSettings={job.transcriptionSettings} pitchSettings={job.pitchSettings} syllabificationSettings={job.syllabificationSettings} />}
         </section>}
       </aside>
 
@@ -350,6 +381,9 @@ function App() {
               setTranscriptionSettings={setTranscriptionSettings}
               pitchSettings={pitchSettings}
               setPitchSettings={setPitchSettings}
+              syllabificationSettings={syllabificationSettings}
+              setSyllabificationSettings={setSyllabificationSettings}
+              setSyllabificationTouched={setSyllabificationTouched}
               inspection={inspection}
               job={job}
               createJob={createJob}
@@ -378,7 +412,7 @@ function App() {
   );
 }
 
-function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcriptionSettings, setTranscriptionSettings, pitchSettings, setPitchSettings, inspection, job, createJob, busy }) {
+function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcriptionSettings, setTranscriptionSettings, pitchSettings, setPitchSettings, syllabificationSettings, setSyllabificationSettings, setSyllabificationTouched, inspection, job, createJob, busy }) {
   return (
     <section className="workspace-panel">
       <div className="workspace-header">
@@ -403,6 +437,7 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
             <Select label="Separacja" tooltip={MODEL_TOOLTIPS.separation} value={profiles.separationModel} onChange={(value) => setProfiles({ ...profiles, separationModel: value })} options={[["htdemucs_ft", "htdemucs_ft dokładniejszy"], ["htdemucs", "htdemucs szybszy"]]} />
             <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={transcriptionSettings.vadMethod} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, vadMethod: value })} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
             <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={profiles.transcriptionModel} onChange={(value) => setProfiles({ ...profiles, transcriptionModel: value })} options={[["large-v3", "large-v3 dokładniejszy"], ["large-v3-turbo", "large-v3-turbo szybszy"]]} />
+            <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabificationSettings.method} onChange={(value) => { setSyllabificationTouched(true); setSyllabificationSettings({ method: value }); }} options={SYLLABIFICATION_OPTIONS} />
           </div>
 
           <details className="advanced">
@@ -759,6 +794,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
       </div>
 
       <div className="quality-strip">
+        <SyllabificationBadge info={arrangement.syllabification} />
         {qualityBadges(arrangement).map(([flag, count]) => (
           <span key={flag} className={`quality-badge ${count ? "warning" : "ok"}`}>{FLAG_LABELS[flag] ?? flag}: {count}</span>
         ))}
@@ -1075,7 +1111,7 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
 
       {selected.type === "token" && selectedToken && (
         <div className="property-stack">
-          <TextField label="Sylaba / słowo" value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value, isExtension: value ? false : selectedToken.isExtension }))} />
+          <TextField label="Sylaba / słowo" value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value || "~", isExtension: false, extendsTokenId: null }))} />
           <TextField label="Start" type="number" value={selectedToken.startSec} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { startSec: Number(value) }))} />
           <TextField label="Koniec" type="number" value={selectedToken.endSec} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: Number(value) }))} />
           <Select label="Typ nuty" value={selectedToken.noteType} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { noteType: value }))} options={NOTE_TYPES} />
@@ -1142,9 +1178,10 @@ function AudioSummary({ audio, filename }) {
   return <dl className="summary"><dt>Plik</dt><dd>{filename}</dd><dt>Format</dt><dd>{audio.container ?? "-"}</dd><dt>Kodek</dt><dd>{audio.codec ?? "-"}</dd><dt>Kanały</dt><dd>{audio.channels ?? "-"}</dd><dt>Hz</dt><dd>{audio.sampleRate ?? "-"}</dd><dt>Czas</dt><dd>{audio.durationSec ? `${audio.durationSec.toFixed(2)} s` : "-"}</dd></dl>;
 }
 
-function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSettings }) {
+function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSettings, syllabificationSettings }) {
   const transcription = { ...defaultTranscription, ...(transcriptionSettings ?? {}) };
   const pitch = { ...defaultPitch, ...(pitchSettings ?? {}) };
+  const syllabification = { ...defaultSyllabification, ...(syllabificationSettings ?? {}) };
 
   return (
     <dl className="summary">
@@ -1167,6 +1204,7 @@ function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSetti
           <dt>{field.label}</dt><dd>{formatSettingValue(pitch[key])}</dd>
         </React.Fragment>
       ))}
+      <dt>Sylabizacja</dt><dd>{SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method}</dd>
     </dl>
   );
 }
@@ -1216,11 +1254,12 @@ function updateLineText(draft, lineId, text) {
   const lineTokens = tokensForLine(draft, line);
   if (!lineTokens.length) return draft;
   if (!words.length) {
-    lineTokens[0].text = "";
-    lineTokens.slice(1).forEach((token) => {
-      token.text = "";
-      token.isExtension = true;
-      token.extendsTokenId = lineTokens[0].tokenId;
+    lineTokens.forEach((token) => {
+      token.text = "~";
+      token.isExtension = false;
+      token.extendsTokenId = null;
+      token.requiresReview = true;
+      token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
     });
     return draft;
   }
@@ -1236,9 +1275,11 @@ function updateLineText(draft, lineId, text) {
     token.extendsTokenId = null;
   });
   lineTokens.slice(words.length).forEach((token) => {
-    token.text = "";
-    token.isExtension = true;
-    token.extendsTokenId = lineTokens[0].tokenId;
+    token.text = "~";
+    token.isExtension = false;
+    token.extendsTokenId = null;
+    token.requiresReview = true;
+    token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
   });
   return draft;
 }
@@ -1454,7 +1495,7 @@ function canSplitLineAtTime(arrangement, line, splitSec) {
   let hasLeft = false;
   let hasRight = false;
   for (const token of tokensForLine(arrangement, line)) {
-    if (token.startSec < splitTime && token.endSec > splitTime) return (token.text ?? "").length >= 2;
+    if (token.startSec < splitTime && token.endSec > splitTime) return (token.text ?? "").length >= 2 || Boolean(token.noteId);
     if (token.endSec <= splitTime) hasLeft = true;
     if (token.startSec >= splitTime) hasRight = true;
   }
@@ -1526,12 +1567,14 @@ function splitTokenAtTime(draft, token, splitTime) {
   const linkedNote = token.noteId ? draft.noteEvents.find((note) => note.noteId === token.noteId) : null;
   const nextTokenId = nextId("tok", draft.tokens);
   const [leftText, rightText] = splitTokenTextAtTime(token, splitTime);
-  if (!rightText) return null;
   let nextNoteId = null;
-  token.text = leftText;
-  token.endSec = splitTime;
-  if (linkedNote && linkedNote.endSec - linkedNote.startSec > 0.02) {
-    const noteSplitTime = Math.max(linkedNote.startSec + 0.01, Math.min(splitTime, linkedNote.endSec - 0.01));
+  const tokenSplitTime = splitTimeForRange(token.startSec, token.endSec, splitTime);
+  token.text = leftText || "~";
+  token.endSec = tokenSplitTime;
+  token.isExtension = false;
+  token.extendsTokenId = null;
+  if (linkedNote && linkedNote.endSec - linkedNote.startSec > MIN_TOKEN_NOTE_SEC) {
+    const noteSplitTime = splitTimeForRange(linkedNote.startSec, linkedNote.endSec, splitTime);
     const originalNoteEnd = linkedNote.endSec;
     nextNoteId = nextId("note", draft.noteEvents);
     linkedNote.endSec = noteSplitTime;
@@ -1539,7 +1582,7 @@ function splitTokenAtTime(draft, token, splitTime) {
       ...linkedNote,
       noteId: nextNoteId,
       startSec: noteSplitTime,
-      endSec: Math.max(noteSplitTime + 0.01, originalNoteEnd),
+      endSec: Math.max(noteSplitTime + MIN_TOKEN_NOTE_SEC, originalNoteEnd),
       requiresReview: true,
       qualityFlags: [...new Set([...(linkedNote.qualityFlags ?? []), "needs_syllable_review"])],
     });
@@ -1547,13 +1590,13 @@ function splitTokenAtTime(draft, token, splitTime) {
   const next = {
     ...token,
     tokenId: nextTokenId,
-    text: rightText,
-    startSec: splitTime,
-    endSec: Math.max(splitTime + 0.01, originalEnd),
+    text: rightText || "~",
+    startSec: tokenSplitTime,
+    endSec: Math.max(tokenSplitTime + MIN_TOKEN_NOTE_SEC, originalEnd),
     noteId: nextNoteId,
     midi: nextNoteId ? linkedNote?.midi ?? token.midi : null,
-    isExtension: !rightText,
-    extendsTokenId: rightText ? null : token.tokenId,
+    isExtension: false,
+    extendsTokenId: null,
     requiresReview: true,
     qualityFlags: [...new Set([...(token.qualityFlags ?? []), nextNoteId ? "needs_syllable_review" : "missing_note", "needs_syllable_review"])],
   };
@@ -1563,7 +1606,7 @@ function splitTokenAtTime(draft, token, splitTime) {
 
 function splitTokenTextAtTime(token, splitTime) {
   const text = token.text ?? "";
-  if (text.length < 2) return [text, ""];
+  if (text.length < 2) return [text || "~", "~"];
   const ratio = Math.max(0, Math.min(1, (splitTime - token.startSec) / Math.max(token.endSec - token.startSec, 0.001)));
   const splitAt = Math.max(1, Math.min(text.length - 1, Math.round(text.length * ratio)));
   return [text.slice(0, splitAt), text.slice(splitAt)];
@@ -1646,16 +1689,18 @@ function splitToken(draft, tokenId) {
   if (!token || !line) return draft;
   const tokenIndex = line.tokenIds.indexOf(tokenId);
   const splitAt = Math.max(1, Math.ceil((token.text || "").length / 2));
-  const leftText = (token.text || "").slice(0, splitAt);
-  const rightText = (token.text || "").slice(splitAt);
-  const midpoint = token.startSec + (token.endSec - token.startSec) / 2;
+  const leftText = (token.text || "~").slice(0, splitAt) || "~";
+  const rightText = (token.text || "").slice(splitAt) || "~";
+  const midpoint = splitTimeForRange(token.startSec, token.endSec, token.startSec + (token.endSec - token.startSec) / 2);
   const originalEnd = token.endSec;
   const linkedNote = token.noteId ? draft.noteEvents.find((note) => note.noteId === token.noteId) : null;
   let nextNoteId = null;
   token.text = leftText;
   token.endSec = midpoint;
-  if (linkedNote && linkedNote.endSec - linkedNote.startSec > 0.03) {
-    const noteMidpoint = Math.max(linkedNote.startSec + 0.01, Math.min(midpoint, linkedNote.endSec - 0.01));
+  token.isExtension = false;
+  token.extendsTokenId = null;
+  if (linkedNote && linkedNote.endSec - linkedNote.startSec > MIN_TOKEN_NOTE_SEC) {
+    const noteMidpoint = splitTimeForRange(linkedNote.startSec, linkedNote.endSec, midpoint);
     const originalNoteEnd = linkedNote.endSec;
     nextNoteId = nextId("note", draft.noteEvents);
     linkedNote.endSec = noteMidpoint;
@@ -1663,7 +1708,7 @@ function splitToken(draft, tokenId) {
       ...linkedNote,
       noteId: nextNoteId,
       startSec: noteMidpoint,
-      endSec: Math.max(noteMidpoint + 0.01, originalNoteEnd),
+      endSec: Math.max(noteMidpoint + MIN_TOKEN_NOTE_SEC, originalNoteEnd),
       requiresReview: true,
       qualityFlags: [...new Set([...(linkedNote.qualityFlags ?? []), "needs_syllable_review"])],
     });
@@ -1671,9 +1716,9 @@ function splitToken(draft, tokenId) {
   const next = {
     ...token,
     tokenId: nextId("tok", draft.tokens),
-    text: rightText || token.text,
+    text: rightText,
     startSec: midpoint,
-    endSec: Math.max(midpoint + 0.01, originalEnd),
+    endSec: Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd),
     noteId: nextNoteId,
     midi: nextNoteId ? token.midi : null,
     isExtension: false,
@@ -1771,10 +1816,46 @@ function deleteToken(draft, tokenId) {
 function splitNote(draft, noteId) {
   const note = draft.noteEvents.find((item) => item.noteId === noteId);
   if (!note) return draft;
-  const midpoint = note.startSec + (note.endSec - note.startSec) / 2;
+  const midpoint = splitTimeForRange(note.startSec, note.endSec, note.startSec + (note.endSec - note.startSec) / 2);
   const originalEnd = note.endSec;
+  const nextNoteId = nextId("note", draft.noteEvents);
+  const linkedToken = draft.tokens.find((token) => token.noteId === noteId);
   note.endSec = midpoint;
-  draft.noteEvents.push({ ...note, noteId: nextId("note", draft.noteEvents), startSec: midpoint, endSec: Math.max(midpoint + 0.01, originalEnd), requiresReview: true, qualityFlags: [...new Set([...(note.qualityFlags ?? []), "unassigned_note"])] });
+  const nextNote = {
+    ...note,
+    noteId: nextNoteId,
+    startSec: midpoint,
+    endSec: Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd),
+    requiresReview: true,
+    qualityFlags: [...new Set([...(note.qualityFlags ?? []), linkedToken ? "needs_syllable_review" : "unassigned_note"])],
+  };
+  draft.noteEvents.push(nextNote);
+  if (linkedToken) {
+    const line = draft.lines.find((item) => item.tokenIds.includes(linkedToken.tokenId));
+    const tokenIndex = line ? line.tokenIds.indexOf(linkedToken.tokenId) : -1;
+    linkedToken.startSec = roundTime(note.startSec);
+    linkedToken.endSec = roundTime(midpoint);
+    linkedToken.midi = note.midi;
+    linkedToken.isExtension = false;
+    linkedToken.extendsTokenId = null;
+    linkedToken.qualityFlags = [...new Set([...(linkedToken.qualityFlags ?? []), "needs_syllable_review"])];
+    linkedToken.requiresReview = true;
+    const nextToken = {
+      ...linkedToken,
+      tokenId: nextId("tok", draft.tokens),
+      text: "~",
+      noteId: nextNoteId,
+      startSec: roundTime(midpoint),
+      endSec: roundTime(Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd)),
+      midi: nextNote.midi,
+      isExtension: false,
+      extendsTokenId: null,
+      requiresReview: true,
+      qualityFlags: [...new Set([...(linkedToken.qualityFlags ?? []), "needs_syllable_review"])],
+    };
+    draft.tokens.push(nextToken);
+    if (line && tokenIndex !== -1) line.tokenIds.splice(tokenIndex + 1, 0, nextToken.tokenId);
+  }
   return draft;
 }
 
@@ -1815,6 +1896,9 @@ function mergeNotesById(draft, targetNoteId, sourceNoteId) {
 }
 
 function normalizeArrangement(arrangement) {
+  normalizeTokenTexts(arrangement);
+  ensureUniqueNoteAssignments(arrangement);
+  syncAssignmentQualityFlags(arrangement);
   arrangement.lines.forEach((line) => {
     const tokens = tokensForLine(arrangement, line);
     if (!tokens.length) return;
@@ -1832,6 +1916,90 @@ function normalizeArrangement(arrangement) {
     uncertainPitchNotes: arrangement.noteEvents.filter((note) => note.qualityFlags?.includes("uncertain_pitch")).length,
   };
   return arrangement;
+}
+
+function normalizeTokenTexts(arrangement) {
+  arrangement.tokens.forEach((token) => {
+    if (token.text && token.isExtension) {
+      token.isExtension = false;
+      token.extendsTokenId = null;
+    }
+    if (!token.text && !token.isExtension) {
+      token.text = "~";
+      token.requiresReview = true;
+      token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
+    }
+  });
+}
+
+function ensureUniqueNoteAssignments(arrangement) {
+  const noteById = new Map(arrangement.noteEvents.map((note) => [note.noteId, note]));
+  const tokensByNoteId = new Map();
+  arrangement.tokens.forEach((token) => {
+    if (!token.noteId) return;
+    if (!noteById.has(token.noteId)) {
+      token.noteId = null;
+      token.midi = null;
+      return;
+    }
+    const tokens = tokensByNoteId.get(token.noteId) ?? [];
+    tokens.push(token);
+    tokensByNoteId.set(token.noteId, tokens);
+  });
+
+  tokensByNoteId.forEach((tokens, noteId) => {
+    if (tokens.length <= 1) return;
+    const sourceNote = noteById.get(noteId);
+    if (!sourceNote) return;
+    const sortedTokens = [...tokens].sort((left, right) => left.startSec - right.startSec);
+    sortedTokens.forEach((token, index) => {
+      if (index === 0) {
+        sourceNote.startSec = roundTime(token.startSec);
+        sourceNote.endSec = roundTime(Math.max(token.startSec + MIN_TOKEN_NOTE_SEC, token.endSec));
+        token.midi = sourceNote.midi;
+        return;
+      }
+      const copiedNote = {
+        ...sourceNote,
+        noteId: nextId("note", arrangement.noteEvents),
+        startSec: roundTime(token.startSec),
+        endSec: roundTime(Math.max(token.startSec + MIN_TOKEN_NOTE_SEC, token.endSec)),
+        requiresReview: true,
+        qualityFlags: [...new Set([...(sourceNote.qualityFlags ?? []), "needs_syllable_review"])],
+      };
+      arrangement.noteEvents.push(copiedNote);
+      noteById.set(copiedNote.noteId, copiedNote);
+      token.noteId = copiedNote.noteId;
+      token.midi = copiedNote.midi;
+      token.isExtension = false;
+      token.extendsTokenId = null;
+      token.requiresReview = true;
+      token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
+    });
+  });
+}
+
+function syncAssignmentQualityFlags(arrangement) {
+  const assignedNoteIds = new Set(arrangement.tokens.map((token) => token.noteId).filter(Boolean));
+  arrangement.tokens.forEach((token) => {
+    if (token.noteId) {
+      clearMissingNoteFlag(token);
+      return;
+    }
+    if (!token.isExtension) {
+      token.requiresReview = true;
+      token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "missing_note"])];
+    }
+  });
+  arrangement.noteEvents.forEach((note) => {
+    if (assignedNoteIds.has(note.noteId)) {
+      note.qualityFlags = withoutFlags(note.qualityFlags, ["unassigned_note"]);
+      note.requiresReview = note.qualityFlags.length > 0;
+      return;
+    }
+    note.requiresReview = true;
+    note.qualityFlags = [...new Set([...(note.qualityFlags ?? []), "unassigned_note"])];
+  });
 }
 
 function cleanTiming(changes, current) {
@@ -1905,6 +2073,15 @@ function roundTime(value) {
   return Number(Math.max(0, value).toFixed(3));
 }
 
+function splitTimeForRange(startSec, endSec, preferredSec) {
+  const start = Number(startSec);
+  const end = Number(endSec);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return roundTime((Number.isFinite(start) ? start : 0) + MIN_TOKEN_NOTE_SEC);
+  const preferred = Number.isFinite(preferredSec) ? preferredSec : start + (end - start) / 2;
+  if (end - start <= MIN_TOKEN_NOTE_SEC * 2) return roundTime(start + (end - start) / 2);
+  return roundTime(Math.max(start + MIN_TOKEN_NOTE_SEC, Math.min(preferred, end - MIN_TOKEN_NOTE_SEC)));
+}
+
 function clampMidi(value) {
   return Math.max(MIN_EDITOR_MIDI, Math.min(MAX_EDITOR_MIDI, Math.round(value)));
 }
@@ -1924,6 +2101,32 @@ function clearMissingNoteFlag(token) {
 
 function waveformPixelsPerSecond(container, zoomSec) {
   return Math.max(24, Math.round((container?.clientWidth || 900) / Math.max(zoomSec, 1)));
+}
+
+function SyllabificationBadge({ info }) {
+  if (!info) {
+    return <span className="quality-badge warning">Sylabizacja: brak danych</span>;
+  }
+  const requested = info.requestedMethod;
+  const applied = info.appliedMethod;
+  const warning = requested && applied && requested !== applied;
+  const appliedLabel = syllabificationBadgeLabel(applied);
+  const requestedLabel = syllabificationBadgeLabel(requested);
+  const text = warning ? `Sylabizacja: ${appliedLabel} (wybrano ${requestedLabel})` : `Sylabizacja: ${appliedLabel}`;
+  return <span className={`quality-badge ${warning ? "warning" : "ok"}`} title={info.fallbackReason ?? ""}>{text}</span>;
+}
+
+function syllabificationBadgeLabel(method) {
+  return SYLLABIFICATION_BADGE_LABELS[method] ?? method ?? "brak danych";
+}
+
+function defaultSyllabificationForLanguage(language) {
+  return { method: isPolishLanguage(language) ? "kokosznicka" : "pyphen" };
+}
+
+function isPolishLanguage(language) {
+  const normalized = (language ?? "").trim().toLowerCase().replace("_", "-");
+  return normalized === "pl" || normalized.startsWith("pl-");
 }
 
 function syncWaveformViewport(waveSurfer, container, startSec, zoomSec) {

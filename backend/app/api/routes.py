@@ -151,6 +151,7 @@ async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | N
         profiles=request.profiles,
         transcription_settings=request.transcriptionSettings,
         pitch_settings=request.pitchSettings,
+        syllabification_settings=request.syllabificationSettings,
         processing=processing,
         audio=draft["audio"],
     )

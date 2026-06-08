@@ -15,7 +15,7 @@ COPY requirements.txt /app/requirements.txt
 COPY requirements-pitch.txt /app/requirements-pitch.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt \
     && pip install --no-cache-dir -r /app/requirements-pitch.txt \
-    && python -c "import torchcrepe"
+    && python -c "import torchcrepe, kokosznicka, pyphen"
 
 COPY app /app/app
 COPY migrations /app/migrations

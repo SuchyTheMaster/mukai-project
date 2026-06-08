@@ -14,6 +14,7 @@ from app.domain.contracts import (
     Retention,
     SourceMetadata,
     StageSnapshot,
+    SyllabificationSettings,
     Tempo,
     TranscriptionSettings,
 )
@@ -31,6 +32,7 @@ def create_job(
     profiles: ModelProfiles,
     transcription_settings: TranscriptionSettings,
     pitch_settings: PitchSettings,
+    syllabification_settings: SyllabificationSettings,
     processing: dict[str, StageSnapshot],
     audio: AudioInfo,
 ) -> None:
@@ -38,9 +40,9 @@ def create_job(
         conn.execute(
             """
             INSERT INTO jobs (
-              job_id, status, metadata, profiles, transcription_settings, pitch_settings, processing, retention, audio
+              job_id, status, metadata, profiles, transcription_settings, pitch_settings, syllabification_settings, processing, retention, audio
             )
-            VALUES (%s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb)
+            VALUES (%s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb)
             """,
             (
                 job_id,
@@ -49,6 +51,7 @@ def create_job(
                 json.dumps(_json(profiles)),
                 json.dumps(_json(transcription_settings)),
                 json.dumps(_json(pitch_settings)),
+                json.dumps(_json(syllabification_settings)),
                 json.dumps({key: _json(value) for key, value in processing.items()}),
                 json.dumps(_json(Retention())),
                 json.dumps(_json(audio)),
@@ -76,6 +79,7 @@ def _row_to_job(row: dict, artifact_rows: list[dict]) -> Job:
         profiles=ModelProfiles.model_validate(row["profiles"]),
         transcriptionSettings=TranscriptionSettings.model_validate(row["transcription_settings"] or {}),
         pitchSettings=PitchSettings.model_validate(row["pitch_settings"]),
+        syllabificationSettings=SyllabificationSettings.model_validate(row.get("syllabification_settings") or {}),
         processing={key: StageSnapshot.model_validate(value) for key, value in row["processing"].items()},
         retention=Retention.model_validate(row["retention"]),
         tempo=Tempo.model_validate(row["tempo"]) if row["tempo"] else None,

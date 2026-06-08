@@ -59,6 +59,10 @@ class ModelProfiles(BaseModel):
     pitch: str = "default"
 
 
+SyllabificationMethod = Literal["kokosznicka", "pyphen", "heuristic", "none"]
+SyllabificationLanguageSource = Literal["forced", "detected", "alignment", "unknown"]
+
+
 class TranscriptionSettings(BaseModel):
     vadMethod: Literal["silero", "pyannote"] = "silero"
     vadOnset: float = Field(default=0.5, gt=0.0, lt=1.0)
@@ -74,6 +78,10 @@ class PitchSettings(BaseModel):
     frameStepMs: int = 10
     minNoteLengthMs: int = 120
     mergeGapMs: int = 90
+
+
+class SyllabificationSettings(BaseModel):
+    method: SyllabificationMethod = "pyphen"
 
 
 class StageSnapshot(BaseModel):
@@ -267,6 +275,15 @@ class ArrangementLine(BaseModel):
         return value
 
 
+class SyllabificationInfo(BaseModel):
+    requestedMethod: SyllabificationMethod
+    appliedMethod: SyllabificationMethod
+    language: str | None = None
+    languageSource: SyllabificationLanguageSource = "unknown"
+    fallbackReason: str | None = None
+    packageVersions: dict[str, str | None] = Field(default_factory=dict)
+
+
 class Arrangement(BaseModel):
     arrangementId: str
     jobId: str
@@ -278,6 +295,18 @@ class Arrangement(BaseModel):
     noteEvents: list[NoteEvent] = Field(default_factory=list)
     source: Literal["draft_ai", "manual", "imported"] = "draft_ai"
     qualitySummary: dict[str, int] = Field(default_factory=dict)
+    syllabification: SyllabificationInfo | None = None
+
+    @model_validator(mode="after")
+    def note_assigned_to_at_most_one_token(self):
+        seen_note_ids: set[str] = set()
+        for token in self.tokens:
+            if token.noteId is None:
+                continue
+            if token.noteId in seen_note_ids:
+                raise ValueError("noteId can be assigned to at most one KaraokeToken")
+            seen_note_ids.add(token.noteId)
+        return self
 
 
 class Job(BaseModel):
@@ -289,6 +318,7 @@ class Job(BaseModel):
     profiles: ModelProfiles
     transcriptionSettings: TranscriptionSettings = Field(default_factory=TranscriptionSettings)
     pitchSettings: PitchSettings = Field(default_factory=PitchSettings)
+    syllabificationSettings: SyllabificationSettings = Field(default_factory=SyllabificationSettings)
     processing: dict[str, StageSnapshot] = Field(default_factory=dict)
     retention: Retention = Field(default_factory=Retention)
     tempo: Tempo | None = None
@@ -302,6 +332,7 @@ class CreateJobUpload(BaseModel):
     profiles: ModelProfiles = Field(default_factory=ModelProfiles)
     transcriptionSettings: TranscriptionSettings = Field(default_factory=TranscriptionSettings)
     pitchSettings: PitchSettings = Field(default_factory=PitchSettings)
+    syllabificationSettings: SyllabificationSettings = Field(default_factory=SyllabificationSettings)
     useEmbeddedCover: bool = True
 
 
