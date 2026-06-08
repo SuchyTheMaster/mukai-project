@@ -208,7 +208,8 @@ E
 
 - Tekst tokenu nie może zawierać znaku nowej linii.
 - Spacje powinny być kontrolowane przez tokenizację eksportera.
-- Przedłużone sylaby są reprezentowane przez `KaraokeToken.isExtension=true` i `extendsTokenId`; eksporter nie zgaduje tekstu przedłużeń.
+- Kolejne części tej samej sylaby mogą być reprezentowane normalnym tokenem `~`; eksporter traktuje go jak tekst tokenu.
+- Puste tokeny przedłużenia `isExtension=true` i `extendsTokenId` są obsługiwane tylko kompatybilnościowo; eksporter nie zgaduje tekstu przedłużeń.
 - Znaki diakrytyczne są dozwolone dzięki UTF-8.
 
 ## Walidacja eksportu

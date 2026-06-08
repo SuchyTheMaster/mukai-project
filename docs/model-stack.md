@@ -135,8 +135,12 @@ Aktualna decyzja implementacyjna dla etapu 06:
 Aktualna decyzja implementacyjna dla etapu 07:
 
 - `worker-pitch` używa osobnego obrazu `backend/Pitch.Dockerfile` opartego o `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime`, żeby zachować ten sam kontrolowany wariant PyTorch/CUDA co workery AI.
-- `backend/requirements-pitch.txt` pinuje `torchcrepe==0.0.24`; PyTorch pochodzi z obrazu bazowego, a nie z domyślnego resolvera PyPI.
+- `backend/requirements-pitch.txt` pinuje `torchcrepe==0.0.24`, `kokosznicka==0.2.5` i `pyphen==0.17.2`; PyTorch pochodzi z obrazu bazowego, a nie z domyślnego resolvera PyPI.
 - Worker czyta `worker_inputs/torchcrepe.wav`, zapisuje surowe ramki `pitch.frames.json`, filtruje je progami pitch zaakceptowanymi w `Job.pitchSettings` i dopiero po filtracji zapisuje nuty `pitch.notes.json`.
+- Podział słów na tokeny sylabowe używa `Job.syllabificationSettings`: `kokosznicka` tylko dla polskiego `pl`, `pyphen` dla języków z dostępnym słownikiem hyphenation, `heuristic` jako dotychczasowa heurystyka oraz `none` jako brak podziału na sylaby.
+- Jeśli `kokosznicka` albo `pyphen` nie obsłużą języka lub zwrócą niepoprawny wynik, worker używa heurystyki i zapisuje powód w `Arrangement.syllabification.fallbackReason`.
+- Kokosznicka `0.2.5` jest pakietem GPLv3; akceptacja tej zależności jest decyzją projektową dla obsługi polskiej sylabizacji.
+- Pyphen `0.17.2` jest pakietem tri-license `GPLv2+ / LGPLv2+ / MPL 1.1` i używa słowników hyphenation; jest traktowany jako sylabizator przybliżony, bo słowniki dzielenia wyrazów nie zawsze odpowiadają podziałowi śpiewanych sylab.
 - `draft.arrangement.json` pozostaje artefaktem szkicu, a aktywny `Arrangement` jest inicjalizowany w tabeli `arrangements`.
 - Brak nuty dla sylaby, nuta bez tekstu, niepewny pitch oraz tokeny wymagające recenzji sylabizacji są oznaczane flagami jakości do ręcznej recenzji.
 
@@ -147,5 +151,7 @@ Aktualna decyzja implementacyjna dla etapu 07:
 - OpenAI Whisper: https://github.com/openai/whisper
 - CREPE: https://github.com/marl/crepe
 - torchcrepe: https://github.com/maxrmorrison/torchcrepe
+- Kokosznicka: https://pypi.org/project/kokosznicka/
+- Pyphen: https://pypi.org/project/pyphen/0.17.2/
 - FFmpeg: https://ffmpeg.org/
 - Essentia RhythmExtractor2013: https://essentia.upf.edu/reference/std_RhythmExtractor2013.html

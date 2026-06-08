@@ -7,6 +7,7 @@ Wejście:
 - Plik audio: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
 - Metadane: tytuł, artysta, opcjonalny język, opcjonalny album, rok i gatunek.
 - Profile modeli: domyślnie dokładniejsza separacja `htdemucs_ft` i dokładniejsza transkrypcja `large-v3`; użytkownik może ręcznie wybrać szybsze profile `htdemucs` i `large-v3-turbo`.
+- Sylabizacja: wybór `Kokosznicka`, `Pyphen`, `Heurystyka` albo `Bez podziału`; dla języka `pl` UI domyślnie wybiera Kokosznicką, a dla pozostałych języków Pyphen.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
 - Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
 - Opcjonalny import ZIP-a projektu utworzonego przez opcję `Wyeksportuj projekt` jako kontynuacja wcześniejszej pracy.
@@ -25,7 +26,7 @@ Preflight uploadu:
 
 Utworzenie zadania:
 
-- Po akceptacji formularza frontend wysyła `POST /api/jobs/uploads` z `uploadDraftId`, finalnymi metadanymi, profilami modeli, ustawieniami pitch i opcjonalnym ręcznym coverem.
+- Po akceptacji formularza frontend wysyła `POST /api/jobs/uploads` z `uploadDraftId`, finalnymi metadanymi, profilami modeli, ustawieniami transkrypcji, pitch, sylabizacji i opcjonalnym ręcznym coverem.
 - Jeśli użytkownik nie wskaże ręcznie covera, a preflight wykrył osadzony cover, finalny `Job` używa covera z tagów jako covera importu.
 - Jeśli użytkownik wskaże ręczny cover, ręczny plik zastępuje cover z tagów.
 - Utworzenie `Job` zapisuje oryginalny plik jako artefakt niemodyfikowany i ustawia status `uploaded`.
@@ -192,10 +193,17 @@ Cel:
 Reguły startowe:
 
 - Fraza tekstu wyznacza linię karaoke.
-- W ramach frazy dzielić słowa na sylaby przed dopasowaniem nut.
-- Nuty przypisywać do sylab na podstawie przecięcia czasowego w całym utworze.
-- Jeśli jedno słowo trwa przez wiele nut, przypisywać nuty do sylab, a nadmiarowe nuty zapisywać jako przedłużenia zgodne z konwencją UltraStar.
-- Jeśli słowo zawiera wiele śpiewanych sylab, tworzyć edytowalne tokeny sylabowe bez sztucznego wymuszania liczby sylab na liczbę nut.
+- W ramach frazy dzielić słowa na sylaby przed dopasowaniem nut zgodnie z `Job.syllabificationSettings`.
+- Tryb `none` nie dzieli słów; całe wyrazy z transkrypcji są tokenami sylabowymi.
+- Tryb `heuristic` używa dotychczasowej heurystyki.
+- Tryb `kokosznicka` działa tylko dla języka `pl`.
+- Tryb `pyphen` mapuje język na dostępny słownik Pyphen.
+- Język rozstrzygać kolejno z wymuszonego języka `Job.metadata`, `detectedLanguage`, a potem `alignmentLanguage` z `transcript.aligned.json`.
+- Jeśli wybrana metoda nie obsługuje języka, nie jest dostępna albo zwróci niepoprawny podział, użyć heurystyki i zapisać powód fallbacku w `Arrangement.syllabification`.
+- Nuty przypisywać do sylab na podstawie przecięcia czasowego w całym utworze, z relacją `0..1 ↔ 0..1` między tokenem i nutą.
+- Jeśli jedna nuta przecina kilka sylab, dzielić nutę na granicach sylab z zachowaniem MIDI.
+- Jeśli jedna sylaba przecina kilka nut, najpierw scalać kolejne nuty o tym samym MIDI, a token `~` tworzyć tylko przy kontynuacji sylaby na innym MIDI.
+- Sylaby bez nut i nuty bez sylab zostawiać jako elementy do recenzji, zamiast dopasowywać je na siłę.
 - Jeśli pitch jest niepewny, oznaczać nutę jako wymagającą korekty zamiast usuwać ją automatycznie.
 
 Wyjście:
@@ -203,6 +211,7 @@ Wyjście:
 - `draft.arrangement.json` jako artefakt szkicu.
 - Aktualny `Arrangement` w Postgresie zainicjalizowany na podstawie szkicu.
 - Szkic zawiera linie, `KaraokeToken` oraz `NoteEvent` w strukturze `Arrangement`.
+- `Arrangement.syllabification` zapisuje `requestedMethod`, `appliedMethod`, język, źródło języka, ewentualny `fallbackReason` oraz wersje pakietów sylabizacji.
 
 ## 8. Edycja ręczna
 

@@ -37,6 +37,9 @@
     "sentencePauseMs": 700,
     "sentencePaddingMs": 80
   },
+  "syllabificationSettings": {
+    "method": "kokosznicka"
+  },
   "processing": {
     "separating_vocals.demucs": {
       "stage": "separating_vocals",
@@ -127,6 +130,29 @@ Etykiety w UI:
 - `frameStepMs`: Dokładność czasu analizy (ms).
 - `minNoteLengthMs`: Najkrótsza nuta karaoke (ms).
 - `mergeGapMs`: Scalanie krótkich przerw (ms).
+
+## SyllabificationSettings
+
+Ustawienia sylabizacji sterują tym, jak słowa z `transcript.aligned.json` są dzielone na tokeny karaoke przed dopasowaniem do nut. Ustawienie jest zapisywane w `Job`, a worker aligningu zapisuje w `Arrangement.syllabification`, która metoda została finalnie zastosowana.
+
+```json
+{
+  "method": "kokosznicka"
+}
+```
+
+`method`:
+
+- `kokosznicka`: zalecana metoda dla języka polskiego; obsługiwana tylko dla `pl`.
+- `pyphen`: metoda multijęzyczna oparta o słowniki hyphenation Pyphen.
+- `heuristic`: dotychczasowa heurystyka bez zewnętrznego słownika.
+- `none`: brak podziału; całe słowa z transkrypcji są przekazywane jako tokeny sylabowe.
+
+Zasady:
+
+- Jeśli użytkownik poda język `pl`, UI domyślnie wybiera `kokosznicka`; dla pozostałych języków domyślnie wybiera `pyphen`.
+- Język dla workera aligningu jest rozstrzygany kolejno z wymuszonego języka `Job.metadata`, `detectedLanguage`, a potem `alignmentLanguage` z `transcript.aligned.json`.
+- Jeśli wybrana metoda nie obsługuje języka, pakiet nie jest dostępny albo zwróci niepoprawny podział, worker używa `heuristic` i zapisuje powód w `Arrangement.syllabification.fallbackReason`.
 
 ## StageSnapshot
 
@@ -273,6 +299,9 @@ Zasady:
     "minNoteLengthMs": 120,
     "mergeGapMs": 90
   },
+  "syllabificationSettings": {
+    "method": "kokosznicka"
+  },
   "useEmbeddedCover": true
 }
 ```
@@ -281,6 +310,7 @@ Zasady:
 
 - Brak `transcriptionSettings` w payloadzie oznacza użycie wartości domyślnych.
 - `transcriptionSettings` są zapisywane w `Job` i używane przy pierwszym uruchomieniu oraz ponownym przeliczeniu transkrypcji.
+- Brak `syllabificationSettings` w payloadzie oznacza użycie wartości domyślnej backendu `pyphen`; UI powinien wysłać jawny wybór użytkownika.
 
 ## SourceMetadata
 
@@ -444,14 +474,17 @@ Zasady:
 }
 ```
 
-`KaraokeToken` żyje jako część aktualnego `Arrangement`; w manifeście projektu jest reprezentowany w `arrangement.tokens`. Token może mieć pusty `text` tylko wtedy, gdy `isExtension` ma wartość `true` i `extendsTokenId` wskazuje token, którego sylabę albo samogłoskę przedłuża. Eksporter nie tworzy tekstu przedłużeń heurystycznie.
+`KaraokeToken` żyje jako część aktualnego `Arrangement`; w manifeście projektu jest reprezentowany w `arrangement.tokens`. Przypisanie tokenu do nuty oznacza wyłącznie niepuste `noteId`. Relacja token-nuta ma kardynalność `0..1 ↔ 0..1`: token może nie mieć nuty, nuta może nie mieć tokenu, ale jedno `noteId` nie może być przypisane do więcej niż jednego tokenu.
+
+Token może mieć pusty `text` tylko w trybie kompatybilności dla importowanych albo starszych tokenów przedłużenia, gdy `isExtension=true` i `extendsTokenId` wskazuje token źródłowy. Nowy szkic i nowe operacje edytora nie tworzą pustych tokenów przedłużenia dla melizmatów. W initial alignmencie kolejne części tej samej sylaby używają normalnego tekstu tokenu `~` tylko wtedy, gdy kontynuacja ma inny MIDI niż poprzednia część.
 
 Reguły automatycznego szkicu:
 
-- Jeśli liczba nut w słowie jest równa liczbie sylab, każda sylaba dostaje jedną nutę.
-- Jeśli nut jest więcej niż sylab, nadmiarowe nuty tworzą tokeny przedłużenia z pustym `text`, `isExtension=true` i `extendsTokenId` wskazującym token sylaby.
-- Jeśli nut jest mniej niż sylab, brakujące sylaby pozostają tokenami bez nuty i dostają `missing_note` oraz `needs_syllable_review`.
-- Szkic nie dzieli słowa na sztuczne kawałki tylko po to, żeby liczba tokenów pasowała do liczby nut.
+- Jeśli jedna nuta przecina kilka sylab, worker dzieli `NoteEvent` na granicach sylab; części zachowują MIDI, `frequencyHz`, confidence, źródło i flagi jakości.
+- Jeśli jedna sylaba przecina kilka nut, worker scala kolejne nuty o tym samym MIDI, a dla zmian MIDI dzieli token: pierwszy token zachowuje tekst sylaby, a kolejne dostają `text="~"`.
+- Jeśli sylaba nie ma pasującej nuty, pozostaje tokenem bez `noteId` i dostaje `missing_note` oraz `needs_syllable_review`.
+- Jeśli nuta nie ma pasującej sylaby, pozostaje w `noteEvents` jako nuta bez tekstu z `unassigned_note`.
+- Szkic rozwiązuje konflikty wiele-do-jednego, ale nie tworzy sztucznych przypisań tylko po to, żeby każda nuta albo każda sylaba miała parę.
 
 `qualityFlags` oznaczają elementy do ręcznej recenzji bez usuwania danych AI. MVP używa co najmniej:
 
@@ -459,7 +492,7 @@ Reguły automatycznego szkicu:
 - `missing_note`: tekst nie ma przypisanej nuty.
 - `unassigned_note`: nuta nie ma przypisanego tekstu.
 - `uncertain_text`: segment albo słowo z transkrypcji wymaga korekty.
-- `needs_syllable_review`: słowo zostało rozciągnięte na wiele nut i wymaga ręcznej decyzji sylabowej.
+- `needs_syllable_review`: podział sylaby, tokenu albo nuty wymaga ręcznej kontroli.
 
 ## ExportSelection
 
@@ -594,13 +627,33 @@ Import:
   "tokens": [],
   "noteEvents": [],
   "source": "draft_ai",
-  "qualitySummary": {}
+  "qualitySummary": {},
+  "syllabification": {
+    "requestedMethod": "kokosznicka",
+    "appliedMethod": "kokosznicka",
+    "language": "pl",
+    "languageSource": "forced",
+    "fallbackReason": null,
+    "packageVersions": {
+      "kokosznicka": "0.2.5",
+      "pyphen": "0.17.2"
+    }
+  }
 }
 ```
 
 `revision` służy do kontroli współbieżnego zapisu aktualnego stanu i nie oznacza trwałej historii wersji. Eksporter używa aktualnego zatwierdzonego `Arrangement`, jego `tokens` oraz `noteEvents`.
 
 Aktywny `Arrangement` jest przechowywany wyłącznie w Postgresie. `mukai-project.json` zawiera jego serializowany snapshot na potrzeby eksportu projektu i późniejszego importu; ten snapshot nie jest osobnym źródłem prawdy podczas pracy nad aktywnym `Job`.
+
+`Arrangement.syllabification` opisuje finalną sylabizację szkicu:
+
+- `requestedMethod`: metoda wybrana przez użytkownika.
+- `appliedMethod`: metoda faktycznie użyta przez worker.
+- `language`: język użyty do wyboru metody lub słownika.
+- `languageSource`: `forced`, `detected`, `alignment` albo `unknown`.
+- `fallbackReason`: powód użycia heurystyki, jeśli `appliedMethod` różni się od `requestedMethod`.
+- `packageVersions`: wersje pakietów sylabizacji dostępnych w obrazie workera.
 
 ## Semantyka statusów eksportu
 
@@ -640,5 +693,6 @@ Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pr
 
 - `endSec` musi być większe niż `startSec`.
 - Token musi mieć tekst albo być oznaczony jako przedłużenie.
+- Jedno niepuste `KaraokeToken.noteId` może wystąpić maksymalnie w jednym tokenie.
 - Nuta eksportowana do UltraStar musi mieć długość co najmniej jednego beatu.
 - Puste frazy nie są eksportowane.

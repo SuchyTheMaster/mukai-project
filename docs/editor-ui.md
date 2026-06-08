@@ -79,7 +79,7 @@ Tekst:
 
 - Edycja treści frazy.
 - Podział i scalanie fraz. Podział zaznaczonej sentencji/frazy odbywa się w miejscu playheada; jeśli playhead jest poza dzieloną sentencją, UI pokazuje komunikat `Przewiń wskaźnik do miejsca podziału wewnątrz dzielonej sentencji.` z przyciskiem `OK` i nie zmienia danych.
-- Jeśli playhead wypada w środku tokenu podczas podziału sentencji, token jest rozcinany czasowo i tekstowo, a przypisana nuta `NoteEvent` jest dzielona w tym samym czasie z zachowaniem MIDI i oznaczeniem nowej części do recenzji sylabowej.
+- Jeśli playhead wypada w środku tokenu podczas podziału sentencji, token jest rozcinany czasowo i tekstowo, a przypisana nuta `NoteEvent` jest dzielona w tym samym czasie z zachowaniem MIDI i oznaczeniem nowej części do recenzji sylabowej. Gdy nie ma naturalnego prawego fragmentu tekstu, nowy token dostaje `~`.
 - Podział i scalanie słów.
 - Podział i scalanie sylab.
 - Oznaczanie fragmentu jako instrumentalny, freestyle albo rap.
@@ -98,7 +98,7 @@ Pitch:
 - Jeśli blok sylaby ma `noteId`, korekta pitch synchronizuje przypisaną nutę.
 - Blok bez nuty jest oznaczony jako brak nuty, pokazany na pomarańczowo i po pierwszym pionowym przesunięciu tworzy ręczną `NoteEvent`.
 - Scalanie krótkich nut.
-- Dzielenie nuty.
+- Dzielenie nuty. Jeśli nuta ma przypisany token, edytor dzieli też token; pierwsza część zachowuje tekst, a kolejna dostaje `~`.
 - Ustawienie typu nuty.
 - Podgląd surowego konturu F0 jako warstwy pod nutami.
 

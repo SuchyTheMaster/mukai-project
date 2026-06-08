@@ -23,10 +23,14 @@ Dodać detekcję wysokości śpiewanych nut oraz pierwszy edytowalny szkic karao
 - Przechowywanie surowych ramek F0 niezależnie od nut.
 - Worker `worker-aligner` lub lekki moduł alignacji łączący `transcript.aligned.json` i `pitch.notes.json`.
 - Użycie finalnych fraz z `transcript.aligned.json` jako linii karaoke.
-- Podział słów na sylaby przed dopasowaniem nut.
+- Podział słów na sylaby przed dopasowaniem nut wybraną metodą `Job.syllabificationSettings`.
+- Obsługa metod `kokosznicka`, `pyphen`, `heuristic` i `none`.
+- Rozstrzyganie języka dla sylabizacji w kolejności: wymuszony język z `Job.metadata`, `detectedLanguage`, `alignmentLanguage`.
+- Fallback do dotychczasowej heurystyki, gdy wybrana metoda nie obsłuży języka, pakiet nie będzie dostępny albo zwróci niepoprawny wynik.
 - Dopasowanie nut do sylab na podstawie przecięcia czasowego w całym utworze.
 - Tworzenie `draft.arrangement.json`.
 - Inicjalizacja aktualnego `Arrangement` w Postgresie.
+- Zapis `Arrangement.syllabification` z metodą wybraną, metodą zastosowaną, językiem, źródłem języka, powodem fallbacku i wersjami pakietów.
 - Oznaczanie niepewnego pitch, braku nuty dla sylaby i nut bez tekstu jako stanów jakości do recenzji.
 
 ## Poza zakresem
@@ -50,11 +54,17 @@ Dodać detekcję wysokości śpiewanych nut oraz pierwszy edytowalny szkic karao
 ## Kryteria akceptacji
 
 - Częstotliwość jest konwertowana do MIDI i pitch UltraStar dopiero po filtracji.
+- Tryb `none` przekazuje całe słowa jako tokeny sylabowe.
+- `kokosznicka` dla języka innego niż `pl` używa heurystyki i zapisuje fallback.
+- `pyphen` bez obsługiwanego słownika używa heurystyki i zapisuje fallback.
+- `Arrangement.syllabification` zapisuje `requestedMethod`, `appliedMethod` i `fallbackReason`.
+- UI pokazuje finalną metodę sylabizacji w pasku jakości, a fallback wyróżnia ostrzeżeniem.
 - Niepewny pitch oznacza element do korekty, a nie automatyczne usunięcie.
-- Token przedłużenia ma pusty tekst tylko wtedy, gdy `isExtension=true` i wskazuje `extendsTokenId`.
-- Gdy nut jest więcej niż sylab, dodatkowe nuty są tokenami przedłużenia.
-- Gdy nut jest mniej niż sylab, brakujące sylaby dostają `missing_note` i `needs_syllable_review`.
-- Worker nie dzieli sylab sztucznie tylko po to, żeby ich liczba pasowała do liczby nut.
+- Token przedłużenia z pustym tekstem jest obsługiwany tylko kompatybilnościowo przez `isExtension=true` i `extendsTokenId`; nowy szkic go nie tworzy.
+- Jedna nuta może być przypisana maksymalnie do jednego tokenu, a jeden token maksymalnie do jednej nuty.
+- Gdy jedna nuta przecina kilka sylab, worker dzieli nutę na części z tym samym MIDI.
+- Gdy jedna sylaba przecina kilka nut, worker scala kolejne nuty z tym samym MIDI, a `~` tworzy tylko dla kontynuacji na innym MIDI.
+- Brakujące sylaby dostają `missing_note` i `needs_syllable_review`, a nuty bez tekstu dostają `unassigned_note`.
 - `Arrangement` jest aktualnym stanem w Postgresie, a nie plikiem JSON jako źródłem prawdy podczas pracy.
 - `draft.arrangement.json` pozostaje artefaktem szkicu.
 
@@ -63,7 +73,8 @@ Dodać detekcję wysokości śpiewanych nut oraz pierwszy edytowalny szkic karao
 - Test torchcrepe na syntetycznej sinusoidzie.
 - Test torchcrepe na krótkim fragmencie wokalu.
 - Test segmentacji ramek do nut z progami domyślnymi i zmienionymi.
+- Test trybu `none`, `kokosznicka + pl`, `kokosznicka + en`, `pyphen` ze słownikiem i `pyphen` bez słownika.
 - Test łączenia sylab z nutami na podstawie przecięcia czasowego.
-- Test przypadków: tyle samo sylab i nut, więcej nut niż sylab, mniej nut niż sylab, brak nuty dla sylaby.
-- Test inicjalizacji `Arrangement` i walidacji tokenów przedłużenia.
+- Test przypadków: sylaba bez nuty, nuta bez sylaby, jedna nuta przez kilka sylab, jedna sylaba przez kilka nut, scalanie kolejnych nut tej samej sylaby o tym samym MIDI.
+- Test inicjalizacji `Arrangement` i walidacji unikalności niepustego `KaraokeToken.noteId`.
 - Test przejścia statusu do `awaiting_review`.
