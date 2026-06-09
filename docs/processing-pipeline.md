@@ -5,7 +5,7 @@
 Wejście:
 
 - Plik audio: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
-- Metadane: tytuł, artysta, opcjonalny język, opcjonalny album, rok i gatunek.
+- Metadane: tytuł, artysta, opcjonalny język wybierany z przeszukiwalnej listy języków Whisper `large-v3`, opcjonalny album, rok i gatunek.
 - Profile modeli: domyślnie dokładniejsza separacja `htdemucs_ft` i dokładniejsza transkrypcja `large-v3`; użytkownik może ręcznie wybrać szybsze profile `htdemucs` i `large-v3-turbo`.
 - Sylabizacja: wybór `Kokosznicka`, `Pyphen`, `Heurystyka` albo `Bez podziału`; dla języka `pl` UI domyślnie wybiera Kokosznicką, a dla pozostałych języków Pyphen.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
@@ -21,7 +21,8 @@ Preflight uploadu:
 - Jeśli tagi zawierają tytuł, artystę, album, rok albo gatunek, backend zwraca je jako `SourceMetadata`, a frontend wypełnia nimi formularz.
 - Jeśli tagi zawierają osadzony cover, backend zwraca go jako tymczasowy `EmbeddedCover`, a frontend pokazuje go jako wybrany cover importu w sekcji cover.
 - Frontend pokazuje od razu techniczne dane źródła: format/kontener z pola `container`, kodek, kanały, częstotliwość próbkowania i czas trwania.
-- Kliknięcie covera w UI pozwala wybrać plik z dysku. Akcja `Przywróć domyślny` przywraca cover z tagów albo czyści cover, jeśli tagi go nie zawierały.
+- Przed utworzeniem zadania kliknięcie covera w UI pozwala wybrać plik z dysku. Akcja `Przywróć domyślny` przywraca cover z tagów albo czyści cover, jeśli tagi go nie zawierały.
+- Po utworzeniu zadania lewa kolumna pokazuje `WGRANE AUDIO`, dane pliku i nieklikalny podgląd covera bez akcji zmiany covera.
 - Jeśli tagi albo cover nie istnieją, preflight kończy się sukcesem z pustymi polami do ręcznego uzupełnienia.
 
 Utworzenie zadania:
