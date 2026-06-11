@@ -18,6 +18,8 @@ import {
   RotateCcw,
   Save,
   Scissors,
+  SkipBack,
+  SkipForward,
   SlidersHorizontal,
   Trash2,
   Undo2,
@@ -29,14 +31,15 @@ import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const EDITOR_WINDOW_SEC = 30;
-const MIN_EDITOR_WINDOW_SEC = 5;
+const MIN_EDITOR_WINDOW_SEC = 0.1;
 const MAX_EDITOR_WINDOW_SEC = 120;
+const DEFAULT_SNAP_MS = 50;
+const GRAPH_PAN_THRESHOLD_PX = 4;
 const DEFAULT_TOKEN_MIDI = 60;
 const MIN_EDITOR_MIDI = 24;
 const MAX_EDITOR_MIDI = 96;
 const PITCH_TOP_MIN_PCT = 42;
 const PITCH_TOP_MAX_PCT = 85;
-const SNAP_TIME_SEC = 0.08;
 const SNAP_MIDI = 1;
 const INSERTED_SENTENCE_LENGTH_SEC = 0.6;
 const MIN_TOKEN_NOTE_SEC = 0.02;
@@ -76,8 +79,8 @@ const defaultSyllabification = {
 };
 
 const SYLLABIFICATION_OPTIONS = [
-  ["kokosznicka", "Kokosznicka (tylko dla PL)"],
-  ["pyphen", "Pyphen (multijęzyczny)"],
+  ["kokosznicka", "Kokosznicka"],
+  ["pyphen", "Pyphen"],
   ["heuristic", "Heurystyka"],
   ["none", "Bez podziału"],
 ];
@@ -89,6 +92,112 @@ const SYLLABIFICATION_BADGE_LABELS = {
   heuristic: "Heurystyka",
   none: "Bez podziału",
 };
+
+const WHISPER_LANGUAGE_OPTIONS = [
+  ["", "Auto"],
+  ...[
+    ["af", "Afrikaans"],
+    ["sq", "Albański"],
+    ["am", "Amharski"],
+    ["en", "Angielski"],
+    ["ar", "Arabski"],
+    ["as", "Asamski"],
+    ["az", "Azerbejdżański"],
+    ["eu", "Baskijski"],
+    ["bn", "Bengalski"],
+    ["be", "Białoruski"],
+    ["bs", "Bośniacki"],
+    ["br", "Bretoński"],
+    ["bg", "Bułgarski"],
+    ["yue", "Cantoński"],
+    ["zh", "Chiński"],
+    ["hr", "Chorwacki"],
+    ["cs", "Czeski"],
+    ["da", "Duński"],
+    ["et", "Estoński"],
+    ["fo", "Farerski"],
+    ["fi", "Fiński"],
+    ["fr", "Francuski"],
+    ["gl", "Galicyjski"],
+    ["ka", "Gruziński"],
+    ["el", "Grecki"],
+    ["gu", "Gudżarati"],
+    ["ht", "Haitański kreolski"],
+    ["ha", "Hausa"],
+    ["haw", "Hawajski"],
+    ["he", "Hebrajski"],
+    ["hi", "Hindi"],
+    ["es", "Hiszpański"],
+    ["id", "Indonezyjski"],
+    ["is", "Islandzki"],
+    ["ja", "Japoński"],
+    ["jw", "Jawajski"],
+    ["yi", "Jidysz"],
+    ["kn", "Kannada"],
+    ["ca", "Kataloński"],
+    ["kk", "Kazachski"],
+    ["km", "Khmerski"],
+    ["ko", "Koreański"],
+    ["lo", "Laotański"],
+    ["ln", "Lingala"],
+    ["lt", "Litewski"],
+    ["lb", "Luksemburski"],
+    ["la", "Łaciński"],
+    ["lv", "Łotewski"],
+    ["mk", "Macedoński"],
+    ["ml", "Malajalam"],
+    ["ms", "Malajski"],
+    ["mg", "Malgaski"],
+    ["mt", "Maltański"],
+    ["mi", "Maoryski"],
+    ["mr", "Marathi"],
+    ["mn", "Mongolski"],
+    ["my", "Myanmar"],
+    ["nl", "Niderlandzki"],
+    ["de", "Niemiecki"],
+    ["no", "Norweski"],
+    ["nn", "Norweski nynorsk"],
+    ["oc", "Oksytański"],
+    ["hy", "Ormiański"],
+    ["ps", "Paszto"],
+    ["fa", "Perski"],
+    ["pl", "Polski"],
+    ["pt", "Portugalski"],
+    ["pa", "Pendżabski"],
+    ["ru", "Rosyjski"],
+    ["ro", "Rumuński"],
+    ["sa", "Sanskryt"],
+    ["sr", "Serbski"],
+    ["sd", "Sindhi"],
+    ["si", "Syngaleski"],
+    ["sk", "Słowacki"],
+    ["sl", "Słoweński"],
+    ["so", "Somalijski"],
+    ["sw", "Suahili"],
+    ["su", "Sundajski"],
+    ["sn", "Shona"],
+    ["sv", "Szwedzki"],
+    ["tg", "Tadżycki"],
+    ["tl", "Tagalski"],
+    ["th", "Tajski"],
+    ["ta", "Tamilski"],
+    ["tt", "Tatarski"],
+    ["te", "Telugu"],
+    ["bo", "Tybetański"],
+    ["tk", "Turkmeński"],
+    ["tr", "Turecki"],
+    ["uk", "Ukraiński"],
+    ["ur", "Urdu"],
+    ["uz", "Uzbecki"],
+    ["vi", "Wietnamski"],
+    ["hu", "Węgierski"],
+    ["it", "Włoski"],
+    ["cy", "Walijski"],
+    ["yo", "Joruba"],
+    ["ne", "Nepalski"],
+    ["ba", "Baszkirski"],
+  ].sort((left, right) => left[1].localeCompare(right[1], "pl")),
+];
 
 const TRANSCRIPTION_SETTING_FIELDS = [
   ["vadOnset", { label: "Próg startu VAD", step: "0.001" }],
@@ -148,10 +257,10 @@ const NOTE_TYPES = [
 ];
 
 const MODEL_TOOLTIPS = {
-  separation: "Separacja rozdziela utwór na wokal i instrumental. Dokładniejszy model zwykle daje czystszy wokal, ale działa dłużej.",
+  separation: "Separacja rozdziela utwór na wokal i instrumental. htdemucs_ft jest dokładniejszy, a htdemucs szybszy.",
   vad: "Wykrywanie mowy wskazuje fragmenty z wokalem przed transkrypcją. Ma wpływ na pominięcie ciszy, oddechów i nieśpiewanych fragmentów.",
-  transcription: "Transkrypcja zamienia wokal na tekst. Większy model zwykle lepiej radzi sobie z językiem i wymową, ale potrzebuje więcej czasu.",
-  syllabification: 'Dla polskich piosenek zalecany sylabizator to "Kokosznicka", ale czasami może lepiej sprawdzić się "Pyphen". Dla zagranicznych tylko "Pyphen". Jeżeli jakiś język nie jest obsługiwany przez wybraną metodę, to zostanie użyta metoda heurustyczna. Jeżeli całe słowa piosenki są śpiewane w jednym tonie, to lepiej sprawdzi się tryb bez podziału na sylaby.',
+  transcription: "Transkrypcja zamienia wokal na tekst. large-v3 jest dokładniejszy, a large-v3-turbo szybszy.",
+  syllabification: 'Dla polskich piosenek zalecany sylabizator to "Kokosznicka", ale czasami może lepiej sprawdzić się "Pyphen". Dla zagranicznych tylko "Pyphen". Jeżeli jakiś język nie jest obsługiwany przez wybraną metodę, to zostanie użyta metoda heurystyczna. Jeżeli całe słowa piosenki są śpiewane w jednym tonie, to lepiej sprawdzi się tryb bez podziału na sylaby.',
 };
 
 function App() {
@@ -200,6 +309,7 @@ function App() {
   const activeStage = useMemo(() => currentStage(job), [job]);
   const coverPreview = coverFile ? URL.createObjectURL(coverFile) : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
   const isReview = job?.status === "awaiting_review";
+  const jobCreated = Boolean(job);
 
   useEffect(() => {
     if (!isReview) setReviewRailVisible(false);
@@ -321,34 +431,44 @@ function App() {
         </section>
 
         <section>
-          <div className="section-title">Upload audio</div>
-          <label className="dropzone">
-            <UploadCloud size={22} />
-            <span>{audioFile ? audioFile.name : "Wybierz WAV, MP3, MP4, M4A, OGG albo FLAC"}</span>
-            <input type="file" accept=".wav,.mp3,.mp4,.m4a,.ogg,.flac,audio/*,video/mp4" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
-          </label>
+          <div className="section-title">{jobCreated ? "WGRANE AUDIO" : "Upload audio"}</div>
+          {!jobCreated && (
+            <label className="dropzone">
+              <UploadCloud size={22} />
+              <span>{audioFile ? audioFile.name : "Wybierz WAV, MP3, MP4, M4A, OGG albo FLAC"}</span>
+              <input type="file" accept=".wav,.mp3,.mp4,.m4a,.ogg,.flac,audio/*,video/mp4" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
+            </label>
+          )}
           {inspection && <AudioSummary audio={inspection.audio} filename={inspection.originalFilename} />}
-          <button className="cover-box cover-box-button" type="button" disabled={!inspection} onClick={() => coverInputRef.current?.click()}>
-            {coverPreview ? <img src={coverPreview} alt="" /> : <FileAudio size={42} />}
-          </button>
-          <input
-            ref={coverInputRef}
-            className="cover-input"
-            type="file"
-            accept="image/png,image/jpeg"
-            onChange={(event) => {
-              chooseCover(event.target.files?.[0]);
-              event.target.value = "";
-            }}
-          />
-          <div className="cover-actions">
-            <button className="button secondary" type="button" disabled={!inspection} onClick={() => coverInputRef.current?.click()}>
-              <UploadCloud size={16} /> Z dysku
-            </button>
-            <button className="button ghost" type="button" disabled={!inspection} onClick={resetCover}>
-              <RotateCcw size={16} /> Z tagów
-            </button>
-          </div>
+          {jobCreated ? (
+            <div className="cover-box" aria-label="Podgląd okładki">
+              {coverPreview ? <img src={coverPreview} alt="" /> : <FileAudio size={42} />}
+            </div>
+          ) : (
+            <>
+              <button className="cover-box cover-box-button" type="button" disabled={!inspection} onClick={() => coverInputRef.current?.click()}>
+                {coverPreview ? <img src={coverPreview} alt="" /> : <FileAudio size={42} />}
+              </button>
+              <input
+                ref={coverInputRef}
+                className="cover-input"
+                type="file"
+                accept="image/png,image/jpeg"
+                onChange={(event) => {
+                  chooseCover(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+              />
+              <div className="cover-actions">
+                <button className="button secondary" type="button" disabled={!inspection} onClick={() => coverInputRef.current?.click()}>
+                  <UploadCloud size={16} /> Z dysku
+                </button>
+                <button className="button ghost" type="button" disabled={!inspection} onClick={resetCover}>
+                  <RotateCcw size={16} /> Z tagów
+                </button>
+              </div>
+            </>
+          )}
         </section>
 
         {job?.metadata && <section>
@@ -430,13 +550,13 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
             <TextField label="Album" value={metadata.album ?? ""} onChange={(value) => setMetadata({ ...metadata, album: value })} />
             <TextField label="Rok" value={metadata.year ?? ""} onChange={(value) => setMetadata({ ...metadata, year: value })} />
             <TextField label="Gatunek" value={metadata.genre ?? ""} onChange={(value) => setMetadata({ ...metadata, genre: value })} />
-            <TextField label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} placeholder="Puste = auto" />
+            <LanguageSelect label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={WHISPER_LANGUAGE_OPTIONS} />
           </div>
 
           <div className="controls-row">
-            <Select label="Separacja" tooltip={MODEL_TOOLTIPS.separation} value={profiles.separationModel} onChange={(value) => setProfiles({ ...profiles, separationModel: value })} options={[["htdemucs_ft", "htdemucs_ft dokładniejszy"], ["htdemucs", "htdemucs szybszy"]]} />
+            <Select label="Separacja" tooltip={MODEL_TOOLTIPS.separation} value={profiles.separationModel} onChange={(value) => setProfiles({ ...profiles, separationModel: value })} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
             <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={transcriptionSettings.vadMethod} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, vadMethod: value })} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
-            <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={profiles.transcriptionModel} onChange={(value) => setProfiles({ ...profiles, transcriptionModel: value })} options={[["large-v3", "large-v3 dokładniejszy"], ["large-v3-turbo", "large-v3-turbo szybszy"]]} />
+            <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={profiles.transcriptionModel} onChange={(value) => setProfiles({ ...profiles, transcriptionModel: value })} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
             <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabificationSettings.method} onChange={(value) => { setSyllabificationTouched(true); setSyllabificationSettings({ method: value }); }} options={SYLLABIFICATION_OPTIONS} />
           </div>
 
@@ -472,6 +592,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   const waveSurferRef = useRef(null);
   const resumeAfterTrackChange = useRef(false);
   const activePlaybackRangeRef = useRef(null);
+  const viewportSyncRef = useRef({ viewportStart: 0, zoomSec: EDITOR_WINDOW_SEC });
+  const loopPlaybackRef = useRef(false);
   const [waveformReady, setWaveformReady] = useState(false);
   const [track, setTrack] = useState("vocals");
   const [currentTime, setCurrentTime] = useState(0);
@@ -480,6 +602,9 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   const [zoomSec, setZoomSec] = useState(EDITOR_WINDOW_SEC);
   const [viewportStart, setViewportStart] = useState(0);
   const [snapToExisting, setSnapToExisting] = useState(true);
+  const [snapThresholdMs, setSnapThresholdMs] = useState(DEFAULT_SNAP_MS);
+  const [dragGuideTime, setDragGuideTime] = useState(null);
+  const [loopPlayback, setLoopPlayback] = useState(false);
   const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(false);
   const [editorNotice, setEditorNotice] = useState(null);
   const [past, setPast] = useState([]);
@@ -510,6 +635,14 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   }, []);
 
   useEffect(() => {
+    viewportSyncRef.current = { viewportStart: windowStart, zoomSec };
+  }, [windowStart, zoomSec]);
+
+  useEffect(() => {
+    loopPlaybackRef.current = loopPlayback;
+  }, [loopPlayback]);
+
+  useEffect(() => {
     if (!selected.id && arrangement?.lines[0]) setSelected({ type: "line", id: arrangement.lines[0].lineId });
   }, [arrangement?.arrangementId, selected.id]);
 
@@ -536,8 +669,10 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
     });
     waveSurferRef.current = waveSurfer;
     const unsubReady = waveSurfer.on("ready", () => {
+      const viewport = viewportSyncRef.current;
       waveSurfer.setTime(Math.min(targetTime, duration || targetTime));
-      syncWaveformViewport(waveSurfer, waveformRef.current, viewportStart, zoomSec);
+      waveSurfer.setOptions({ minPxPerSec: waveformPixelsPerSecond(waveformRef.current, viewport.zoomSec) });
+      syncWaveformViewport(waveSurfer, waveformRef.current, viewport.viewportStart, viewport.zoomSec);
       if (resume) {
         waveSurfer.play().catch(() => setPlaying(false));
       }
@@ -631,6 +766,11 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
       playRange(startSec, windowEnd, { lockViewport: true, returnToStart: true });
       return;
     }
+    if (loopPlayback) {
+      const startSec = currentTime < duration ? currentTime : 0;
+      playRange(startSec, duration, { returnToStart: false });
+      return;
+    }
     waveSurfer.play().catch(() => setPlaying(false));
   }
 
@@ -644,12 +784,17 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
     }
   }
 
+  function seekTokenEdge(direction) {
+    const edge = nearestTokenEdge(arrangement, currentTime, direction);
+    if (edge != null) seek(edge);
+  }
+
   function selectAndSeek(type, id, timeSec) {
     setSelected({ type, id });
     if (Number.isFinite(timeSec)) seek(timeSec);
   }
 
-  function playRange(startSec, endSec, { lockViewport = false, returnToStart = true } = {}) {
+  function playRange(startSec, endSec, { lockViewport = false, returnToStart = true, allowLoop = true } = {}) {
     const waveSurfer = waveSurferRef.current;
     if (!waveSurfer) return;
     const safeStart = Math.max(0, Math.min(Number(startSec), duration || 0));
@@ -658,7 +803,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
       seek(safeStart);
       return;
     }
-    activePlaybackRangeRef.current = { startSec: safeStart, endSec: safeEnd, lockViewport, returnToStart };
+    activePlaybackRangeRef.current = { startSec: safeStart, endSec: safeEnd, lockViewport, returnToStart, allowLoop };
     setCurrentTime(safeStart);
     waveSurfer.setTime(safeStart);
     waveSurfer.play().catch(() => {
@@ -670,6 +815,12 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   function completeActivePlaybackRange(waveSurfer = waveSurferRef.current) {
     const range = activePlaybackRangeRef.current;
     if (!range) return false;
+    if (range.allowLoop && loopPlaybackRef.current && waveSurfer) {
+      setCurrentTime(range.startSec);
+      waveSurfer.setTime(range.startSec);
+      waveSurfer.play().catch(() => setPlaying(false));
+      return true;
+    }
     activePlaybackRangeRef.current = null;
     const nextTime = range.returnToStart ? range.startSec : range.endSec;
     if (waveSurfer?.isPlaying()) waveSurfer.pause();
@@ -703,8 +854,17 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
     setTrack(nextTrack);
   }
 
-  function zoom(delta) {
-    setZoomSec((value) => Math.max(MIN_EDITOR_WINDOW_SEC, Math.min(MAX_EDITOR_WINDOW_SEC, value + delta)));
+  function zoom(factor) {
+    setZoomSec((value) => Math.max(MIN_EDITOR_WINDOW_SEC, Math.min(MAX_EDITOR_WINDOW_SEC, value * factor)));
+  }
+
+  function zoomFromPointer(event, factor) {
+    event.preventDefault();
+    zoom(factor);
+  }
+
+  function zoomFromClick(event, factor) {
+    if (event.detail === 0) zoom(factor);
   }
 
   function zoomToLine(line) {
@@ -725,6 +885,11 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
     syncWaveformViewport(waveSurferRef.current, waveformRef.current, bounded, zoomSec);
   }
 
+  function setSnapThresholdInput(value) {
+    const next = Number(value);
+    setSnapThresholdMs(Number.isFinite(next) ? Math.max(0, next) : 0);
+  }
+
   function startGraphDrag(kind, id, mode, event, windowStart, windowEnd, pitchRange = null) {
     event.preventDefault();
     event.stopPropagation();
@@ -736,23 +901,28 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
     const startX = event.clientX;
     const startY = event.clientY;
     const before = clone(arrangement);
+    const snapThresholdSec = Math.max(0, Number(snapThresholdMs) || 0) / 1000;
     let moved = false;
     let finalTime = graphItemStart(arrangement, kind, id);
     selectAndSeek(kind === "note" ? "note" : "token", id, graphItemStart(arrangement, kind, id));
+    if (kind === "token") setDragGuideTime(graphGuideTime(arrangement, kind, id, mode));
 
     const onMove = (moveEvent) => {
       const deltaSec = ((moveEvent.clientX - startX) / graphWidth) * range;
       const deltaMidi = pitchRange ? -((moveEvent.clientY - startY) / pitchHeight) * Math.max(pitchRange.maxMidi - pitchRange.minMidi, 1) : 0;
       if (Math.abs(deltaSec) < 0.001 && Math.abs(deltaMidi) < 0.1) return;
       moved = true;
-      const next = normalizeArrangement(updateGraphItem(clone(before), kind, id, mode, deltaSec, deltaMidi, { snapToExisting }));
+      const next = normalizeArrangement(updateGraphItem(clone(before), kind, id, mode, deltaSec, deltaMidi, { snapToExisting, snapThresholdSec }));
       finalTime = graphItemStart(next, kind, id);
+      if (kind === "token") setDragGuideTime(graphGuideTime(next, kind, id, mode));
       setArrangement(next);
     };
 
-    const onUp = () => {
+    const stopDrag = () => {
       window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
+      if (kind === "token") setDragGuideTime(null);
       if (moved) {
         setPast((items) => [...items.slice(-49), before]);
         setFuture([]);
@@ -761,7 +931,40 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
     };
 
     window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp, { once: true });
+    window.addEventListener("pointerup", stopDrag, { once: true });
+    window.addEventListener("pointercancel", stopDrag, { once: true });
+  }
+
+  function startGraphBackgroundDrag(event, windowStart, windowEnd) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const graph = event.currentTarget;
+    const rect = graph.getBoundingClientRect();
+    const graphWidth = graph.clientWidth || 1;
+    const range = Math.max(windowEnd - windowStart, 0.001);
+    const startX = event.clientX;
+    const startOffsetX = Math.max(0, Math.min(graphWidth, startX - rect.left));
+    const startViewport = windowStart;
+    let didPan = false;
+
+    const onMove = (moveEvent) => {
+      const deltaPx = moveEvent.clientX - startX;
+      if (!didPan && Math.abs(deltaPx) < GRAPH_PAN_THRESHOLD_PX) return;
+      didPan = true;
+      const deltaSec = (deltaPx / graphWidth) * range;
+      setGraphViewport(startViewport - deltaSec);
+    };
+
+    const stopDrag = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", stopDrag);
+      window.removeEventListener("pointercancel", stopDrag);
+      if (!didPan) seek(windowStart + (startOffsetX / graphWidth) * range);
+    };
+
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", stopDrag, { once: true });
+    window.addEventListener("pointercancel", stopDrag, { once: true });
   }
 
   if (!arrangement) {
@@ -807,20 +1010,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
         </div>
       )}
 
-      <div className="zoom-bar editor-control-bar">
-        <button className="button secondary transport-play" type="button" disabled={!audioUrl} onClick={togglePlay}>
-          {playing ? <Pause size={16} /> : <Play size={16} />} {playing ? "Pauza" : "Play"}
-        </button>
-        <input className="time-slider" type="range" min="0" max={duration || 0} step="0.01" value={currentTime} onChange={(event) => seek(event.target.value)} />
-        <span className="time-readout">{formatTime(currentTime)} / {formatTime(duration)}</span>
-        <button className="icon-button" type="button" title="Oddal" aria-label="Oddal" onClick={() => zoom(10)}><ZoomOut size={16} /></button>
-        <button className="icon-button" type="button" title="Przybliż" aria-label="Przybliż" onClick={() => zoom(-10)}><ZoomIn size={16} /></button>
-        <button className={`icon-button toggle-button ${snapToExisting ? "active" : ""}`} type="button" title="przyciągaj elementy na wykresie" aria-label="przyciągaj elementy na wykresie" aria-pressed={snapToExisting} onClick={() => setSnapToExisting((value) => !value)}><Magnet size={16} /></button>
-        <button className={`icon-button toggle-button ${limitPlaybackToWindow ? "active" : ""}`} type="button" title="ogranicz odtwarzanie do widocznego zakresu" aria-label="ogranicz odtwarzanie do widocznego zakresu" aria-pressed={limitPlaybackToWindow} onClick={() => setLimitPlaybackToWindow((value) => !value)}><Lock size={16} /></button>
-      </div>
-
-      <GraphScrollbar duration={duration} windowStart={windowStart} zoomSec={zoomSec} onChange={setGraphViewport} />
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} startGraphDrag={startGraphDrag} currentTime={currentTime} seek={seek} windowStart={windowStart} windowEnd={windowEnd} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} />
 
       <div className="editor-grid">
         <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} commit={commit} zoomToLine={zoomToLine} />
@@ -839,7 +1029,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   );
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, startGraphDrag, currentTime, seek, windowStart, windowEnd, assets, effectiveTrack, changeTrack, zoomToLine }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput }) {
   const range = Math.max(windowEnd - windowStart, 0.001);
   const visibleLines = arrangement.lines.filter((line) => line.endSec >= windowStart && line.startSec <= windowEnd);
   const visibleTokens = arrangement.tokens.filter((token) => token.endSec >= windowStart && token.startSec <= windowEnd);
@@ -850,7 +1040,6 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
   return (
     <div className="timeline-panel">
       <div className="timeline-header">
-        <span>{formatTime(windowStart)}</span>
         <div className="track-switch subtle" role="group" aria-label="Źródło audio">
           {[
             ["source_audio", "Oryginał"],
@@ -860,12 +1049,32 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
             <button key={key} className={effectiveTrack === key ? "active" : ""} type="button" disabled={!assets[key]} onClick={() => changeTrack(key)}>{label}</button>
           ))}
         </div>
-        <span>{formatTime(windowEnd)}</span>
+        <div className="timeline-tools">
+          <button className="icon-button" type="button" title="poprzedni element" aria-label="poprzedni element" onClick={seekPreviousTokenEdge}><SkipBack size={14} /></button>
+          <button className="icon-button" type="button" title="następny element" aria-label="następny element" onClick={seekNextTokenEdge}><SkipForward size={14} /></button>
+          <button className={`button secondary transport-play ${playing ? "active" : ""}`} type="button" disabled={!audioReady} onClick={togglePlay}>
+            {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? "Pauza" : "Play"}
+          </button>
+          <button className={`icon-button toggle-button ${loopPlayback ? "active" : ""}`} type="button" title="Zapętl odtwarzanie" aria-label="Zapętl odtwarzanie" aria-pressed={loopPlayback} onClick={() => setLoopPlayback((value) => !value)}><RefreshCcw size={14} /></button>
+          <input className="time-slider" type="range" min="0" max={duration || 0} step="0.01" value={currentTime} onChange={(event) => seek(event.target.value)} />
+          <span className="time-readout">{formatTime(currentTime)} / {formatTime(duration)}</span>
+          <button className="icon-button" type="button" title="Oddal" aria-label="Oddal" onPointerDown={(event) => zoomFromPointer(event, 1.25)} onClick={(event) => zoomFromClick(event, 1.25)}><ZoomOut size={14} /></button>
+          <button className="icon-button" type="button" title="Przybliż" aria-label="Przybliż" onPointerDown={(event) => zoomFromPointer(event, 0.75)} onClick={(event) => zoomFromClick(event, 0.75)}><ZoomIn size={14} /></button>
+          <button className={`icon-button toggle-button ${limitPlaybackToWindow ? "active" : ""}`} type="button" title="ogranicz odtwarzanie do widocznego zakresu" aria-label="ogranicz odtwarzanie do widocznego zakresu" aria-pressed={limitPlaybackToWindow} onClick={() => setLimitPlaybackToWindow((value) => !value)}><Lock size={14} /></button>
+          <button className={`icon-button toggle-button ${snapToExisting ? "active" : ""}`} type="button" title="przyciągaj elementy na wykresie" aria-label="przyciągaj elementy na wykresie" aria-pressed={snapToExisting} onClick={() => setSnapToExisting((value) => !value)}><Magnet size={14} /></button>
+          <label className="snap-threshold-field">
+            <input type="number" min="0" step="10" value={snapThresholdMs} onChange={(event) => setSnapThresholdInput(event.target.value)} />
+            <span>ms</span>
+          </label>
+        </div>
       </div>
       <div className="combined-editor-shell">
         <div ref={bindWaveform} className="waveform-canvas" />
-        <div className="combined-editor-overlay" onPointerDown={(event) => seek(windowStart + (event.nativeEvent.offsetX / event.currentTarget.clientWidth) * range)}>
+        <div className="combined-editor-overlay" onPointerDown={(event) => startGraphBackgroundDrag(event, windowStart, windowEnd)}>
           <div className="playhead" style={{ left: `${percent(currentTime, windowStart, windowEnd)}%` }} />
+          {Number.isFinite(dragGuideTime) && dragGuideTime >= windowStart && dragGuideTime <= windowEnd && (
+            <div className="drag-guide-line" style={{ left: `${percent(dragGuideTime, windowStart, windowEnd)}%` }} />
+          )}
           {visibleLines.map((line) => (
             <button
               key={line.lineId}
@@ -941,6 +1150,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
           })}
         </div>
       </div>
+      <GraphScrollbar duration={duration} windowStart={windowStart} zoomSec={zoomSec} onChange={onViewportChange} />
     </div>
   );
 }
@@ -1152,6 +1362,74 @@ function TextField({ label, helper, value, onChange, type = "text", placeholder 
   return <label className="field"><FieldLabel label={label} />{helper && <small>{helper}</small>}<input type={type} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
+function LanguageSelect({ label, value, onChange, options }) {
+  const rootRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = options.find(([code]) => code === value) ?? [value, value || "Auto"];
+  const normalizedQuery = normalizeSearchText(query);
+  const visibleOptions = [
+    options[0],
+    ...options.slice(1).filter(([code, text]) => {
+      if (!normalizedQuery) return true;
+      return normalizeSearchText(text).includes(normalizedQuery) || normalizeSearchText(code).includes(normalizedQuery);
+    }),
+  ];
+
+  useEffect(() => {
+    function closeOnOutsideClick(event) {
+      if (!rootRef.current?.contains(event.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
+  function chooseLanguage(code) {
+    onChange(code);
+    setOpen(false);
+    setQuery("");
+  }
+
+  return (
+    <div className="field language-field" ref={rootRef}>
+      <FieldLabel label={label} />
+      <input
+        type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        value={open ? query : selected[1]}
+        onFocus={() => {
+          setOpen(true);
+          setQuery("");
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            setOpen(false);
+            setQuery("");
+          }
+        }}
+      />
+      {open && (
+        <div className="language-options" role="listbox">
+          {visibleOptions.map(([code, text]) => (
+            <button key={code || "auto"} className={code === value ? "selected" : ""} type="button" role="option" aria-selected={code === value} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseLanguage(code)}>
+              <span>{text}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Select({ label, value, onChange, options, tooltip }) {
   return <label className="field"><FieldLabel label={label} tooltip={tooltip} /><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
 }
@@ -1190,10 +1468,11 @@ function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSetti
       <dt>Album</dt><dd>{metadata.album || "-"}</dd>
       <dt>Rok</dt><dd>{metadata.year || "-"}</dd>
       <dt>Gatunek</dt><dd>{metadata.genre || "-"}</dd>
-      <dt>Język</dt><dd>{metadata.language || "auto"}</dd>
+      <dt className="summary-gap-after">Język</dt><dd className="summary-gap-after">{metadata.language || "auto"}</dd>
       <dt>Separacja</dt><dd>{profiles?.separationModel ?? "-"}</dd>
       <dt>Transkrypcja</dt><dd>{profiles?.transcriptionModel ?? "-"}</dd>
       <dt>Wykrywanie mowy</dt><dd>{transcription.vadMethod}</dd>
+      <dt className="summary-gap-after">Sylabizacja</dt><dd className="summary-gap-after">{SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method}</dd>
       {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
         <React.Fragment key={`transcription-${key}`}>
           <dt>{field.label}</dt><dd>{formatSettingValue(transcription[key])}</dd>
@@ -1204,7 +1483,6 @@ function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSetti
           <dt>{field.label}</dt><dd>{formatSettingValue(pitch[key])}</dd>
         </React.Fragment>
       ))}
-      <dt>Sylabizacja</dt><dd>{SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method}</dd>
     </dl>
   );
 }
@@ -1240,6 +1518,10 @@ function formatSettingValue(value) {
   if (value == null || value === "") return "-";
   if (typeof value === "number") return Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
   return String(value);
+}
+
+function normalizeSearchText(value) {
+  return String(value ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 }
 
 function Progress({ stage }) {
@@ -1322,18 +1604,18 @@ function updateTokenGraphItem(draft, tokenId, mode, deltaSec, deltaMidi = 0, opt
   const exclude = { tokenId, noteId: token.noteId };
   if (mode === "resize-start") {
     const nextStart = Math.max(0, Math.min(originalEnd - minLength, originalStart + deltaSec));
-    const snappedStart = options.snapToExisting ? snapTimeEdge(draft, nextStart, exclude) : nextStart;
+    const snappedStart = options.snapToExisting ? snapTimeEdge(draft, nextStart, exclude, options.snapThresholdSec) : nextStart;
     token.startSec = roundTime(Math.max(0, Math.min(originalEnd - minLength, snappedStart)));
     syncLinkedNoteFromToken(draft, token, { startSec: token.startSec, endSec: token.endSec });
   } else if (mode === "resize-end") {
     const nextEnd = Math.max(originalStart + minLength, originalEnd + deltaSec);
-    const snappedEnd = options.snapToExisting ? snapTimeEdge(draft, nextEnd, exclude) : nextEnd;
+    const snappedEnd = options.snapToExisting ? snapTimeEdge(draft, nextEnd, exclude, options.snapThresholdSec) : nextEnd;
     token.endSec = roundTime(Math.max(originalStart + minLength, snappedEnd));
     syncLinkedNoteFromToken(draft, token, { startSec: token.startSec, endSec: token.endSec });
   } else {
     const length = Math.max(originalEnd - originalStart, minLength);
     const proposedStart = Math.max(0, originalStart + deltaSec);
-    const nextStart = options.snapToExisting ? snapTimeRangeStart(draft, proposedStart, proposedStart + length, exclude) : proposedStart;
+    const nextStart = options.snapToExisting ? snapTimeRangeStart(draft, proposedStart, proposedStart + length, exclude, options.snapThresholdSec) : proposedStart;
     token.startSec = roundTime(Math.max(0, nextStart));
     token.endSec = roundTime(token.startSec + length);
     syncLinkedNoteFromToken(draft, token, { startSec: token.startSec, endSec: token.endSec });
@@ -1355,18 +1637,18 @@ function updateNoteGraphItem(draft, noteId, mode, deltaSec, deltaMidi = 0, optio
   const exclude = { noteId };
   if (mode === "resize-start") {
     const nextStart = Math.max(0, Math.min(originalEnd - minLength, originalStart + deltaSec));
-    const snappedStart = options.snapToExisting ? snapTimeEdge(draft, nextStart, exclude) : nextStart;
+    const snappedStart = options.snapToExisting ? snapTimeEdge(draft, nextStart, exclude, options.snapThresholdSec) : nextStart;
     note.startSec = roundTime(Math.max(0, Math.min(originalEnd - minLength, snappedStart)));
     syncLinkedTokensFromNote(draft, note, { startSec: note.startSec, endSec: note.endSec });
   } else if (mode === "resize-end") {
     const nextEnd = Math.max(originalStart + minLength, originalEnd + deltaSec);
-    const snappedEnd = options.snapToExisting ? snapTimeEdge(draft, nextEnd, exclude) : nextEnd;
+    const snappedEnd = options.snapToExisting ? snapTimeEdge(draft, nextEnd, exclude, options.snapThresholdSec) : nextEnd;
     note.endSec = roundTime(Math.max(originalStart + minLength, snappedEnd));
     syncLinkedTokensFromNote(draft, note, { startSec: note.startSec, endSec: note.endSec });
   } else {
     const length = Math.max(originalEnd - originalStart, minLength);
     const proposedStart = Math.max(0, originalStart + deltaSec);
-    const nextStart = options.snapToExisting ? snapTimeRangeStart(draft, proposedStart, proposedStart + length, exclude) : proposedStart;
+    const nextStart = options.snapToExisting ? snapTimeRangeStart(draft, proposedStart, proposedStart + length, exclude, options.snapThresholdSec) : proposedStart;
     note.startSec = roundTime(Math.max(0, nextStart));
     note.endSec = roundTime(note.startSec + length);
     syncLinkedTokensFromNote(draft, note, { startSec: note.startSec, endSec: note.endSec });
@@ -1456,18 +1738,19 @@ function syncLinkedTokensFromNote(draft, note, changes) {
   });
 }
 
-function snapTimeEdge(draft, value, exclude = {}) {
+function snapTimeEdge(draft, value, exclude = {}, thresholdSec = 0) {
   const candidates = collectTimeSnapCandidates(draft, exclude);
   if (!candidates.length) return value;
   const nearest = candidates.reduce((best, candidate) => (Math.abs(candidate - value) < Math.abs(best - value) ? candidate : best), candidates[0]);
-  return Math.abs(nearest - value) <= SNAP_TIME_SEC ? nearest : value;
+  return Math.abs(nearest - value) <= Math.max(0, Number(thresholdSec) || 0) ? nearest : value;
 }
 
-function snapTimeRangeStart(draft, start, end, exclude = {}) {
+function snapTimeRangeStart(draft, start, end, exclude = {}, thresholdSec = 0) {
   const candidates = collectTimeSnapCandidates(draft, exclude);
   if (!candidates.length) return start;
-  const startSnap = nearestSnapDelta(candidates, start, SNAP_TIME_SEC);
-  const endSnap = nearestSnapDelta(candidates, end, SNAP_TIME_SEC);
+  const threshold = Math.max(0, Number(thresholdSec) || 0);
+  const startSnap = nearestSnapDelta(candidates, start, threshold);
+  const endSnap = nearestSnapDelta(candidates, end, threshold);
   if (startSnap == null && endSnap == null) return start;
   if (startSnap == null) return start + endSnap;
   if (endSnap == null) return start + startSnap;
@@ -2012,6 +2295,31 @@ function cleanTiming(changes, current) {
 function graphItemStart(arrangement, kind, id) {
   const item = kind === "note" ? arrangement?.noteEvents.find((note) => note.noteId === id) : arrangement?.tokens.find((token) => token.tokenId === id);
   return item?.startSec ?? 0;
+}
+
+function graphGuideTime(arrangement, kind, id, mode) {
+  if (kind !== "token") return null;
+  const token = arrangement?.tokens.find((item) => item.tokenId === id);
+  if (!token) return null;
+  return mode === "resize-end" ? token.endSec : token.startSec;
+}
+
+function nearestTokenEdge(arrangement, timeSec, direction) {
+  if (!arrangement?.tokens?.length || !Number.isFinite(timeSec)) return null;
+  const edgeSet = new Set();
+  arrangement.tokens.forEach((token) => {
+    if (Number.isFinite(token.startSec)) edgeSet.add(roundTime(token.startSec));
+    if (Number.isFinite(token.endSec)) edgeSet.add(roundTime(token.endSec));
+  });
+  const edges = [...edgeSet].sort((left, right) => left - right);
+  const epsilon = 0.001;
+  if (direction === "previous") {
+    for (let index = edges.length - 1; index >= 0; index -= 1) {
+      if (edges[index] < timeSec - epsilon) return edges[index];
+    }
+    return null;
+  }
+  return edges.find((edge) => edge > timeSec + epsilon) ?? null;
 }
 
 function pitchRangeForWindow(arrangement, visibleTokens, visibleNotes, noteById) {
