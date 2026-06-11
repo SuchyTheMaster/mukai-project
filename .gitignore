@@ -9,3 +9,4 @@ coverage/
 artifacts/
 model-cache/
 *.log
+.vscode/
