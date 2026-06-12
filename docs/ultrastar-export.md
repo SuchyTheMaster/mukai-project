@@ -206,10 +206,9 @@ E
 
 ## Reguły tekstu
 
-- Tekst tokenu nie może zawierać znaku nowej linii.
-- Spacje powinny być kontrolowane przez tokenizację eksportera.
-- Kolejne części tej samej sylaby mogą być reprezentowane normalnym tokenem `~`; eksporter traktuje go jak tekst tokenu.
-- Puste tokeny przedłużenia `isExtension=true` i `extendsTokenId` są obsługiwane tylko kompatybilnościowo; eksporter nie zgaduje tekstu przedłużeń.
+- Tekst sylaby nie może zawierać znaku nowej linii.
+- Spacje powinny być kontrolowane przez eksportera na granicach wyrazów.
+- Eksporter generuje zdarzenia UltraStar z `ArrangementSentence.words[].syllables[]`.
 - Znaki diakrytyczne są dozwolone dzięki UTF-8.
 
 ## Walidacja eksportu
@@ -220,7 +219,7 @@ Eksporter musi zgłosić błąd, jeśli:
 - profil `ultrastar_deluxe` nie zawiera `#MP3`;
 - nuta ma długość mniejszą niż 1 beat;
 - frazy są poza kolejnością;
-- token nie ma przypisanego pitch;
+- sylaba eksportowana jako nuta punktowana nie ma wartości `midi`;
 - wynikowy plik nie kończy się `E`.
 - tag `#VOCALS` albo `#INSTRUMENTAL` wskazuje plik, którego nie ma w paczce.
 - profil UltraStar Deluxe wygenerował `#MP3`, który nie wskazuje tego samego pliku co `#AUDIO`.
@@ -294,7 +293,7 @@ ZIP projektu musi zawierać:
 - wybory eksportu;
 - `Tempo`, w tym `detectedSongBpm`, `acceptedSongBpm`, wynikowe `#BPM` i `gapMs`;
 - transkrypcję i czasy;
-- pitch frames, note events, karaoke tokens i finalny arrangement;
+- pitch frames, note events i finalny arrangement sylabowy;
 - oryginalny plik źródłowy;
 - wszystkie artefakty zapisane dla `Job` i potrzebne do odtworzenia stanu po wykonanych etapach pipeline'u;
 - manifest artefaktów z typami, ścieżkami w archiwum, hashami, rozmiarami i czasami utworzenia;

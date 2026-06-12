@@ -68,8 +68,15 @@ class TranscriptionSettings(BaseModel):
     vadOnset: float = Field(default=0.5, gt=0.0, lt=1.0)
     vadOffset: float = Field(default=0.363, gt=0.0, lt=1.0)
     vadChunkSizeSec: int = Field(default=30, ge=1)
-    sentencePauseMs: int = Field(default=700, ge=0)
+    sentenceGapMs: int | None = Field(default=None, ge=0)
     sentencePaddingMs: int = Field(default=80, ge=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_sentence_pause_ms(cls, value):
+        if isinstance(value, dict) and "sentenceGapMs" not in value and "sentencePauseMs" in value:
+            return value | {"sentenceGapMs": value.get("sentencePauseMs")}
+        return value
 
 
 class PitchSettings(BaseModel):
@@ -228,47 +235,63 @@ class NoteEvent(BaseModel):
         return value
 
 
-class KaraokeToken(BaseModel):
-    tokenId: str
+NoteType = Literal["normal", "golden", "freestyle", "rap", "rap_golden"]
+
+
+class ArrangementSyllable(BaseModel):
+    syllableId: str
     text: str
-    wordId: str | None = None
     syllableIndex: int = 0
-    noteId: str | None = None
     startSec: float
     endSec: float
     midi: int | None = None
-    noteType: Literal["normal", "golden", "freestyle", "rap", "rap_golden"] = "normal"
-    isExtension: bool = False
-    extendsTokenId: str | None = None
+    noteType: NoteType = "normal"
     requiresReview: bool = False
     qualityFlags: list[str] = Field(default_factory=list)
 
     @field_validator("endSec")
     @classmethod
-    def token_end_after_start(cls, value: float, info) -> float:
+    def syllable_end_after_start(cls, value: float, info) -> float:
         start = info.data.get("startSec")
         if start is not None and value <= start:
             raise ValueError("endSec must be greater than startSec")
         return value
 
-    @model_validator(mode="after")
-    def text_or_extension(self):
-        if self.text == "" and not (self.isExtension and self.extendsTokenId):
-            raise ValueError("empty text is allowed only for extension tokens")
-        return self
 
-
-class ArrangementLine(BaseModel):
-    lineId: str
+class ArrangementWord(BaseModel):
+    wordId: str
     startSec: float
     endSec: float
-    tokenIds: list[str] = Field(default_factory=list)
+    text: str
+    confidence: float | None = None
     requiresReview: bool = False
     qualityFlags: list[str] = Field(default_factory=list)
+    syllables: list[ArrangementSyllable] = Field(default_factory=list)
 
     @field_validator("endSec")
     @classmethod
-    def line_end_after_start(cls, value: float, info) -> float:
+    def word_end_after_start(cls, value: float, info) -> float:
+        start = info.data.get("startSec")
+        if start is not None and value <= start:
+            raise ValueError("endSec must be greater than startSec")
+        return value
+
+
+class ArrangementSentence(BaseModel):
+    sentenceId: str
+    startSec: float
+    endSec: float
+    text: str
+    effectiveSentenceGapMs: int | None = None
+    requestedSentenceGapMs: int | None = None
+    detectedSentenceGapMs: int | None = None
+    requiresReview: bool = False
+    qualityFlags: list[str] = Field(default_factory=list)
+    words: list[ArrangementWord] = Field(default_factory=list)
+
+    @field_validator("endSec")
+    @classmethod
+    def sentence_end_after_start(cls, value: float, info) -> float:
         start = info.data.get("startSec")
         if start is not None and value <= start:
             raise ValueError("endSec must be greater than startSec")
@@ -290,23 +313,11 @@ class Arrangement(BaseModel):
     revision: int = 1
     approved: bool = False
     updatedAt: datetime = Field(default_factory=utc_now)
-    lines: list[ArrangementLine] = Field(default_factory=list)
-    tokens: list[KaraokeToken] = Field(default_factory=list)
+    sentences: list[ArrangementSentence] = Field(default_factory=list)
     noteEvents: list[NoteEvent] = Field(default_factory=list)
     source: Literal["draft_ai", "manual", "imported"] = "draft_ai"
     qualitySummary: dict[str, int] = Field(default_factory=dict)
     syllabification: SyllabificationInfo | None = None
-
-    @model_validator(mode="after")
-    def note_assigned_to_at_most_one_token(self):
-        seen_note_ids: set[str] = set()
-        for token in self.tokens:
-            if token.noteId is None:
-                continue
-            if token.noteId in seen_note_ids:
-                raise ValueError("noteId can be assigned to at most one KaraokeToken")
-            seen_note_ids.add(token.noteId)
-        return self
 
 
 class Job(BaseModel):
@@ -339,6 +350,10 @@ class CreateJobUpload(BaseModel):
 class SaveArrangementRequest(BaseModel):
     revision: int = Field(ge=1)
     arrangement: Arrangement
+
+
+class ResegmentArrangementRequest(BaseModel):
+    sentenceGapMs: int | None = Field(default=None, ge=0)
 
 
 class ResetStageRequest(BaseModel):

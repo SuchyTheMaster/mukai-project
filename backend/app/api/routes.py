@@ -13,10 +13,13 @@ from app.domain.contracts import (
     CreateJobUpload,
     EmbeddedCover,
     JobStatus,
+    NoteEvent,
     ResetStageRequest,
     ResetStageResponse,
+    ResegmentArrangementRequest,
     SaveArrangementRequest,
     StageStatus,
+    TranscriptSegment,
     UploadInspection,
     initial_processing,
     stage_key,
@@ -34,6 +37,8 @@ from app.services.storage import (
     sha256_file,
     write_json,
 )
+from app.workers.pitch import build_arrangement, resolve_syllabification_language
+from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
 
 router = APIRouter(prefix="/api")
 
@@ -255,6 +260,47 @@ def save_arrangement(job_id: str, request: SaveArrangementRequest) -> Arrangemen
             {"currentRevision": latest.revision if latest else None},
         )
     return saved
+
+
+@router.post("/jobs/{job_id}/arrangement/resegment", response_model=Arrangement)
+def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> Arrangement:
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    if job.status != JobStatus.awaiting_review:
+        raise api_error(409, "job_not_editable", "Arrangement mozna przeliczyc tylko w statusie awaiting_review.")
+
+    transcript_asset = next((asset for asset in job.artifacts if asset.type == "transcript_aligned"), None)
+    notes_asset = next((asset for asset in job.artifacts if asset.type == "pitch_notes"), None)
+    if not transcript_asset or not notes_asset:
+        raise api_error(409, "missing_artifacts", "Brakuje transcript.aligned.json albo pitch.notes.json do ponownej agregacji.")
+
+    transcript_payload = read_json(resolve_inside(transcript_asset.path))
+    notes_payload = read_json(resolve_inside(notes_asset.path))
+    aligned_segments = [TranscriptSegment.model_validate(segment) for segment in transcript_payload.get("segments", [])]
+    transcription_settings = job.transcriptionSettings.model_copy(update={"sentenceGapMs": request.sentenceGapMs})
+    segments = build_sentence_segments(
+        aligned_segments,
+        transcription_settings,
+        get_settings().transcription_low_confidence_threshold,
+        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
+    )
+    detected_gap_ms = estimate_auto_sentence_gap(aligned_segments, job.tempo.detectedSongBpm if job.tempo else None)
+    effective_gap_ms = request.sentenceGapMs if request.sentenceGapMs is not None else detected_gap_ms
+    notes = [NoteEvent.model_validate(note) for note in notes_payload.get("noteEvents", [])]
+    language, language_source = resolve_syllabification_language(job, transcript_payload)
+    arrangement = build_arrangement(
+        job_id,
+        segments,
+        notes,
+        syllabification_settings=job.syllabificationSettings,
+        language=language,
+        language_source=language_source,
+        requested_sentence_gap_ms=request.sentenceGapMs,
+        detected_sentence_gap_ms=detected_gap_ms,
+        effective_sentence_gap_ms=effective_gap_ms,
+    )
+    return repository.save_arrangement(job_id, arrangement)
 
 
 @router.get("/jobs/{job_id}/artifacts/{asset_id}")

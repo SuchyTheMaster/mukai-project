@@ -129,7 +129,7 @@ Aktualna decyzja implementacyjna dla etapu 06:
 - Worker jawnie ustawia WhisperX `vad_method="silero"` jako domyślny VAD. `pyannote` pozostaje obsługiwanym trybem alternatywnym przez `TranscriptionSettings.vadMethod`.
 - Jeśli uruchomiona wersja WhisperX nie udostępnia parametru `vad_method`, worker nie przerywa transkrypcji. Próbuje użyć `vad_model`, jeśli API go udostępnia, a w przeciwnym razie działa z domyślnym VAD tej wersji i zapisuje tę informację w diagnostyce.
 - Worker przekazuje `vad_options` z `chunk_size=30`, `vad_onset=0.5` i `vad_offset=0.363`, żeby dopasować wewnętrzny podział VAD/Cut & Merge do okna kontekstowego Whispera i zachować globalne czasy długiego wokalu.
-- Po forced alignment worker buduje finalne frazy karaoke z aligned words. Frazy są rozdzielane przerwą co najmniej `sentencePauseMs=700` i rozszerzane paddingiem `sentencePaddingMs=80` bez nachodzenia na sąsiednie frazy.
+- Po forced alignment worker buduje finalne sentencje karaoke z aligned words. Sentencje są rozdzielane przerwą większą niż efektywny `sentenceGapMs`; `null` oznacza automatyczne oszacowanie z BPM i odstępów między słowami.
 - `transcript.raw.json` zachowuje surowe segmenty ASR, a `transcript.aligned.json` zapisuje finalne `TranscriptSegment` jako frazy karaoke oraz wersje WhisperX/PyTorch, wariant CUDA, źródło środowiska, model ASR, język alignacji, `batchSize`, `computeType`, hash wejścia, próg niskiej pewności, czas trwania wejścia, oczekiwaną liczbę okien 30 s, maksymalne czasy końca segmentów ASR/alignacji, metodę VAD, opcje VAD i parametry budowania fraz.
 
 Aktualna decyzja implementacyjna dla etapu 07:
@@ -137,12 +137,12 @@ Aktualna decyzja implementacyjna dla etapu 07:
 - `worker-pitch` używa osobnego obrazu `backend/Pitch.Dockerfile` opartego o `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime`, żeby zachować ten sam kontrolowany wariant PyTorch/CUDA co workery AI.
 - `backend/requirements-pitch.txt` pinuje `torchcrepe==0.0.24`, `kokosznicka==0.2.5` i `pyphen==0.17.2`; PyTorch pochodzi z obrazu bazowego, a nie z domyślnego resolvera PyPI.
 - Worker czyta `worker_inputs/torchcrepe.wav`, zapisuje surowe ramki `pitch.frames.json`, filtruje je progami pitch zaakceptowanymi w `Job.pitchSettings` i dopiero po filtracji zapisuje nuty `pitch.notes.json`.
-- Podział słów na tokeny sylabowe używa `Job.syllabificationSettings`: `kokosznicka` tylko dla polskiego `pl`, `pyphen` dla języków z dostępnym słownikiem hyphenation, `heuristic` jako dotychczasowa heurystyka oraz `none` jako brak podziału na sylaby.
+- Podział słów na sylaby używa `Job.syllabificationSettings`: `kokosznicka` tylko dla polskiego `pl`, `pyphen` dla języków z dostępnym słownikiem hyphenation, `heuristic` jako dotychczasowa heurystyka oraz `none` jako brak podziału na sylaby.
 - Jeśli `kokosznicka` albo `pyphen` nie obsłużą języka lub zwrócą niepoprawny wynik, worker używa heurystyki i zapisuje powód w `Arrangement.syllabification.fallbackReason`.
 - Kokosznicka `0.2.5` jest pakietem GPLv3; akceptacja tej zależności jest decyzją projektową dla obsługi polskiej sylabizacji.
 - Pyphen `0.17.2` jest pakietem tri-license `GPLv2+ / LGPLv2+ / MPL 1.1` i używa słowników hyphenation; jest traktowany jako sylabizator przybliżony, bo słowniki dzielenia wyrazów nie zawsze odpowiadają podziałowi śpiewanych sylab.
 - `draft.arrangement.json` pozostaje artefaktem szkicu, a aktywny `Arrangement` jest inicjalizowany w tabeli `arrangements`.
-- Brak nuty dla sylaby, nuta bez tekstu, niepewny pitch oraz tokeny wymagające recenzji sylabizacji są oznaczane flagami jakości do ręcznej recenzji.
+- Brak `midi` dla sylaby, nuta bez przecięcia z tekstem, niepewny pitch oraz sylaby wymagające recenzji sylabizacji są oznaczane flagami jakości do ręcznej recenzji.
 
 ## Źródła
 

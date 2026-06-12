@@ -82,7 +82,7 @@ Tekst:
 
 - Edycja treści frazy.
 - Podział i scalanie fraz. Podział zaznaczonej sentencji/frazy odbywa się w miejscu playheada; jeśli playhead jest poza dzieloną sentencją, UI pokazuje komunikat `Przewiń wskaźnik do miejsca podziału wewnątrz dzielonej sentencji.` z przyciskiem `OK` i nie zmienia danych.
-- Jeśli playhead wypada w środku tokenu podczas podziału sentencji, token jest rozcinany czasowo i tekstowo, a przypisana nuta `NoteEvent` jest dzielona w tym samym czasie z zachowaniem MIDI i oznaczeniem nowej części do recenzji sylabowej. Gdy nie ma naturalnego prawego fragmentu tekstu, nowy token dostaje `~`.
+- Jeśli playhead wypada w środku sylaby podczas podziału sentencji, sylaba jest rozcinana czasowo i tekstowo, a `NoteEvent` pozostaje bez zmian.
 - Podział i scalanie słów.
 - Podział i scalanie sylab.
 - Oznaczanie fragmentu jako instrumentalny, freestyle albo rap.
@@ -91,17 +91,17 @@ Timing:
 
 - Przesuwanie początku i końca frazy.
 - Przesuwanie początku i końca bloku sylaby.
-- Jeśli blok sylaby ma `noteId`, korekta czasu synchronizuje przypisaną nutę.
+- Korekta czasu sylaby nie zmienia żadnej nuty diagnostycznej.
 - Przyciąganie krawędzi do pobliskich krawędzi bloków, nut, fraz i opcjonalnej siatki.
 - Lokalna korekta offsetu dla całej frazy.
 
 Pitch:
 
 - Przesuwanie bloku sylaby w górę/dół po półtonach.
-- Jeśli blok sylaby ma `noteId`, korekta pitch synchronizuje przypisaną nutę.
-- Blok bez nuty jest oznaczony jako brak nuty, pokazany na pomarańczowo i po pierwszym pionowym przesunięciu tworzy ręczną `NoteEvent`.
+- Korekta pitch zmienia `midi` sylaby i nie synchronizuje żadnej nuty diagnostycznej.
+- Blok bez `midi` jest oznaczony jako brak nuty; pierwsze pionowe przesunięcie ustawia `midi` sylaby bez tworzenia `NoteEvent`.
 - Scalanie krótkich nut.
-- Dzielenie nuty. Jeśli nuta ma przypisany token, edytor dzieli też token; pierwsza część zachowuje tekst, a kolejna dostaje `~`.
+- Dzielenie i scalanie nut działa tylko na warstwie diagnostycznej nut.
 - Ustawienie typu nuty.
 - Podgląd surowego konturu F0 jako warstwy pod nutami.
 
@@ -121,7 +121,7 @@ Edytor powinien wizualnie oznaczać:
 
 - niską pewność transkrypcji;
 - niską periodicity pitch;
-- brak przypisanej nuty do tekstu;
+- sylabę bez wartości MIDI;
 - nutę bez tekstu;
 - zbyt krótką nutę po przeliczeniu na beaty;
 - nachodzące na siebie frazy.
@@ -143,9 +143,10 @@ Edytor powinien wizualnie oznaczać:
 - Kliknięcie pustego miejsca na wykresie ustawia playhead, a przeciągnięcie pustego miejsca przesuwa widoczny zakres osi czasu bez tworzenia wpisu undo.
 - Lista `Sentencje` pokazuje separator z przyciskiem `+` przed, między i po blokach; dodanie nowej sentencji odbywa się przez inline pole tekstowe, żeby nie tworzyć pustych tokenów.
 - Dwuklik na bloku sentencji w liście albo na markerze sentencji na wykresie zoomuje wykres tak, żeby objąć całą sentencję.
-- Dwuklik na tokenie na wykresie albo w liście `Sentencje` zaznacza token i odtwarza audio tylko od początku do końca tokenu, po czym playhead wraca na początek tokenu.
-- `KaraokeToken` jest podstawowym blokiem edycji na wykresie; `NoteEvent` pozostaje źródłem pitch i diagnostyki, a nuty bez tekstu są widoczne jako ghost bloki.
-- Podczas przesuwania tokenu albo zmiany jego początku lub końca wykres pokazuje cienką pionową przerywaną prowadnicę przez całą wysokość wykresu. Prowadnica nie pojawia się przy przesuwaniu ghost nut.
+- Dwuklik na sylabie na wykresie albo w liście `Sentencje` zaznacza sylabę i zoomuje wykres do jej zakresu.
+- Prawy klik na sentencji, wyrazie albo sylabie zaznacza element i odtwarza jego zakres.
+- `ArrangementSyllable` jest podstawowym blokiem edycji na wykresie; `NoteEvent` pozostaje niezależnym źródłem pitch i diagnostyki, domyślnie ukrytym.
+- Podczas przesuwania sylaby albo zmiany jej początku lub końca wykres pokazuje cienką pionową przerywaną prowadnicę przez całą wysokość wykresu. Prowadnica nie pojawia się przy przesuwaniu nut diagnostycznych.
 - Blok sylaby pokazuje tekst w pierwszym wierszu i samą liczbę MIDI w drugim wierszu; przy braku nuty drugi wiersz pokazuje `brak`, a pełna informacja `MIDI {wartość}` jest widoczna w tooltipie.
 - Uchwyty zmiany granic bloku są widoczne na hover, focus i zaznaczeniu.
 - Najczęstsze korekty powinny dać się wykonać bez opuszczania głównego widoku.

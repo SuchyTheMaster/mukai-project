@@ -16,10 +16,11 @@ from app.core.errors import sanitize_log
 from app.db import repository
 from app.domain.contracts import (
     Arrangement,
-    ArrangementLine,
+    ArrangementSentence,
+    ArrangementSyllable,
+    ArrangementWord,
     AudioAsset,
     JobStatus,
-    KaraokeToken,
     NoteEvent,
     PitchFrame,
     ProgressMode,
@@ -74,6 +75,7 @@ class SyllableSlot:
     slot_index: int
     segment_index: int
     word_id: str
+    word_text: str
     word_requires_review: bool
     syllable_index: int
     text: str
@@ -283,6 +285,7 @@ def run_draft_alignment(job_id: str) -> None:
     segments = [TranscriptSegment.model_validate(segment) for segment in transcript_payload.get("segments", [])]
     notes = [NoteEvent.model_validate(note) for note in notes_payload.get("noteEvents", [])]
     syllabification_language, syllabification_language_source = resolve_syllabification_language(job, transcript_payload)
+    transcript_diagnostics = transcript_payload.get("diagnostics") or {}
     arrangement = build_arrangement(
         job_id,
         segments,
@@ -290,6 +293,9 @@ def run_draft_alignment(job_id: str) -> None:
         syllabification_settings=job.syllabificationSettings,
         language=syllabification_language,
         language_source=syllabification_language_source,
+        requested_sentence_gap_ms=transcript_diagnostics.get("requestedSentenceGapMs"),
+        detected_sentence_gap_ms=transcript_diagnostics.get("detectedSentenceGapMs"),
+        effective_sentence_gap_ms=transcript_diagnostics.get("effectiveSentenceGapMs"),
     )
 
     draft_path = resolve_inside(f"jobs/{job_id}/artifacts/draft.arrangement.json")
@@ -464,27 +470,30 @@ def build_arrangement(
     syllabification_settings: SyllabificationSettings | None = None,
     language: str | None = None,
     language_source: str = "unknown",
+    requested_sentence_gap_ms: int | None = None,
+    detected_sentence_gap_ms: int | None = None,
+    effective_sentence_gap_ms: int | None = None,
 ) -> Arrangement:
     syllabification_plan = build_syllabification_plan(syllabification_settings, language, language_source)
-    assigned_notes: set[str] = set()
-    tokens: list[KaraokeToken] = []
-    lines: list[ArrangementLine] = []
-    slots_by_segment: list[list[SyllableSlot]] = []
+    note_events = [note.model_copy(deep=True) for note in notes]
+    sentences: list[ArrangementSentence] = []
     slots: list[SyllableSlot] = []
 
     for segment_index, segment in enumerate(segments, start=1):
-        segment_slots: list[SyllableSlot] = []
+        words: list[ArrangementWord] = []
         for word in segment.words:
             if not word.text:
                 continue
             syllables = syllabification_plan.split(word.text)
             syllable_spans = syllable_time_spans(word.startSec, word.endSec, len(syllables))
+            word_syllables: list[ArrangementSyllable] = []
             for syllable_index, syllable in enumerate(syllables):
                 syllable_start, syllable_end = syllable_spans[syllable_index]
                 slot = SyllableSlot(
                     slot_index=len(slots),
                     segment_index=segment_index,
                     word_id=word.wordId,
+                    word_text=word.text,
                     word_requires_review=word.requiresReview,
                     syllable_index=syllable_index,
                     text=syllable,
@@ -492,75 +501,56 @@ def build_arrangement(
                     end_sec=syllable_end,
                 )
                 slots.append(slot)
-                segment_slots.append(slot)
-        slots_by_segment.append(segment_slots)
-
-    note_events, notes_by_slot = split_notes_for_syllable_slots(notes, slots)
-    note_events, notes_by_slot = merge_same_midi_notes_by_slot(note_events, notes_by_slot)
-
-    for segment_index, segment in enumerate(segments, start=1):
-        line_token_ids: list[str] = []
-        for slot in slots_by_segment[segment_index - 1]:
-            syllable_notes = notes_by_slot.get(slot.slot_index, [])
-            if not syllable_notes:
-                flags = ["missing_note", "needs_syllable_review"]
+                midi, flags = syllable_midi_and_flags(note_events, syllable_start, syllable_end)
                 if slot.word_requires_review:
                     flags.append("uncertain_text")
-                token = KaraokeToken(
-                    tokenId=f"tok_{len(tokens) + 1:04d}",
-                    text=slot.text,
-                    wordId=slot.word_id,
-                    syllableIndex=slot.syllable_index,
-                    noteId=None,
-                    startSec=slot.start_sec,
-                    endSec=slot.end_sec,
-                    midi=None,
-                    requiresReview=True,
-                    qualityFlags=dedupe_flags(flags),
+                word_syllables.append(
+                    ArrangementSyllable(
+                        syllableId=f"syl_{len(slots):04d}",
+                        text=slot.text,
+                        syllableIndex=slot.syllable_index,
+                        startSec=slot.start_sec,
+                        endSec=slot.end_sec,
+                        midi=midi,
+                        requiresReview=bool(flags),
+                        qualityFlags=dedupe_flags(flags),
+                    )
                 )
-                tokens.append(token)
-                line_token_ids.append(token.tokenId)
-                continue
-
-            for note_index, note in enumerate(syllable_notes):
-                assigned_notes.add(note.noteId)
-                flags = list(note.qualityFlags)
-                if slot.word_requires_review:
-                    flags.append("uncertain_text")
-                start_sec, end_sec = token_timing(slot.start_sec, slot.end_sec, note)
-                token = KaraokeToken(
-                    tokenId=f"tok_{len(tokens) + 1:04d}",
-                    text=slot.text if note_index == 0 else "~",
-                    wordId=slot.word_id,
-                    syllableIndex=slot.syllable_index,
-                    noteId=note.noteId,
-                    startSec=start_sec,
-                    endSec=end_sec,
-                    midi=note.midi,
-                    isExtension=False,
-                    extendsTokenId=None,
-                    requiresReview=note.requiresReview or slot.word_requires_review,
-                    qualityFlags=dedupe_flags(flags),
+            merged_syllables = merge_adjacent_same_midi_syllables(word_syllables)
+            words.append(
+                ArrangementWord(
+                    wordId=word.wordId,
+                    startSec=word.startSec,
+                    endSec=word.endSec,
+                    text=word.text,
+                    confidence=word.confidence,
+                    requiresReview=word.requiresReview or any(syllable.requiresReview for syllable in merged_syllables),
+                    qualityFlags=dedupe_flags(["uncertain_text"] if word.requiresReview else []),
+                    syllables=merged_syllables,
                 )
-                tokens.append(token)
-                line_token_ids.append(token.tokenId)
+            )
 
-        line_flags = []
+        sentence_flags = []
         if segment.requiresReview:
-            line_flags.append("uncertain_text")
-        if any(token.requiresReview for token in tokens if token.tokenId in line_token_ids):
-            line_flags.append("contains_review_items")
-        lines.append(
-            ArrangementLine(
-                lineId=f"line_{segment_index:04d}",
+            sentence_flags.append("uncertain_text")
+        if any(word.requiresReview for word in words):
+            sentence_flags.append("contains_review_items")
+        sentences.append(
+            ArrangementSentence(
+                sentenceId=f"sent_{segment_index:04d}",
                 startSec=segment.startSec,
                 endSec=segment.endSec,
-                tokenIds=line_token_ids,
-                requiresReview=bool(line_flags),
-                qualityFlags=line_flags,
+                text=segment.text,
+                effectiveSentenceGapMs=effective_sentence_gap_ms,
+                requestedSentenceGapMs=requested_sentence_gap_ms,
+                detectedSentenceGapMs=detected_sentence_gap_ms,
+                requiresReview=bool(sentence_flags),
+                qualityFlags=sentence_flags,
+                words=words,
             )
         )
 
+    assigned_notes = note_ids_overlapping_slots(note_events, slots)
     for note in note_events:
         if note.noteId not in assigned_notes:
             note.requiresReview = True
@@ -570,19 +560,61 @@ def build_arrangement(
             note.qualityFlags = [flag for flag in note.qualityFlags if flag != "unassigned_note"]
             note.requiresReview = requires_review or bool(note.qualityFlags)
 
-    quality_summary = summarize_quality(tokens, note_events)
+    quality_summary = summarize_quality(sentences, note_events)
     return Arrangement(
         arrangementId=new_id("arr"),
         jobId=job_id,
         revision=1,
         approved=False,
-        lines=lines,
-        tokens=tokens,
+        sentences=sentences,
         noteEvents=note_events,
         source="draft_ai",
         qualitySummary=quality_summary,
         syllabification=syllabification_plan.to_info(),
     )
+
+
+def syllable_midi_and_flags(notes: list[NoteEvent], start_sec: float, end_sec: float) -> tuple[int | None, list[str]]:
+    weighted_sum = 0.0
+    total_weight = 0.0
+    flags: list[str] = []
+    for note in notes:
+        overlap = overlap_seconds(note.startSec, note.endSec, start_sec, end_sec)
+        if overlap <= 0:
+            continue
+        weighted_sum += note.midi * overlap
+        total_weight += overlap
+        flags.extend(note.qualityFlags)
+        if note.requiresReview:
+            flags.append("uncertain_pitch")
+    if total_weight <= 0:
+        return None, ["missing_note", "needs_syllable_review"]
+    return int(round(weighted_sum / total_weight)), dedupe_flags(flags)
+
+
+def merge_adjacent_same_midi_syllables(syllables: list[ArrangementSyllable]) -> list[ArrangementSyllable]:
+    merged: list[ArrangementSyllable] = []
+    for syllable in syllables:
+        previous = merged[-1] if merged else None
+        if previous and previous.midi is not None and previous.midi == syllable.midi:
+            previous.text = f"{previous.text}{syllable.text}"
+            previous.endSec = syllable.endSec
+            previous.requiresReview = previous.requiresReview or syllable.requiresReview
+            previous.qualityFlags = dedupe_flags([*previous.qualityFlags, *syllable.qualityFlags])
+            continue
+        merged.append(syllable)
+    for index, syllable in enumerate(merged):
+        syllable.syllableIndex = index
+    return merged
+
+
+def note_ids_overlapping_slots(notes: list[NoteEvent], slots: list[SyllableSlot]) -> set[str]:
+    return {
+        note.noteId
+        for note in notes
+        for slot in slots
+        if overlap_seconds(note.startSec, note.endSec, slot.start_sec, slot.end_sec) > 0
+    }
 
 
 def split_notes_for_syllable_slots(notes: list[NoteEvent], slots: list[SyllableSlot]) -> tuple[list[NoteEvent], dict[int, list[NoteEvent]]]:
@@ -1042,11 +1074,21 @@ def basic_syllables(text: str) -> list[str]:
     return heuristic_syllables(text)
 
 
-def summarize_quality(tokens: list[KaraokeToken], notes: list[NoteEvent]) -> dict[str, int]:
+def arrangement_syllables(sentences: list[ArrangementSentence]) -> list[ArrangementSyllable]:
+    return [
+        syllable
+        for sentence in sentences
+        for word in sentence.words
+        for syllable in word.syllables
+    ]
+
+
+def summarize_quality(sentences: list[ArrangementSentence], notes: list[NoteEvent]) -> dict[str, int]:
+    syllables = arrangement_syllables(sentences)
     summary = {
-        "tokensRequiringReview": sum(1 for token in tokens if token.requiresReview),
+        "syllablesRequiringReview": sum(1 for syllable in syllables if syllable.requiresReview),
         "notesRequiringReview": sum(1 for note in notes if note.requiresReview),
-        "missingNoteTokens": sum(1 for token in tokens if "missing_note" in token.qualityFlags),
+        "missingNoteSyllables": sum(1 for syllable in syllables if "missing_note" in syllable.qualityFlags),
         "unassignedNotes": sum(1 for note in notes if "unassigned_note" in note.qualityFlags),
         "uncertainPitchNotes": sum(1 for note in notes if "uncertain_pitch" in note.qualityFlags),
     }

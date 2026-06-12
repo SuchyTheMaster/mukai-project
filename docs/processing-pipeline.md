@@ -195,23 +195,23 @@ Reguły startowe:
 
 - Fraza tekstu wyznacza linię karaoke.
 - W ramach frazy dzielić słowa na sylaby przed dopasowaniem nut zgodnie z `Job.syllabificationSettings`.
-- Tryb `none` nie dzieli słów; całe wyrazy z transkrypcji są tokenami sylabowymi.
+- Tryb `none` nie dzieli słów; całe wyrazy z transkrypcji są pojedynczymi sylabami edycyjnymi.
 - Tryb `heuristic` używa dotychczasowej heurystyki.
 - Tryb `kokosznicka` działa tylko dla języka `pl`.
 - Tryb `pyphen` mapuje język na dostępny słownik Pyphen.
 - Język rozstrzygać kolejno z wymuszonego języka `Job.metadata`, `detectedLanguage`, a potem `alignmentLanguage` z `transcript.aligned.json`.
 - Jeśli wybrana metoda nie obsługuje języka, nie jest dostępna albo zwróci niepoprawny podział, użyć heurystyki i zapisać powód fallbacku w `Arrangement.syllabification`.
-- Nuty przypisywać do sylab na podstawie przecięcia czasowego w całym utworze, z relacją `0..1 ↔ 0..1` między tokenem i nutą.
-- Jeśli jedna nuta przecina kilka sylab, dzielić nutę na granicach sylab z zachowaniem MIDI.
-- Jeśli jedna sylaba przecina kilka nut, najpierw scalać kolejne nuty o tym samym MIDI, a token `~` tworzyć tylko przy kontynuacji sylaby na innym MIDI.
-- Sylaby bez nut i nuty bez sylab zostawiać jako elementy do recenzji, zamiast dopasowywać je na siłę.
+- Sylaba dostaje własną wartość `midi` wyliczoną jako uśrednienie nut przecinających jej czas trwania.
+- `NoteEvent` pozostaje niezależną warstwą diagnostyczną; initial alignment nie dzieli nut pod sylaby i nie zapisuje trwałej relacji sylaba-nuta.
+- Jeśli kolejne sylaby tego samego słowa mają tę samą wartość `midi`, szkic może scalić je w jeden blok sylaby.
+- Sylaby bez `midi` i nuty bez przecięcia z sylabami zostawiać jako elementy do recenzji, zamiast dopasowywać je na siłę.
 - Jeśli pitch jest niepewny, oznaczać nutę jako wymagającą korekty zamiast usuwać ją automatycznie.
 
 Wyjście:
 
 - `draft.arrangement.json` jako artefakt szkicu.
 - Aktualny `Arrangement` w Postgresie zainicjalizowany na podstawie szkicu.
-- Szkic zawiera linie, `KaraokeToken` oraz `NoteEvent` w strukturze `Arrangement`.
+- Szkic zawiera sentencje, wyrazy, sylaby oraz niezależne `NoteEvent` w strukturze `Arrangement`.
 - `Arrangement.syllabification` zapisuje `requestedMethod`, `appliedMethod`, język, źródło języka, ewentualny `fallbackReason` oraz wersje pakietów sylabizacji.
 
 ## 8. Edycja ręczna

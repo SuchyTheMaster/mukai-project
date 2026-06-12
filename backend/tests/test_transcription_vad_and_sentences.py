@@ -2,7 +2,7 @@ from pathlib import Path
 import unittest
 
 from app.domain.contracts import TranscriptSegment, TranscriptWord, TranscriptionSettings
-from app.workers.transcribe import build_sentence_segments, load_asr_model
+from app.workers.transcribe import build_sentence_segments, detected_sentence_gap, load_asr_model
 
 
 class FakeWhisperX:
@@ -48,7 +48,7 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
 
         self.assertEqual(settings.vadMethod, "silero")
         self.assertEqual(settings.vadChunkSizeSec, 30)
-        self.assertEqual(settings.sentencePauseMs, 700)
+        self.assertIsNone(settings.sentenceGapMs)
         self.assertEqual(settings.sentencePaddingMs, 80)
 
     def test_load_asr_model_passes_silero_vad_options(self):
@@ -108,7 +108,7 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
                 words=words,
             )
         ]
-        settings = TranscriptionSettings(sentencePauseMs=700, sentencePaddingMs=0)
+        settings = TranscriptionSettings(sentenceGapMs=600, sentencePaddingMs=0)
 
         segments = build_sentence_segments(aligned, settings, low_confidence_threshold=0.55)
 
@@ -117,6 +117,29 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
         self.assertEqual(segments[0].endSec, 0.6)
         self.assertEqual(segments[1].startSec, 1.3)
         self.assertEqual(segments[1].endSec, 1.5)
+
+    def test_sentence_segments_auto_gap_uses_word_gaps_and_bpm(self):
+        words = [
+            TranscriptWord(wordId="w1", startSec=0.0, endSec=0.2, text="ala", confidence=0.9),
+            TranscriptWord(wordId="w2", startSec=0.35, endSec=0.55, text="ma", confidence=0.9),
+            TranscriptWord(wordId="w3", startSec=1.6, endSec=1.8, text="kota", confidence=0.9),
+        ]
+        aligned = [
+            TranscriptSegment(
+                segmentId="raw_1",
+                startSec=0.0,
+                endSec=1.8,
+                text="ala ma kota",
+                confidence=0.9,
+                words=words,
+            )
+        ]
+        settings = TranscriptionSettings(sentenceGapMs=None, sentencePaddingMs=0)
+
+        self.assertGreaterEqual(detected_sentence_gap(settings, aligned, detected_song_bpm=120), 625)
+        segments = build_sentence_segments(aligned, settings, low_confidence_threshold=0.55, detected_song_bpm=120)
+
+        self.assertEqual([segment.text for segment in segments], ["ala ma", "kota"])
 
 
 if __name__ == "__main__":

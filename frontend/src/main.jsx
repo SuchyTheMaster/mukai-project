@@ -70,7 +70,7 @@ const defaultTranscription = {
   vadOnset: 0.5,
   vadOffset: 0.363,
   vadChunkSizeSec: 30,
-  sentencePauseMs: 700,
+  sentenceGapMs: "",
   sentencePaddingMs: 80,
 };
 
@@ -203,7 +203,7 @@ const TRANSCRIPTION_SETTING_FIELDS = [
   ["vadOnset", { label: "Próg startu VAD", step: "0.001" }],
   ["vadOffset", { label: "Próg końca VAD", step: "0.001" }],
   ["vadChunkSizeSec", { label: "Okno VAD/ASR (s)", step: "1" }],
-  ["sentencePauseMs", { label: "Pauza dzieląca frazy (ms)", step: "10" }],
+  ["sentenceGapMs", { label: "ms między sentencjami", step: "10", nullable: true, placeholder: "auto" }],
   ["sentencePaddingMs", { label: "Padding frazy (ms)", step: "10" }],
 ];
 
@@ -296,7 +296,7 @@ function App() {
     let ignore = false;
     apiJson(`/api/jobs/${job.jobId}/arrangement`)
       .then((next) => {
-        if (!ignore) setArrangement(next);
+        if (!ignore) setArrangement(toEditorArrangement(next));
       })
       .catch((err) => {
         if (!ignore) setError(err.message);
@@ -355,7 +355,7 @@ function App() {
         uploadDraftId: inspection.uploadDraftId,
         metadata: { ...metadata, language: language || null, languageMode: language ? "forced" : "auto" },
         profiles,
-        transcriptionSettings,
+        transcriptionSettings: serializeTranscriptionSettings(transcriptionSettings),
         pitchSettings,
         syllabificationSettings,
         useEmbeddedCover: useEmbeddedCover && !coverFile,
@@ -395,10 +395,28 @@ function App() {
     try {
       const saved = await apiJson(`/api/jobs/${job.jobId}/arrangement`, {
         method: "PUT",
-        body: JSON.stringify({ revision: arrangement.revision, arrangement }),
+        body: JSON.stringify({ revision: arrangement.revision, arrangement: fromEditorArrangement(arrangement) }),
         headers: { "Content-Type": "application/json" },
       });
-      setArrangement(saved);
+      setArrangement(toEditorArrangement(saved));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function resegmentArrangement(sentenceGapMs) {
+    if (!job) return;
+    setError(null);
+    setSaving(true);
+    try {
+      const saved = await apiJson(`/api/jobs/${job.jobId}/arrangement/resegment`, {
+        method: "POST",
+        body: JSON.stringify({ sentenceGapMs: sentenceGapMs === "" || sentenceGapMs == null ? null : Number(sentenceGapMs) }),
+        headers: { "Content-Type": "application/json" },
+      });
+      setArrangement(toEditorArrangement(saved));
     } catch (err) {
       setError(err.message);
     } finally {
@@ -485,6 +503,7 @@ function App() {
             arrangement={arrangement}
             setArrangement={setArrangement}
             onSave={saveArrangement}
+            onResegment={resegmentArrangement}
             saving={saving}
             onResetStage={resetStage}
             railVisible={reviewRailVisible}
@@ -564,7 +583,7 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
             <summary>Zaawansowane ustawienia transkrypcji</summary>
             <div className="form-grid compact">
               {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
-                <TextField key={key} label={field.label} helper={key} type="number" step={field.step} value={transcriptionSettings[key]} onChange={(next) => setTranscriptionSettings({ ...transcriptionSettings, [key]: Number(next) })} />
+                <TextField key={key} label={field.label} helper={key} type="number" step={field.step} placeholder={field.placeholder} value={transcriptionSettings[key] ?? ""} onChange={(next) => setTranscriptionSettings({ ...transcriptionSettings, [key]: field.nullable && next === "" ? "" : Number(next) })} />
               ))}
             </div>
           </details>
@@ -587,7 +606,7 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
   );
 }
 
-function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onResetStage, railVisible, onToggleRail }) {
+function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, saving, onResetStage, railVisible, onToggleRail }) {
   const waveformRef = useRef(null);
   const waveSurferRef = useRef(null);
   const resumeAfterTrackChange = useRef(false);
@@ -606,6 +625,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   const [dragGuideTime, setDragGuideTime] = useState(null);
   const [loopPlayback, setLoopPlayback] = useState(false);
   const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
+  const [sentenceGapInput, setSentenceGapInput] = useState("");
   const [editorNotice, setEditorNotice] = useState(null);
   const [past, setPast] = useState([]);
   const [future, setFuture] = useState([]);
@@ -615,13 +636,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   const selectedLineId = selected.type === "line" ? selected.id : selectedContext.lineIds[0];
   const selectedLine = arrangement?.lines.find((line) => line.lineId === selectedLineId) ?? arrangement?.lines[0] ?? null;
   const selectedToken = selected.type === "token" ? arrangement?.tokens.find((token) => token.tokenId === selected.id) : null;
-  const selectedNote = selected.type === "note"
-    ? arrangement?.noteEvents.find((note) => note.noteId === selected.id)
-    : selected.type === "token"
-      ? selectedToken?.noteId
-        ? arrangement?.noteEvents.find((note) => note.noteId === selectedToken.noteId)
-        : null
-      : arrangement?.noteEvents.find((note) => note.noteId === selectedContext.noteIds[0]) ?? null;
+  const selectedNote = selected.type === "note" ? arrangement?.noteEvents.find((note) => note.noteId === selected.id) : null;
   const duration = job.audio?.durationSec ?? arrangementDuration(arrangement);
   const maxViewportStart = Math.max(duration - zoomSec, 0);
   const windowStart = Math.max(0, Math.min(viewportStart, maxViewportStart));
@@ -645,6 +660,23 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   useEffect(() => {
     if (!selected.id && arrangement?.lines[0]) setSelected({ type: "line", id: arrangement.lines[0].lineId });
   }, [arrangement?.arrangementId, selected.id]);
+
+  useEffect(() => {
+    const requested = arrangement?.lines?.[0]?.requestedSentenceGapMs;
+    setSentenceGapInput(Number.isFinite(requested) ? String(requested) : "");
+  }, [arrangement?.arrangementId, arrangement?.revision]);
+
+  useEffect(() => {
+    function onKeyDown(event) {
+      if (event.key !== "Delete" || !selected.id) return;
+      const target = event.target;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.tagName === "SELECT") return;
+      event.preventDefault();
+      deleteSelected();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected, arrangement]);
 
   useEffect(() => {
     if (!audioUrl || !waveformReady || !waveformRef.current) return undefined;
@@ -835,6 +867,24 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
     playRange(token.startSec, token.endSec, { returnToStart: true });
   }
 
+  function playLineRange(line) {
+    if (!line) return;
+    selectAndSeek("line", line.lineId, line.startSec);
+    playRange(line.startSec, line.endSec, { returnToStart: true });
+  }
+
+  function zoomToRange(item) {
+    if (!item) return;
+    const length = Math.max(item.endSec - item.startSec, 0.02);
+    const margin = Math.max(0.05, length * 0.15);
+    const nextZoom = Math.max(MIN_EDITOR_WINDOW_SEC, Math.min(MAX_EDITOR_WINDOW_SEC, length + margin * 2));
+    const nextMaxStart = Math.max((duration || nextZoom) - nextZoom, 0);
+    const nextStart = Math.max(0, Math.min(item.startSec - margin, nextMaxStart));
+    setZoomSec(nextZoom);
+    setViewportStart(nextStart);
+    syncWaveformViewport(waveSurferRef.current, waveformRef.current, nextStart, nextZoom);
+  }
+
   function splitSelectedLineAtPlayhead() {
     if (!selectedLine || !arrangement) return;
     if (!canSplitLineAtTime(arrangement, selectedLine, currentTime)) {
@@ -868,15 +918,23 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   }
 
   function zoomToLine(line) {
-    if (!line) return;
-    const lineLength = Math.max(line.endSec - line.startSec, 0.02);
-    const margin = Math.max(0.25, lineLength * 0.12);
-    const nextZoom = Math.max(MIN_EDITOR_WINDOW_SEC, Math.min(MAX_EDITOR_WINDOW_SEC, lineLength + margin * 2));
-    const nextMaxStart = Math.max((duration || nextZoom) - nextZoom, 0);
-    const nextStart = Math.max(0, Math.min(line.startSec - margin, nextMaxStart));
-    setZoomSec(nextZoom);
-    setViewportStart(nextStart);
-    syncWaveformViewport(waveSurferRef.current, waveformRef.current, nextStart, nextZoom);
+    zoomToRange(line);
+  }
+
+  function zoomToToken(token) {
+    zoomToRange(token);
+  }
+
+  function deleteSelected() {
+    if (!selected.id) return;
+    if (!window.confirm("Usunąć zaznaczony element?")) return;
+    commit((draft) => {
+      if (selected.type === "line") return deleteLine(draft, selected.id);
+      if (selected.type === "token") return deleteToken(draft, selected.id);
+      if (selected.type === "note") return deleteNote(draft, selected.id);
+      return draft;
+    });
+    setSelected({ type: "line", id: null });
   }
 
   function setGraphViewport(nextStart) {
@@ -984,6 +1042,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
           <div className="editor-meta">
             <span>Revision {arrangement.revision}</span>
             <span>{arrangement.lines.length} sentencji</span>
+            <span>Odstęp sentencji: {sentenceGapLabel(arrangement)}</span>
             <span>{arrangement.noteEvents.length} nut</span>
           </div>
         </div>
@@ -998,6 +1057,11 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
 
       <div className="quality-strip">
         <SyllabificationBadge info={arrangement.syllabification} />
+        <label className="sentence-gap-control">
+          <span>ms między sentencjami</span>
+          <input type="number" min="0" step="10" placeholder="auto" value={sentenceGapInput} onChange={(event) => setSentenceGapInput(event.target.value)} />
+          <button className="button secondary" type="button" disabled={saving} onClick={() => onResegment(sentenceGapInput)}>Przelicz</button>
+        </label>
         {qualityBadges(arrangement).map(([flag, count]) => (
           <span key={flag} className={`quality-badge ${count ? "warning" : "ok"}`}>{FLAG_LABELS[flag] ?? flag}: {count}</span>
         ))}
@@ -1010,10 +1074,10 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} />
 
       <div className="editor-grid">
-        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} commit={commit} zoomToLine={zoomToLine} />
+        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
         <PropertiesPanel
           arrangement={arrangement}
           selected={selected}
@@ -1029,12 +1093,11 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, saving, onRese
   );
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes }) {
   const range = Math.max(windowEnd - windowStart, 0.001);
   const visibleLines = arrangement.lines.filter((line) => line.endSec >= windowStart && line.startSec <= windowEnd);
   const visibleTokens = arrangement.tokens.filter((token) => token.endSec >= windowStart && token.startSec <= windowEnd);
-  const linkedNoteIds = new Set(arrangement.tokens.map((token) => token.noteId).filter(Boolean));
-  const visibleGhostNotes = arrangement.noteEvents.filter((note) => !linkedNoteIds.has(note.noteId) && note.endSec >= windowStart && note.startSec <= windowEnd);
+  const visibleGhostNotes = showNotes ? arrangement.noteEvents.filter((note) => note.endSec >= windowStart && note.startSec <= windowEnd) : [];
   const noteById = new Map(arrangement.noteEvents.map((note) => [note.noteId, note]));
   const pitchRange = pitchRangeForWindow(arrangement, visibleTokens, visibleGhostNotes, noteById);
   return (
@@ -1061,6 +1124,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
           <button className="icon-button" type="button" title="Oddal" aria-label="Oddal" onPointerDown={(event) => zoomFromPointer(event, 1.25)} onClick={(event) => zoomFromClick(event, 1.25)}><ZoomOut size={14} /></button>
           <button className="icon-button" type="button" title="Przybliż" aria-label="Przybliż" onPointerDown={(event) => zoomFromPointer(event, 0.75)} onClick={(event) => zoomFromClick(event, 0.75)}><ZoomIn size={14} /></button>
           <button className={`icon-button toggle-button ${limitPlaybackToWindow ? "active" : ""}`} type="button" title="ogranicz odtwarzanie do widocznego zakresu" aria-label="ogranicz odtwarzanie do widocznego zakresu" aria-pressed={limitPlaybackToWindow} onClick={() => setLimitPlaybackToWindow((value) => !value)}><Lock size={14} /></button>
+          <button className={`icon-button toggle-button ${showNotes ? "active" : ""}`} type="button" title="pokaż nuty diagnostyczne" aria-label="pokaż nuty diagnostyczne" aria-pressed={showNotes} onClick={() => setShowNotes((value) => !value)}><Music2 size={14} /></button>
           <button className={`icon-button toggle-button ${snapToExisting ? "active" : ""}`} type="button" title="przyciągaj elementy na wykresie" aria-label="przyciągaj elementy na wykresie" aria-pressed={snapToExisting} onClick={() => setSnapToExisting((value) => !value)}><Magnet size={14} /></button>
           <label className="snap-threshold-field">
             <input type="number" min="0" step="10" value={snapThresholdMs} onChange={(event) => setSnapThresholdInput(event.target.value)} />
@@ -1090,6 +1154,11 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
               onDoubleClick={(event) => {
                 event.stopPropagation();
                 zoomToLine(line);
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                playLineRange(line);
               }}
             />
           ))}
@@ -1137,6 +1206,11 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
                   selectAndSeek("token", token.tokenId, token.startSec);
                 }}
                 onDoubleClick={(event) => {
+                  event.stopPropagation();
+                  zoomToToken(token);
+                }}
+                onContextMenu={(event) => {
+                  event.preventDefault();
                   event.stopPropagation();
                   playTokenRange(token);
                 }}
@@ -1218,7 +1292,7 @@ function GraphScrollbar({ duration, windowStart, zoomSec, onChange }) {
   );
 }
 
-function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, playTokenRange, commit, zoomToLine }) {
+function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, playTokenRange, playLineRange, commit, zoomToLine, zoomToToken }) {
   const [insertIndex, setInsertIndex] = useState(null);
   const [insertText, setInsertText] = useState("");
   const trimmedInsertText = insertText.trim();
@@ -1269,7 +1343,15 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
       {arrangement.lines.map((line, index) => (
         <React.Fragment key={line.lineId}>
           <article className={`phrase-row ${selectedContext.lineIds.includes(line.lineId) ? "selected" : ""}`}>
-            <button type="button" onClick={() => selectAndSeek("line", line.lineId, line.startSec)} onDoubleClick={() => zoomToLine(line)}>
+            <button
+              type="button"
+              onClick={() => selectAndSeek("line", line.lineId, line.startSec)}
+              onDoubleClick={() => zoomToLine(line)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                playLineRange(line);
+              }}
+            >
               <span>{formatTime(line.startSec)} - {formatTime(line.endSec)}</span>
               <strong>{lineText(arrangement, line) || "(pusta sentencja)"}</strong>
             </button>
@@ -1281,7 +1363,11 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
                   className={`token-chip ${token.requiresReview ? "review" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""}`}
                   type="button"
                   onClick={() => selectAndSeek("token", token.tokenId, token.startSec)}
-                  onDoubleClick={() => playTokenRange(token)}
+                  onDoubleClick={() => zoomToToken(token)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    playTokenRange(token);
+                  }}
                 >
                   {token.text || "..." }
                 </button>
@@ -1321,9 +1407,11 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
 
       {selected.type === "token" && selectedToken && (
         <div className="property-stack">
-          <TextField label="Sylaba / słowo" value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value || "~", isExtension: false, extendsTokenId: null }))} />
+          <TextField label="Sylaba" value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value || "~", isExtension: false, extendsTokenId: null }))} />
           <TextField label="Start" type="number" value={selectedToken.startSec} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { startSec: Number(value) }))} />
+          <TextField label="Czas trwania" type="number" value={roundTime(selectedToken.endSec - selectedToken.startSec)} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: selectedToken.startSec + Number(value) }))} />
           <TextField label="Koniec" type="number" value={selectedToken.endSec} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: Number(value) }))} />
+          <TextField label="MIDI sylaby" type="number" step="1" value={selectedToken.midi ?? ""} placeholder="brak" onChange={(value) => commit((draft) => updateTokenMidi(draft, selectedToken.tokenId, value))} />
           <Select label="Typ nuty" value={selectedToken.noteType} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { noteType: value }))} options={NOTE_TYPES} />
           <div className="property-actions">
             <button className="button secondary" type="button" onClick={() => commit((draft) => splitToken(draft, selectedToken.tokenId))}><Scissors size={16} /> Podziel</button>
@@ -1331,7 +1419,6 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
             <button className="button ghost danger" type="button" onClick={() => commit((draft) => deleteToken(draft, selectedToken.tokenId))}><Trash2 size={16} /> Usuń</button>
           </div>
           <QualityFlags flags={selectedToken.qualityFlags} />
-          {selectedNote && <button className="button ghost" type="button" onClick={() => selectAndSeek("note", selectedNote.noteId, selectedNote.startSec)}><Music2 size={16} /> Pokaż nutę</button>}
         </div>
       )}
 
@@ -1529,6 +1616,107 @@ function Progress({ stage }) {
   return <div className={`progress ${stage.progressMode} ${stage.status}`}><span style={{ width: `${width}%` }} /></div>;
 }
 
+function serializeTranscriptionSettings(settings) {
+  return {
+    ...settings,
+    sentenceGapMs: settings.sentenceGapMs === "" || settings.sentenceGapMs == null ? null : Number(settings.sentenceGapMs),
+  };
+}
+
+function toEditorArrangement(arrangement) {
+  if (!arrangement || arrangement.lines || arrangement.tokens) return arrangement;
+  const tokens = [];
+  const lines = (arrangement.sentences ?? []).map((sentence) => {
+    const tokenIds = [];
+    (sentence.words ?? []).forEach((word) => {
+      (word.syllables ?? []).forEach((syllable) => {
+        const tokenId = syllable.syllableId;
+        tokenIds.push(tokenId);
+        tokens.push({
+          tokenId,
+          text: syllable.text,
+          wordId: word.wordId,
+          syllableIndex: syllable.syllableIndex,
+          noteId: null,
+          startSec: syllable.startSec,
+          endSec: syllable.endSec,
+          midi: syllable.midi,
+          noteType: syllable.noteType ?? "normal",
+          isExtension: false,
+          extendsTokenId: null,
+          requiresReview: syllable.requiresReview,
+          qualityFlags: syllable.qualityFlags ?? [],
+        });
+      });
+    });
+    return {
+      lineId: sentence.sentenceId,
+      startSec: sentence.startSec,
+      endSec: sentence.endSec,
+      tokenIds,
+      requiresReview: sentence.requiresReview,
+      qualityFlags: sentence.qualityFlags ?? [],
+      requestedSentenceGapMs: sentence.requestedSentenceGapMs,
+      detectedSentenceGapMs: sentence.detectedSentenceGapMs,
+      effectiveSentenceGapMs: sentence.effectiveSentenceGapMs,
+    };
+  });
+  return { ...arrangement, lines, tokens };
+}
+
+function fromEditorArrangement(arrangement) {
+  const sentences = (arrangement.lines ?? []).map((line, lineIndex) => {
+    const lineTokens = tokensForLine(arrangement, line).sort((left, right) => left.startSec - right.startSec);
+    const wordGroups = [];
+    lineTokens.forEach((token, tokenIndex) => {
+      const groupId = token.wordId || `word_client_${lineIndex}_${tokenIndex}`;
+      const previous = wordGroups[wordGroups.length - 1];
+      if (previous && previous.wordId === groupId) {
+        previous.tokens.push(token);
+      } else {
+        wordGroups.push({ wordId: groupId, tokens: [token] });
+      }
+    });
+    const words = wordGroups.map((group) => {
+      const syllables = group.tokens.map((token, syllableIndex) => ({
+        syllableId: token.tokenId,
+        text: token.text || "~",
+        syllableIndex,
+        startSec: roundTime(token.startSec),
+        endSec: roundTime(token.endSec),
+        midi: Number.isFinite(token.midi) ? token.midi : null,
+        noteType: token.noteType ?? "normal",
+        requiresReview: Boolean(token.requiresReview),
+        qualityFlags: token.qualityFlags ?? [],
+      }));
+      return {
+        wordId: group.wordId,
+        startSec: roundTime(Math.min(...syllables.map((syllable) => syllable.startSec))),
+        endSec: roundTime(Math.max(...syllables.map((syllable) => syllable.endSec))),
+        text: syllables.map((syllable) => syllable.text).join(""),
+        confidence: null,
+        requiresReview: syllables.some((syllable) => syllable.requiresReview),
+        qualityFlags: [],
+        syllables,
+      };
+    });
+    return {
+      sentenceId: line.lineId,
+      startSec: roundTime(line.startSec),
+      endSec: roundTime(line.endSec),
+      text: words.map((word) => word.text).join(" "),
+      effectiveSentenceGapMs: line.effectiveSentenceGapMs ?? null,
+      requestedSentenceGapMs: line.requestedSentenceGapMs ?? null,
+      detectedSentenceGapMs: line.detectedSentenceGapMs ?? null,
+      requiresReview: Boolean(line.requiresReview),
+      qualityFlags: line.qualityFlags ?? [],
+      words,
+    };
+  });
+  const { lines, tokens, ...rest } = arrangement;
+  return { ...rest, sentences };
+}
+
 function updateLineText(draft, lineId, text) {
   const line = draft.lines.find((item) => item.lineId === lineId);
   if (!line) return draft;
@@ -1577,7 +1765,6 @@ function updateToken(draft, tokenId, changes) {
   if (!token) return draft;
   const cleaned = cleanTiming(changes, token);
   Object.assign(token, cleaned);
-  syncLinkedNoteFromToken(draft, token, cleaned);
   return draft;
 }
 
@@ -1586,7 +1773,6 @@ function updateNote(draft, noteId, changes) {
   if (!note) return draft;
   const cleaned = cleanTiming(changes, note);
   Object.assign(note, cleaned);
-  syncLinkedTokensFromNote(draft, note, cleaned);
   return draft;
 }
 
@@ -1601,24 +1787,21 @@ function updateTokenGraphItem(draft, tokenId, mode, deltaSec, deltaMidi = 0, opt
   const minLength = 0.02;
   const originalStart = token.startSec;
   const originalEnd = token.endSec;
-  const exclude = { tokenId, noteId: token.noteId };
+  const exclude = { tokenId };
   if (mode === "resize-start") {
     const nextStart = Math.max(0, Math.min(originalEnd - minLength, originalStart + deltaSec));
     const snappedStart = options.snapToExisting ? snapTimeEdge(draft, nextStart, exclude, options.snapThresholdSec) : nextStart;
     token.startSec = roundTime(Math.max(0, Math.min(originalEnd - minLength, snappedStart)));
-    syncLinkedNoteFromToken(draft, token, { startSec: token.startSec, endSec: token.endSec });
   } else if (mode === "resize-end") {
     const nextEnd = Math.max(originalStart + minLength, originalEnd + deltaSec);
     const snappedEnd = options.snapToExisting ? snapTimeEdge(draft, nextEnd, exclude, options.snapThresholdSec) : nextEnd;
     token.endSec = roundTime(Math.max(originalStart + minLength, snappedEnd));
-    syncLinkedNoteFromToken(draft, token, { startSec: token.startSec, endSec: token.endSec });
   } else {
     const length = Math.max(originalEnd - originalStart, minLength);
     const proposedStart = Math.max(0, originalStart + deltaSec);
     const nextStart = options.snapToExisting ? snapTimeRangeStart(draft, proposedStart, proposedStart + length, exclude, options.snapThresholdSec) : proposedStart;
     token.startSec = roundTime(Math.max(0, nextStart));
     token.endSec = roundTime(token.startSec + length);
-    syncLinkedNoteFromToken(draft, token, { startSec: token.startSec, endSec: token.endSec });
     if (Number.isFinite(deltaMidi) && Math.abs(deltaMidi) >= 0.5) {
       const noteById = new Map(draft.noteEvents.map((note) => [note.noteId, note]));
       const baseMidi = tokenAssignedMidi(token, noteById) ?? visualMidiForToken(draft, token, noteById);
@@ -1639,19 +1822,16 @@ function updateNoteGraphItem(draft, noteId, mode, deltaSec, deltaMidi = 0, optio
     const nextStart = Math.max(0, Math.min(originalEnd - minLength, originalStart + deltaSec));
     const snappedStart = options.snapToExisting ? snapTimeEdge(draft, nextStart, exclude, options.snapThresholdSec) : nextStart;
     note.startSec = roundTime(Math.max(0, Math.min(originalEnd - minLength, snappedStart)));
-    syncLinkedTokensFromNote(draft, note, { startSec: note.startSec, endSec: note.endSec });
   } else if (mode === "resize-end") {
     const nextEnd = Math.max(originalStart + minLength, originalEnd + deltaSec);
     const snappedEnd = options.snapToExisting ? snapTimeEdge(draft, nextEnd, exclude, options.snapThresholdSec) : nextEnd;
     note.endSec = roundTime(Math.max(originalStart + minLength, snappedEnd));
-    syncLinkedTokensFromNote(draft, note, { startSec: note.startSec, endSec: note.endSec });
   } else {
     const length = Math.max(originalEnd - originalStart, minLength);
     const proposedStart = Math.max(0, originalStart + deltaSec);
     const nextStart = options.snapToExisting ? snapTimeRangeStart(draft, proposedStart, proposedStart + length, exclude, options.snapThresholdSec) : proposedStart;
     note.startSec = roundTime(Math.max(0, nextStart));
     note.endSec = roundTime(note.startSec + length);
-    syncLinkedTokensFromNote(draft, note, { startSec: note.startSec, endSec: note.endSec });
     if (Number.isFinite(deltaMidi) && Math.abs(deltaMidi) >= 0.5) {
       setNoteMidi(draft, note, snapMidi(draft, note.midi + Math.round(deltaMidi), exclude, options));
     }
@@ -1666,6 +1846,19 @@ function updateNoteMidi(draft, noteId, value) {
   return draft;
 }
 
+function updateTokenMidi(draft, tokenId, value) {
+  const token = draft.tokens.find((item) => item.tokenId === tokenId);
+  if (!token) return draft;
+  if (value === "" || value == null) {
+    token.midi = null;
+    token.requiresReview = true;
+    token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "missing_note"])];
+    return draft;
+  }
+  setTokenMidi(draft, token, Number(value));
+  return draft;
+}
+
 function updateNotePitch(draft, noteId, delta) {
   const note = draft.noteEvents.find((item) => item.noteId === noteId);
   if (!note || !Number.isFinite(delta)) return draft;
@@ -1677,65 +1870,11 @@ function setNoteMidi(draft, note, value) {
   if (!Number.isFinite(value)) return;
   note.midi = clampMidi(value);
   note.frequencyHz = midiToFrequency(note.midi);
-  draft.tokens.filter((token) => token.noteId === note.noteId).forEach((token) => {
-    token.midi = note.midi;
-    clearMissingNoteFlag(token);
-  });
 }
 
 function setTokenMidi(draft, token, value) {
-  const midi = clampMidi(value);
-  if (token.noteId) {
-    const note = draft.noteEvents.find((item) => item.noteId === token.noteId);
-    if (note) {
-      setNoteMidi(draft, note, midi);
-      clearMissingNoteFlag(token);
-      return;
-    }
-  }
-  const note = createManualNoteForToken(draft, token, midi);
-  token.noteId = note.noteId;
-  token.midi = note.midi;
+  token.midi = clampMidi(value);
   clearMissingNoteFlag(token);
-}
-
-function createManualNoteForToken(draft, token, midi) {
-  const clampedMidi = clampMidi(midi);
-  const note = {
-    noteId: nextId("note", draft.noteEvents),
-    startSec: roundTime(token.startSec),
-    endSec: roundTime(Math.max(token.startSec + 0.02, token.endSec)),
-    midi: clampedMidi,
-    frequencyHz: midiToFrequency(clampedMidi),
-    confidence: null,
-    source: "manual",
-    requiresReview: false,
-    qualityFlags: [],
-  };
-  draft.noteEvents.push(note);
-  return note;
-}
-
-function syncLinkedNoteFromToken(draft, token, changes) {
-  if (!token.noteId) return;
-  const note = draft.noteEvents.find((item) => item.noteId === token.noteId);
-  if (!note) return;
-  if ("startSec" in changes || "endSec" in changes) {
-    note.startSec = roundTime(token.startSec);
-    note.endSec = roundTime(Math.max(note.startSec + 0.02, token.endSec));
-  }
-  if ("midi" in changes && Number.isFinite(token.midi)) setNoteMidi(draft, note, token.midi);
-}
-
-function syncLinkedTokensFromNote(draft, note, changes) {
-  draft.tokens.filter((token) => token.noteId === note.noteId).forEach((token) => {
-    if ("startSec" in changes || "endSec" in changes) {
-      token.startSec = roundTime(note.startSec);
-      token.endSec = roundTime(Math.max(token.startSec + 0.02, note.endSec));
-    }
-    if ("midi" in changes || Number.isFinite(note.midi)) token.midi = note.midi;
-    clearMissingNoteFlag(token);
-  });
 }
 
 function snapTimeEdge(draft, value, exclude = {}, thresholdSec = 0) {
@@ -1778,7 +1917,7 @@ function canSplitLineAtTime(arrangement, line, splitSec) {
   let hasLeft = false;
   let hasRight = false;
   for (const token of tokensForLine(arrangement, line)) {
-    if (token.startSec < splitTime && token.endSec > splitTime) return (token.text ?? "").length >= 2 || Boolean(token.noteId);
+    if (token.startSec < splitTime && token.endSec > splitTime) return (token.text ?? "").length >= 2;
     if (token.endSec <= splitTime) hasLeft = true;
     if (token.startSec >= splitTime) hasRight = true;
   }
@@ -1847,41 +1986,25 @@ function splitLine(draft, lineId, splitSec) {
 function splitTokenAtTime(draft, token, splitTime) {
   if (!token || splitTime <= token.startSec || splitTime >= token.endSec) return null;
   const originalEnd = token.endSec;
-  const linkedNote = token.noteId ? draft.noteEvents.find((note) => note.noteId === token.noteId) : null;
   const nextTokenId = nextId("tok", draft.tokens);
   const [leftText, rightText] = splitTokenTextAtTime(token, splitTime);
-  let nextNoteId = null;
   const tokenSplitTime = splitTimeForRange(token.startSec, token.endSec, splitTime);
   token.text = leftText || "~";
   token.endSec = tokenSplitTime;
   token.isExtension = false;
   token.extendsTokenId = null;
-  if (linkedNote && linkedNote.endSec - linkedNote.startSec > MIN_TOKEN_NOTE_SEC) {
-    const noteSplitTime = splitTimeForRange(linkedNote.startSec, linkedNote.endSec, splitTime);
-    const originalNoteEnd = linkedNote.endSec;
-    nextNoteId = nextId("note", draft.noteEvents);
-    linkedNote.endSec = noteSplitTime;
-    draft.noteEvents.push({
-      ...linkedNote,
-      noteId: nextNoteId,
-      startSec: noteSplitTime,
-      endSec: Math.max(noteSplitTime + MIN_TOKEN_NOTE_SEC, originalNoteEnd),
-      requiresReview: true,
-      qualityFlags: [...new Set([...(linkedNote.qualityFlags ?? []), "needs_syllable_review"])],
-    });
-  }
   const next = {
     ...token,
     tokenId: nextTokenId,
     text: rightText || "~",
     startSec: tokenSplitTime,
     endSec: Math.max(tokenSplitTime + MIN_TOKEN_NOTE_SEC, originalEnd),
-    noteId: nextNoteId,
-    midi: nextNoteId ? linkedNote?.midi ?? token.midi : null,
+    noteId: null,
+    midi: token.midi,
     isExtension: false,
     extendsTokenId: null,
     requiresReview: true,
-    qualityFlags: [...new Set([...(token.qualityFlags ?? []), nextNoteId ? "needs_syllable_review" : "missing_note", "needs_syllable_review"])],
+    qualityFlags: [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])],
   };
   draft.tokens.push(next);
   return next.tokenId;
@@ -1976,38 +2099,22 @@ function splitToken(draft, tokenId) {
   const rightText = (token.text || "").slice(splitAt) || "~";
   const midpoint = splitTimeForRange(token.startSec, token.endSec, token.startSec + (token.endSec - token.startSec) / 2);
   const originalEnd = token.endSec;
-  const linkedNote = token.noteId ? draft.noteEvents.find((note) => note.noteId === token.noteId) : null;
-  let nextNoteId = null;
   token.text = leftText;
   token.endSec = midpoint;
   token.isExtension = false;
   token.extendsTokenId = null;
-  if (linkedNote && linkedNote.endSec - linkedNote.startSec > MIN_TOKEN_NOTE_SEC) {
-    const noteMidpoint = splitTimeForRange(linkedNote.startSec, linkedNote.endSec, midpoint);
-    const originalNoteEnd = linkedNote.endSec;
-    nextNoteId = nextId("note", draft.noteEvents);
-    linkedNote.endSec = noteMidpoint;
-    draft.noteEvents.push({
-      ...linkedNote,
-      noteId: nextNoteId,
-      startSec: noteMidpoint,
-      endSec: Math.max(noteMidpoint + MIN_TOKEN_NOTE_SEC, originalNoteEnd),
-      requiresReview: true,
-      qualityFlags: [...new Set([...(linkedNote.qualityFlags ?? []), "needs_syllable_review"])],
-    });
-  }
   const next = {
     ...token,
     tokenId: nextId("tok", draft.tokens),
     text: rightText,
     startSec: midpoint,
     endSec: Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd),
-    noteId: nextNoteId,
-    midi: nextNoteId ? token.midi : null,
+    noteId: null,
+    midi: token.midi,
     isExtension: false,
     extendsTokenId: null,
     requiresReview: true,
-    qualityFlags: [...new Set([...(token.qualityFlags ?? []), nextNoteId ? "needs_syllable_review" : "missing_note", "needs_syllable_review"])],
+    qualityFlags: [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])],
   };
   draft.tokens.push(next);
   line.tokenIds.splice(tokenIndex + 1, 0, next.tokenId);
@@ -2022,18 +2129,13 @@ function mergeTokenWithNext(draft, tokenId) {
   const token = draft.tokens.find((item) => item.tokenId === tokenId);
   const next = draft.tokens.find((item) => item.tokenId === line.tokenIds[index + 1]);
   if (!token || !next) return draft;
-  token.text = `${token.text}${next.text ? ` ${next.text}` : ""}`.trim();
+  token.text = `${token.text ?? ""}${next.text ?? ""}` || "~";
   token.endSec = Math.max(token.endSec, next.endSec);
   token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), ...(next.qualityFlags ?? [])])];
-  if (token.noteId && next.noteId && token.noteId !== next.noteId) {
-    mergeNotesById(draft, token.noteId, next.noteId);
-  } else if (!token.noteId && next.noteId) {
-    token.noteId = next.noteId;
+  if (Number.isFinite(token.midi) && Number.isFinite(next.midi)) {
+    token.midi = Math.round((token.midi + next.midi) / 2);
+  } else if (!Number.isFinite(token.midi) && Number.isFinite(next.midi)) {
     token.midi = next.midi;
-  }
-  if (token.noteId) {
-    clearMissingNoteFlag(token);
-    syncLinkedNoteFromToken(draft, token, { startSec: token.startSec, endSec: token.endSec, midi: token.midi });
   }
   line.tokenIds.splice(index + 1, 1);
   draft.tokens = draft.tokens.filter((item) => item.tokenId !== next.tokenId);
@@ -2084,15 +2186,22 @@ function deleteToken(draft, tokenId) {
   draft.lines.forEach((line) => {
     line.tokenIds = line.tokenIds.filter((item) => item !== tokenId);
   });
-  if (token.noteId) {
-    const note = draft.noteEvents.find((item) => item.noteId === token.noteId);
-    if (note) {
-      note.requiresReview = true;
-      note.qualityFlags = [...new Set([...(note.qualityFlags ?? []), "unassigned_note"])];
-    }
-  }
   draft.tokens = draft.tokens.filter((item) => item.tokenId !== tokenId);
   draft.lines = draft.lines.filter((line) => line.tokenIds.length > 0);
+  return draft;
+}
+
+function deleteLine(draft, lineId) {
+  const line = draft.lines.find((item) => item.lineId === lineId);
+  if (!line) return draft;
+  const tokenIds = new Set(line.tokenIds);
+  draft.tokens = draft.tokens.filter((token) => !tokenIds.has(token.tokenId));
+  draft.lines = draft.lines.filter((item) => item.lineId !== lineId);
+  return draft;
+}
+
+function deleteNote(draft, noteId) {
+  draft.noteEvents = draft.noteEvents.filter((note) => note.noteId !== noteId);
   return draft;
 }
 
@@ -2102,7 +2211,6 @@ function splitNote(draft, noteId) {
   const midpoint = splitTimeForRange(note.startSec, note.endSec, note.startSec + (note.endSec - note.startSec) / 2);
   const originalEnd = note.endSec;
   const nextNoteId = nextId("note", draft.noteEvents);
-  const linkedToken = draft.tokens.find((token) => token.noteId === noteId);
   note.endSec = midpoint;
   const nextNote = {
     ...note,
@@ -2110,35 +2218,9 @@ function splitNote(draft, noteId) {
     startSec: midpoint,
     endSec: Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd),
     requiresReview: true,
-    qualityFlags: [...new Set([...(note.qualityFlags ?? []), linkedToken ? "needs_syllable_review" : "unassigned_note"])],
+    qualityFlags: [...new Set([...(note.qualityFlags ?? []), "unassigned_note"])],
   };
   draft.noteEvents.push(nextNote);
-  if (linkedToken) {
-    const line = draft.lines.find((item) => item.tokenIds.includes(linkedToken.tokenId));
-    const tokenIndex = line ? line.tokenIds.indexOf(linkedToken.tokenId) : -1;
-    linkedToken.startSec = roundTime(note.startSec);
-    linkedToken.endSec = roundTime(midpoint);
-    linkedToken.midi = note.midi;
-    linkedToken.isExtension = false;
-    linkedToken.extendsTokenId = null;
-    linkedToken.qualityFlags = [...new Set([...(linkedToken.qualityFlags ?? []), "needs_syllable_review"])];
-    linkedToken.requiresReview = true;
-    const nextToken = {
-      ...linkedToken,
-      tokenId: nextId("tok", draft.tokens),
-      text: "~",
-      noteId: nextNoteId,
-      startSec: roundTime(midpoint),
-      endSec: roundTime(Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd)),
-      midi: nextNote.midi,
-      isExtension: false,
-      extendsTokenId: null,
-      requiresReview: true,
-      qualityFlags: [...new Set([...(linkedToken.qualityFlags ?? []), "needs_syllable_review"])],
-    };
-    draft.tokens.push(nextToken);
-    if (line && tokenIndex !== -1) line.tokenIds.splice(tokenIndex + 1, 0, nextToken.tokenId);
-  }
   return draft;
 }
 
@@ -2153,34 +2235,12 @@ function mergeNoteWithNext(draft, noteId) {
   note.midi = Math.round((note.midi + next.midi) / 2);
   note.frequencyHz = midiToFrequency(note.midi);
   note.qualityFlags = [...new Set([...(note.qualityFlags ?? []), ...(next.qualityFlags ?? [])])];
-  draft.tokens.filter((token) => token.noteId === next.noteId).forEach((token) => {
-    token.noteId = note.noteId;
-    token.midi = note.midi;
-  });
   draft.noteEvents = draft.noteEvents.filter((item) => item.noteId !== next.noteId);
-  return draft;
-}
-
-function mergeNotesById(draft, targetNoteId, sourceNoteId) {
-  const target = draft.noteEvents.find((note) => note.noteId === targetNoteId);
-  const source = draft.noteEvents.find((note) => note.noteId === sourceNoteId);
-  if (!target || !source) return draft;
-  target.startSec = Math.min(target.startSec, source.startSec);
-  target.endSec = Math.max(target.endSec, source.endSec);
-  target.midi = Math.round((target.midi + source.midi) / 2);
-  target.frequencyHz = midiToFrequency(target.midi);
-  target.qualityFlags = [...new Set([...(target.qualityFlags ?? []), ...(source.qualityFlags ?? [])])];
-  draft.tokens.filter((token) => token.noteId === sourceNoteId).forEach((token) => {
-    token.noteId = targetNoteId;
-    token.midi = target.midi;
-  });
-  draft.noteEvents = draft.noteEvents.filter((note) => note.noteId !== sourceNoteId);
   return draft;
 }
 
 function normalizeArrangement(arrangement) {
   normalizeTokenTexts(arrangement);
-  ensureUniqueNoteAssignments(arrangement);
   syncAssignmentQualityFlags(arrangement);
   arrangement.lines.forEach((line) => {
     const tokens = tokensForLine(arrangement, line);
@@ -2192,9 +2252,9 @@ function normalizeArrangement(arrangement) {
   arrangement.noteEvents.sort((left, right) => left.startSec - right.startSec);
   arrangement.updatedAt = new Date().toISOString();
   arrangement.qualitySummary = {
-    tokensRequiringReview: arrangement.tokens.filter((token) => token.requiresReview).length,
+    syllablesRequiringReview: arrangement.tokens.filter((token) => token.requiresReview).length,
     notesRequiringReview: arrangement.noteEvents.filter((note) => note.requiresReview).length,
-    missingNoteTokens: arrangement.tokens.filter((token) => token.qualityFlags?.includes("missing_note")).length,
+    missingNoteSyllables: arrangement.tokens.filter((token) => token.qualityFlags?.includes("missing_note")).length,
     unassignedNotes: arrangement.noteEvents.filter((note) => note.qualityFlags?.includes("unassigned_note")).length,
     uncertainPitchNotes: arrangement.noteEvents.filter((note) => note.qualityFlags?.includes("uncertain_pitch")).length,
   };
@@ -2215,67 +2275,18 @@ function normalizeTokenTexts(arrangement) {
   });
 }
 
-function ensureUniqueNoteAssignments(arrangement) {
-  const noteById = new Map(arrangement.noteEvents.map((note) => [note.noteId, note]));
-  const tokensByNoteId = new Map();
-  arrangement.tokens.forEach((token) => {
-    if (!token.noteId) return;
-    if (!noteById.has(token.noteId)) {
-      token.noteId = null;
-      token.midi = null;
-      return;
-    }
-    const tokens = tokensByNoteId.get(token.noteId) ?? [];
-    tokens.push(token);
-    tokensByNoteId.set(token.noteId, tokens);
-  });
-
-  tokensByNoteId.forEach((tokens, noteId) => {
-    if (tokens.length <= 1) return;
-    const sourceNote = noteById.get(noteId);
-    if (!sourceNote) return;
-    const sortedTokens = [...tokens].sort((left, right) => left.startSec - right.startSec);
-    sortedTokens.forEach((token, index) => {
-      if (index === 0) {
-        sourceNote.startSec = roundTime(token.startSec);
-        sourceNote.endSec = roundTime(Math.max(token.startSec + MIN_TOKEN_NOTE_SEC, token.endSec));
-        token.midi = sourceNote.midi;
-        return;
-      }
-      const copiedNote = {
-        ...sourceNote,
-        noteId: nextId("note", arrangement.noteEvents),
-        startSec: roundTime(token.startSec),
-        endSec: roundTime(Math.max(token.startSec + MIN_TOKEN_NOTE_SEC, token.endSec)),
-        requiresReview: true,
-        qualityFlags: [...new Set([...(sourceNote.qualityFlags ?? []), "needs_syllable_review"])],
-      };
-      arrangement.noteEvents.push(copiedNote);
-      noteById.set(copiedNote.noteId, copiedNote);
-      token.noteId = copiedNote.noteId;
-      token.midi = copiedNote.midi;
-      token.isExtension = false;
-      token.extendsTokenId = null;
-      token.requiresReview = true;
-      token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
-    });
-  });
-}
-
 function syncAssignmentQualityFlags(arrangement) {
-  const assignedNoteIds = new Set(arrangement.tokens.map((token) => token.noteId).filter(Boolean));
   arrangement.tokens.forEach((token) => {
-    if (token.noteId) {
+    if (Number.isFinite(token.midi)) {
       clearMissingNoteFlag(token);
       return;
     }
-    if (!token.isExtension) {
-      token.requiresReview = true;
-      token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "missing_note"])];
-    }
+    token.requiresReview = true;
+    token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "missing_note"])];
   });
   arrangement.noteEvents.forEach((note) => {
-    if (assignedNoteIds.has(note.noteId)) {
+    const hasTextOverlap = arrangement.tokens.some((token) => overlaps(token, note));
+    if (hasTextOverlap) {
       note.qualityFlags = withoutFlags(note.qualityFlags, ["unassigned_note"]);
       note.requiresReview = note.qualityFlags.length > 0;
       return;
@@ -2348,8 +2359,6 @@ function pitchTopPercent(midi, minMidi, maxMidi) {
 }
 
 function tokenAssignedMidi(token, noteById) {
-  const note = token.noteId ? noteById.get(token.noteId) : null;
-  if (Number.isFinite(note?.midi)) return note.midi;
   if (Number.isFinite(token.midi)) return token.midi;
   return null;
 }
@@ -2468,6 +2477,15 @@ function qualityBadges(arrangement) {
   return flags.map((flag) => [flag, counts[flag] ?? 0]);
 }
 
+function sentenceGapLabel(arrangement) {
+  const line = arrangement?.lines?.[0];
+  const effective = line?.effectiveSentenceGapMs;
+  const requested = line?.requestedSentenceGapMs;
+  if (Number.isFinite(requested)) return `${requested} ms`;
+  if (Number.isFinite(effective)) return `${effective} ms auto`;
+  return "auto";
+}
+
 function selectionContext(arrangement, selected) {
   if (!arrangement || !selected?.id) return { lineIds: [], tokenIds: [], noteIds: [] };
   const lineIds = new Set();
@@ -2476,14 +2494,13 @@ function selectionContext(arrangement, selected) {
   const addToken = (token) => {
     if (!token) return;
     tokenIds.add(token.tokenId);
-    if (token.noteId) noteIds.add(token.noteId);
     arrangement.lines.filter((line) => line.tokenIds.includes(token.tokenId)).forEach((line) => lineIds.add(line.lineId));
   };
   const addNote = (note) => {
     if (!note) return;
     noteIds.add(note.noteId);
     arrangement.tokens
-      .filter((token) => token.noteId === note.noteId || overlaps(token, note))
+      .filter((token) => overlaps(token, note))
       .forEach(addToken);
   };
 
@@ -2498,7 +2515,7 @@ function selectionContext(arrangement, selected) {
   if (selected.type === "token") {
     const token = arrangement.tokens.find((item) => item.tokenId === selected.id);
     addToken(token);
-    if (token) arrangement.noteEvents.filter((note) => token.noteId === note.noteId || overlaps(token, note)).forEach(addNote);
+    if (token) arrangement.noteEvents.filter((note) => overlaps(token, note)).forEach(addNote);
   }
   if (selected.type === "note") {
     const note = arrangement.noteEvents.find((item) => item.noteId === selected.id);
@@ -2574,7 +2591,17 @@ function tokensForLine(arrangement, line) {
 }
 
 function lineText(arrangement, line) {
-  return tokensForLine(arrangement, line).map((token) => token.text).filter(Boolean).join(" ");
+  const words = [];
+  tokensForLine(arrangement, line).forEach((token, index) => {
+    const groupId = token.wordId || `token_${index}`;
+    const previous = words[words.length - 1];
+    if (previous && previous.wordId === groupId) {
+      previous.text += token.text || "";
+    } else {
+      words.push({ wordId: groupId, text: token.text || "" });
+    }
+  });
+  return words.map((word) => word.text).filter(Boolean).join(" ");
 }
 
 function makeToken(line, index, text) {

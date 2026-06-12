@@ -3,6 +3,7 @@ import inspect
 import json
 import math
 import os
+import statistics
 import time
 from importlib import metadata
 from pathlib import Path
@@ -108,7 +109,14 @@ def run_transcription(job_id: str) -> None:
     cleanup_memory()
 
     aligned_asr_segments = normalize_segments(aligned.get("segments", []), settings.transcription_low_confidence_threshold)
-    segments = build_sentence_segments(aligned_asr_segments, transcription_settings, settings.transcription_low_confidence_threshold)
+    detected_sentence_gap_ms = estimate_auto_sentence_gap(aligned_asr_segments, job.tempo.detectedSongBpm if job.tempo else None)
+    effective_sentence_gap_ms = transcription_settings.sentenceGapMs if transcription_settings.sentenceGapMs is not None else detected_sentence_gap_ms
+    segments = build_sentence_segments(
+        aligned_asr_segments,
+        transcription_settings,
+        settings.transcription_low_confidence_threshold,
+        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
+    )
     raw_segments = jsonable(result.get("segments", []))
     max_raw_end_sec = max_segment_end(raw_segments)
     max_aligned_end_sec = max((segment.endSec for segment in segments), default=None)
@@ -137,7 +145,9 @@ def run_transcription(job_id: str) -> None:
         "vadOptionsApplied": asr_vad_diagnostics["optionsApplied"],
         "vadModelInjected": asr_vad_diagnostics["modelInjected"],
         "vadCompatibilityNote": asr_vad_diagnostics["compatibilityNote"],
-        "sentencePauseMs": transcription_settings.sentencePauseMs,
+        "requestedSentenceGapMs": transcription_settings.sentenceGapMs,
+        "detectedSentenceGapMs": detected_sentence_gap_ms,
+        "effectiveSentenceGapMs": effective_sentence_gap_ms,
         "sentencePaddingMs": transcription_settings.sentencePaddingMs,
         "whisperContextWindowSec": WHISPER_CONTEXT_WINDOW_SEC,
         "expectedWindowCount": expected_window_count,
@@ -324,6 +334,7 @@ def build_sentence_segments(
     aligned_segments: list[TranscriptSegment],
     transcription_settings: TranscriptionSettings,
     low_confidence_threshold: float,
+    detected_song_bpm: float | None = None,
 ) -> list[TranscriptSegment]:
     words = sorted(
         [word for segment in aligned_segments for word in segment.words if word.text],
@@ -332,12 +343,12 @@ def build_sentence_segments(
     if not words:
         return renumber_segments(aligned_segments, low_confidence_threshold)
 
-    pause_sec = transcription_settings.sentencePauseMs / 1000.0
+    pause_sec = detected_sentence_gap(transcription_settings, aligned_segments, detected_song_bpm) / 1000.0
     groups: list[list[TranscriptWord]] = []
     current: list[TranscriptWord] = []
     previous: TranscriptWord | None = None
     for word in words:
-        if previous is not None and word.startSec - previous.endSec >= pause_sec:
+        if previous is not None and word.startSec - previous.endSec > pause_sec:
             groups.append(current)
             current = []
         current.append(word)
@@ -379,6 +390,40 @@ def build_sentence_segments(
             )
         )
     return sentence_segments
+
+
+def detected_sentence_gap(
+    transcription_settings: TranscriptionSettings,
+    aligned_segments: list[TranscriptSegment],
+    detected_song_bpm: float | None = None,
+) -> int:
+    if transcription_settings.sentenceGapMs is not None:
+        return transcription_settings.sentenceGapMs
+    return estimate_auto_sentence_gap(aligned_segments, detected_song_bpm)
+
+
+def estimate_auto_sentence_gap(
+    aligned_segments: list[TranscriptSegment],
+    detected_song_bpm: float | None = None,
+) -> int:
+
+    words = sorted(
+        [word for segment in aligned_segments for word in segment.words if word.text],
+        key=lambda word: (word.startSec, word.endSec),
+    )
+    gaps_ms = [
+        max(0.0, (words[index].startSec - words[index - 1].endSec) * 1000.0)
+        for index in range(1, len(words))
+        if words[index].startSec >= words[index - 1].endSec
+    ]
+    nonzero_gaps = [gap for gap in gaps_ms if gap > 0]
+    sorted_gaps = sorted(nonzero_gaps)
+    short_gap_sample = sorted_gaps[: max(1, len(sorted_gaps) // 2)] if sorted_gaps else []
+    avg_short_gap_ms = statistics.mean(short_gap_sample) if short_gap_sample else 250.0
+    median_gap_ms = statistics.median(short_gap_sample) if short_gap_sample else avg_short_gap_ms
+    bpm_gap_ms = 60000.0 / detected_song_bpm if detected_song_bpm and detected_song_bpm > 0 else 500.0
+    estimate = max(median_gap_ms * 2.5, avg_short_gap_ms * 1.8, bpm_gap_ms * 1.25)
+    return int(round(max(300.0, min(1500.0, estimate))))
 
 
 def renumber_segments(segments: list[TranscriptSegment], low_confidence_threshold: float) -> list[TranscriptSegment]:

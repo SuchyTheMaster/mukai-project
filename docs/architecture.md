@@ -72,6 +72,7 @@ Minimalne API MVP:
 - `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu audio.
 - `POST /api/jobs/{jobId}/stages/{stage}/reset`: planowany reset wskazanego etapu i ponowne kolejkowanie zależnych etapów.
 - `PUT /api/jobs/{jobId}/arrangement`: zapis aktualnego `Arrangement`.
+- `POST /api/jobs/{jobId}/arrangement/resegment`: ponowna agregacja aligned words do sentencji z nowym `sentenceGapMs`, bez uruchamiania przetwarzania audio.
 - `POST /api/jobs/{jobId}/exports/validate`: walidacja przed eksportem.
 - `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej albo wielu paczek karaoke; po sukcesie `Job` wraca do `awaiting_review`.
 - `POST /api/jobs/{jobId}/exports/project`: eksport ZIP-a projektu, ustawienie TTL retencji i powrót `Job` do `awaiting_review`.

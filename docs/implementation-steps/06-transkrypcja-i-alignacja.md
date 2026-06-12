@@ -20,7 +20,7 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Pozostawienie detekcji języka Whisperowi, gdy użytkownik zostawił język pusty.
 - Zachowanie globalnych czasów dla długich utworów mimo pracy modelu na oknach około 30 sekund.
 - Jawne użycie WhisperX `vad_method="silero"` jako domyślnego VAD, z `pyannote` jako obsługiwanym trybem alternatywnym.
-- Użycie ustawień transkrypcji `vadOnset`, `vadOffset`, `vadChunkSizeSec`, `sentencePauseMs` i `sentencePaddingMs` zaakceptowanych przy uploadzie albo ustawionych domyślnie.
+- Użycie ustawień transkrypcji `vadOnset`, `vadOffset`, `vadChunkSizeSec`, `sentenceGapMs` i `sentencePaddingMs` zaakceptowanych przy uploadzie albo ustawionych domyślnie.
 - Zapis `transcript.raw.json` z segmentami ASR.
 - Zapis `transcript.aligned.json` z finalnymi frazami karaoke, słowami, start/end i confidence.
 - Budowanie finalnych fraz z aligned words przez podział po dłuższych pauzach między słowami.
@@ -52,7 +52,7 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Dla utworu bez wskazanego języka worker nie wymusza języka.
 - Segmenty zachowują globalne czasy względem oryginalnego utworu.
 - Worker przekazuje do WhisperX jawną metodę VAD i opcje VAD.
-- Przerwa między słowami większa lub równa `sentencePauseMs` rozdziela finalne frazy.
+- Przerwa między słowami większa niż efektywny `sentenceGapMs` rozdziela finalne sentencje; `null` uruchamia automatyczne oszacowanie progu.
 - Niska pewność nie usuwa tekstu z wyniku, tylko oznacza go do korekty.
 - Worker nie korzysta z zewnętrznych API.
 

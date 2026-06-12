@@ -34,7 +34,7 @@
     "vadOnset": 0.5,
     "vadOffset": 0.363,
     "vadChunkSizeSec": 30,
-    "sentencePauseMs": 700,
+    "sentenceGapMs": null,
     "sentencePaddingMs": 80
   },
   "syllabificationSettings": {
@@ -92,7 +92,7 @@ Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w fr
   "vadOnset": 0.5,
   "vadOffset": 0.363,
   "vadChunkSizeSec": 30,
-  "sentencePauseMs": 700,
+  "sentenceGapMs": null,
   "sentencePaddingMs": 80
 }
 ```
@@ -105,7 +105,7 @@ Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w fr
 Zasady:
 
 - `vadChunkSizeSec` pozostaje domyślnie `30`, żeby pasował do okna kontekstowego Whispera.
-- `sentencePauseMs` jest minimalną przerwą między słowami, która rozdziela finalne frazy karaoke.
+- `sentenceGapMs` jest opcjonalnym progiem przerwy między słowami rozdzielającym finalne sentencje; `null` oznacza tryb auto.
 - `sentencePaddingMs` rozszerza start i koniec frazy, ale nie może powodować nachodzenia na sąsiednie frazy.
 - Artefakty transkrypcji zapisują wybraną metodę VAD, parametry VAD oraz parametry grupowania fraz.
 
@@ -133,7 +133,7 @@ Etykiety w UI:
 
 ## SyllabificationSettings
 
-Ustawienia sylabizacji sterują tym, jak słowa z `transcript.aligned.json` są dzielone na tokeny karaoke przed dopasowaniem do nut. Ustawienie jest zapisywane w `Job`, a worker aligningu zapisuje w `Arrangement.syllabification`, która metoda została finalnie zastosowana.
+Ustawienia sylabizacji sterują tym, jak słowa z `transcript.aligned.json` są dzielone na sylaby edycyjne. Ustawienie jest zapisywane w `Job`, a worker aligningu zapisuje w `Arrangement.syllabification`, która metoda została finalnie zastosowana.
 
 ```json
 {
@@ -146,7 +146,7 @@ Ustawienia sylabizacji sterują tym, jak słowa z `transcript.aligned.json` są 
 - `kokosznicka`: zalecana metoda dla języka polskiego; obsługiwana tylko dla `pl`.
 - `pyphen`: metoda multijęzyczna oparta o słowniki hyphenation Pyphen.
 - `heuristic`: dotychczasowa heurystyka bez zewnętrznego słownika.
-- `none`: brak podziału; całe słowa z transkrypcji są przekazywane jako tokeny sylabowe.
+- `none`: brak podziału; całe słowa z transkrypcji są przekazywane jako pojedyncze sylaby.
 
 Zasady:
 
@@ -289,7 +289,7 @@ Zasady:
     "vadOnset": 0.5,
     "vadOffset": 0.363,
     "vadChunkSizeSec": 30,
-    "sentencePauseMs": 700,
+    "sentenceGapMs": null,
     "sentencePaddingMs": 80
   },
   "pitchSettings": {
@@ -454,43 +454,71 @@ Zasady:
 }
 ```
 
-## KaraokeToken
+## ArrangementSyllable
 
 ```json
 {
-  "tokenId": "tok_001",
+  "syllableId": "syl_001",
   "text": "pierw",
-  "wordId": "word_001",
   "syllableIndex": 0,
-  "noteId": "note_001",
   "startSec": 12.34,
   "endSec": 12.88,
   "midi": 57,
   "noteType": "normal",
-  "isExtension": false,
-  "extendsTokenId": null,
   "requiresReview": false,
   "qualityFlags": []
 }
 ```
 
-`KaraokeToken` żyje jako część aktualnego `Arrangement`; w manifeście projektu jest reprezentowany w `arrangement.tokens`. Przypisanie tokenu do nuty oznacza wyłącznie niepuste `noteId`. Relacja token-nuta ma kardynalność `0..1 ↔ 0..1`: token może nie mieć nuty, nuta może nie mieć tokenu, ale jedno `noteId` nie może być przypisane do więcej niż jednego tokenu.
+`ArrangementSyllable` jest podstawowym blokiem edycji karaoke. Sylaba ma własną wartość `midi` albo `null`, ale nie przechowuje `noteId`; nuty są niezależną warstwą diagnostyczną.
 
-Token może mieć pusty `text` tylko w trybie kompatybilności dla importowanych albo starszych tokenów przedłużenia, gdy `isExtension=true` i `extendsTokenId` wskazuje token źródłowy. Nowy szkic i nowe operacje edytora nie tworzą pustych tokenów przedłużenia dla melizmatów. W initial alignmencie kolejne części tej samej sylaby używają normalnego tekstu tokenu `~` tylko wtedy, gdy kontynuacja ma inny MIDI niż poprzednia część.
+## ArrangementWord
+
+```json
+{
+  "wordId": "word_001",
+  "startSec": 12.34,
+  "endSec": 13.2,
+  "text": "pierwszy",
+  "confidence": 0.91,
+  "requiresReview": false,
+  "qualityFlags": [],
+  "syllables": []
+}
+```
+
+## ArrangementSentence
+
+```json
+{
+  "sentenceId": "sent_001",
+  "startSec": 12.34,
+  "endSec": 15.87,
+  "text": "pierwszy wers",
+  "requestedSentenceGapMs": null,
+  "detectedSentenceGapMs": 720,
+  "effectiveSentenceGapMs": 720,
+  "requiresReview": false,
+  "qualityFlags": [],
+  "words": []
+}
+```
 
 Reguły automatycznego szkicu:
 
-- Jeśli jedna nuta przecina kilka sylab, worker dzieli `NoteEvent` na granicach sylab; części zachowują MIDI, `frequencyHz`, confidence, źródło i flagi jakości.
-- Jeśli jedna sylaba przecina kilka nut, worker scala kolejne nuty o tym samym MIDI, a dla zmian MIDI dzieli token: pierwszy token zachowuje tekst sylaby, a kolejne dostają `text="~"`.
-- Jeśli sylaba nie ma pasującej nuty, pozostaje tokenem bez `noteId` i dostaje `missing_note` oraz `needs_syllable_review`.
-- Jeśli nuta nie ma pasującej sylaby, pozostaje w `noteEvents` jako nuta bez tekstu z `unassigned_note`.
-- Szkic rozwiązuje konflikty wiele-do-jednego, ale nie tworzy sztucznych przypisań tylko po to, żeby każda nuta albo każda sylaba miała parę.
+- WhisperX dostarcza słowa i czasy słów; sentencje są agregowane z kolejnych słów według `effectiveSentenceGapMs`.
+- Jeśli `requestedSentenceGapMs` jest `null`, próg sentencji jest wykrywany automatycznie z BPM i odstępów między słowami.
+- Czas trwania sylab wypełnia czas trwania słowa bez przerw między sylabami.
+- `midi` sylaby jest uśrednioną wartością nut przecinających jej czas trwania.
+- Kolejne sylaby tego samego słowa z tą samą wartością `midi` mogą zostać scalone w szkicu.
+- Jeśli sylaba nie ma wyliczonego `midi`, dostaje `missing_note` oraz `needs_syllable_review`.
+- Jeśli nuta nie przecina żadnej sylaby, pozostaje w `noteEvents` jako nuta bez tekstu z `unassigned_note`.
 
 `qualityFlags` oznaczają elementy do ręcznej recenzji bez usuwania danych AI. MVP używa co najmniej:
 
 - `uncertain_pitch`: nuta ma niską pewność detekcji pitch.
-- `missing_note`: tekst nie ma przypisanej nuty.
-- `unassigned_note`: nuta nie ma przypisanego tekstu.
+- `missing_note`: sylaba nie ma wartości MIDI.
+- `unassigned_note`: nuta diagnostyczna nie przecina żadnej sylaby.
 - `uncertain_text`: segment albo słowo z transkrypcji wymaga korekty.
 - `needs_syllable_review`: podział sylaby, tokenu albo nuty wymaga ręcznej kontroli.
 
@@ -614,17 +642,20 @@ Import:
   "revision": 3,
   "approved": false,
   "updatedAt": "2026-05-28T00:10:00Z",
-  "lines": [
+  "sentences": [
     {
-      "lineId": "line_001",
+      "sentenceId": "sent_001",
       "startSec": 12.34,
       "endSec": 15.87,
-      "tokenIds": ["tok_001", "tok_002"],
+      "text": "pierwszy wers",
+      "effectiveSentenceGapMs": 720,
+      "requestedSentenceGapMs": null,
+      "detectedSentenceGapMs": 720,
       "requiresReview": false,
-      "qualityFlags": []
+      "qualityFlags": [],
+      "words": []
     }
   ],
-  "tokens": [],
   "noteEvents": [],
   "source": "draft_ai",
   "qualitySummary": {},
@@ -642,7 +673,7 @@ Import:
 }
 ```
 
-`revision` służy do kontroli współbieżnego zapisu aktualnego stanu i nie oznacza trwałej historii wersji. Eksporter używa aktualnego zatwierdzonego `Arrangement`, jego `tokens` oraz `noteEvents`.
+`revision` służy do kontroli współbieżnego zapisu aktualnego stanu i nie oznacza trwałej historii wersji. Eksporter używa aktualnego zatwierdzonego `Arrangement`, jego sylab oraz `noteEvents`.
 
 Aktywny `Arrangement` jest przechowywany wyłącznie w Postgresie. `mukai-project.json` zawiera jego serializowany snapshot na potrzeby eksportu projektu i późniejszego importu; ten snapshot nie jest osobnym źródłem prawdy podczas pracy nad aktywnym `Job`.
 
@@ -692,7 +723,7 @@ Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pr
 ## Walidacja
 
 - `endSec` musi być większe niż `startSec`.
-- Token musi mieć tekst albo być oznaczony jako przedłużenie.
-- Jedno niepuste `KaraokeToken.noteId` może wystąpić maksymalnie w jednym tokenie.
+- Sylaba musi mieć tekst.
+- Sylaba eksportowana do UltraStar musi mieć wartość `midi`, chyba że jej `noteType` albo przyszły tryb eksportu pozwala na freestyle bez pitch.
 - Nuta eksportowana do UltraStar musi mieć długość co najmniej jednego beatu.
 - Puste frazy nie są eksportowane.

@@ -163,7 +163,7 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Walidacja kompletności ZIP-a projektu, manifestu `mukai-project.json` i hashy artefaktów.
 - Walidacja, że import nie przyjmuje pojedynczego `mukai-project.json` jako samodzielnego formatu MVP.
 - Serializacja i migracje kontraktów JSON.
-- Tokenizacja tekstu do linii UltraStar.
+- Generowanie linii UltraStar z sentencji, wyrazów i sylab.
 
 ## Przyszłe testy integracyjne
 

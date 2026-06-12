@@ -48,6 +48,15 @@ def note(
     )
 
 
+def syllables(arrangement):
+    return [
+        syllable
+        for sentence in arrangement.sentences
+        for word in sentence.words
+        for syllable in word.syllables
+    ]
+
+
 def fake_pyphen_module(positions_by_word: dict[str, list[int]] | None = None, languages: dict[str, object] | None = None):
     positions_by_word = positions_by_word or {}
 
@@ -62,109 +71,55 @@ def fake_pyphen_module(positions_by_word: dict[str, list[int]] | None = None, la
 
 
 class SyllableNoteMappingTest(unittest.TestCase):
-    def test_equal_syllables_and_notes_map_one_to_one(self):
+    def test_syllables_have_midi_without_note_assignment(self):
         arrangement = build_arrangement("job_1", [segment_with_word("aa")], [note("n1", 0.0, 0.45), note("n2", 0.55, 1.0, 62)])
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["a", "a"])
-        self.assertEqual([token.noteId for token in arrangement.tokens], ["n1", "n2"])
-        self.assertFalse(any(token.isExtension for token in arrangement.tokens))
+        self.assertEqual([item.text for item in syllables(arrangement)], ["a", "a"])
+        self.assertEqual([item.midi for item in syllables(arrangement)], [60, 62])
+        self.assertFalse(hasattr(syllables(arrangement)[0], "noteId"))
+        self.assertEqual([item.noteId for item in arrangement.noteEvents], ["n1", "n2"])
 
-    def test_extra_notes_create_tilde_tokens(self):
-        arrangement = build_arrangement("job_1", [segment_with_word("a")], [note("n1", 0.0, 0.45), note("n2", 0.55, 1.0, 62)])
-
-        self.assertEqual([token.text for token in arrangement.tokens], ["a", "~"])
-        self.assertFalse(arrangement.tokens[0].isExtension)
-        self.assertFalse(arrangement.tokens[1].isExtension)
-        self.assertIsNone(arrangement.tokens[1].extendsTokenId)
-        self.assertEqual([token.noteId for token in arrangement.tokens], ["n1", "n2"])
-
-    def test_extra_notes_with_same_midi_merge_without_tilde(self):
-        arrangement = build_arrangement(
-            "job_1",
-            [segment_with_word("a")],
-            [
-                note("n1", 0.0, 0.4, 60, frequency_hz=260.0, confidence=0.8),
-                note("n2", 0.4, 1.0, 60, frequency_hz=280.0, confidence=1.0),
-            ],
-        )
-
-        self.assertEqual([token.text for token in arrangement.tokens], ["a"])
-        self.assertEqual([token.noteId for token in arrangement.tokens], ["n1"])
-        self.assertEqual([note_event.noteId for note_event in arrangement.noteEvents], ["n1"])
-        self.assertEqual((arrangement.noteEvents[0].startSec, arrangement.noteEvents[0].endSec), (0.0, 1.0))
-        self.assertEqual(arrangement.noteEvents[0].midi, 60)
-        self.assertEqual(arrangement.noteEvents[0].frequencyHz, 272.0)
-        self.assertEqual(arrangement.noteEvents[0].confidence, 0.92)
-
-    def test_same_midi_runs_merge_before_tilde_for_pitch_change(self):
+    def test_syllable_midi_is_weighted_average_of_overlapping_notes(self):
         arrangement = build_arrangement(
             "job_1",
             [segment_with_word("a")],
             [
                 note("n1", 0.0, 0.25, 60),
-                note("n2", 0.25, 0.5, 60),
-                note("n3", 0.5, 0.75, 62),
-                note("n4", 0.75, 1.0, 62),
+                note("n2", 0.25, 1.0, 64),
             ],
         )
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["a", "~"])
-        self.assertEqual([token.noteId for token in arrangement.tokens], ["n1", "n3"])
-        self.assertEqual([(note_event.noteId, note_event.midi) for note_event in arrangement.noteEvents], [("n1", 60), ("n3", 62)])
+        self.assertEqual([item.text for item in syllables(arrangement)], ["a"])
+        self.assertEqual(syllables(arrangement)[0].midi, 63)
+        self.assertEqual([item.noteId for item in arrangement.noteEvents], ["n1", "n2"])
 
-    def test_merged_same_midi_note_keeps_quality_flags(self):
+    def test_adjacent_syllables_with_same_midi_merge_inside_word(self):
         arrangement = build_arrangement(
             "job_1",
-            [segment_with_word("a")],
-            [
-                note("n1", 0.0, 0.45, 60),
-                note("n2", 0.45, 1.0, 60, requires_review=True, quality_flags=["uncertain_pitch"]),
-            ],
+            [segment_with_word("aa")],
+            [note("n1", 0.0, 1.0, 64)],
         )
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["a"])
-        self.assertEqual([note_event.noteId for note_event in arrangement.noteEvents], ["n1"])
-        self.assertIn("uncertain_pitch", arrangement.noteEvents[0].qualityFlags)
-        self.assertTrue(arrangement.noteEvents[0].requiresReview)
+        self.assertEqual([item.text for item in syllables(arrangement)], ["aa"])
+        self.assertEqual(syllables(arrangement)[0].startSec, 0.0)
+        self.assertEqual(syllables(arrangement)[0].endSec, 1.0)
+        self.assertEqual(syllables(arrangement)[0].midi, 64)
+        self.assertEqual([item.noteId for item in arrangement.noteEvents], ["n1"])
 
     def test_missing_notes_keep_syllables_for_review(self):
-        arrangement = build_arrangement("job_1", [segment_with_word("aa")], [note("n1", 0.0, 0.45)])
-
-        self.assertEqual([token.text for token in arrangement.tokens], ["a", "a"])
-        self.assertEqual(arrangement.tokens[0].noteId, "n1")
-        self.assertIsNone(arrangement.tokens[1].noteId)
-        self.assertIn("missing_note", arrangement.tokens[1].qualityFlags)
-        self.assertIn("needs_syllable_review", arrangement.tokens[1].qualityFlags)
-
-    def test_no_notes_marks_each_syllable_missing(self):
         arrangement = build_arrangement("job_1", [segment_with_word("aa")], [])
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["a", "a"])
-        self.assertTrue(all(token.noteId is None for token in arrangement.tokens))
-        self.assertTrue(all("missing_note" in token.qualityFlags for token in arrangement.tokens))
+        self.assertEqual([item.text for item in syllables(arrangement)], ["a", "a"])
+        self.assertTrue(all(item.midi is None for item in syllables(arrangement)))
+        self.assertTrue(all("missing_note" in item.qualityFlags for item in syllables(arrangement)))
+        self.assertTrue(all("needs_syllable_review" in item.qualityFlags for item in syllables(arrangement)))
 
-    def test_unassigned_note_stays_as_ghost_note(self):
+    def test_unoverlapped_note_stays_diagnostic_unassigned_note(self):
         arrangement = build_arrangement("job_1", [segment_with_word("a")], [note("n1", 1.1, 1.4)])
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["a"])
-        self.assertIsNone(arrangement.tokens[0].noteId)
-        self.assertIn("missing_note", arrangement.tokens[0].qualityFlags)
-        self.assertEqual([note_event.noteId for note_event in arrangement.noteEvents], ["n1"])
+        self.assertIsNone(syllables(arrangement)[0].midi)
+        self.assertEqual([item.noteId for item in arrangement.noteEvents], ["n1"])
         self.assertIn("unassigned_note", arrangement.noteEvents[0].qualityFlags)
-
-    def test_one_note_over_multiple_syllables_is_split(self):
-        arrangement = build_arrangement("job_1", [segment_with_word("aa")], [note("n1", 0.0, 1.0, 64)])
-
-        self.assertEqual([token.text for token in arrangement.tokens], ["a", "a"])
-        self.assertEqual([token.noteId for token in arrangement.tokens], ["n1", "n1_part_02"])
-        self.assertEqual([(note_event.noteId, note_event.midi) for note_event in arrangement.noteEvents], [("n1", 64), ("n1_part_02", 64)])
-        self.assertEqual([(note_event.startSec, note_event.endSec) for note_event in arrangement.noteEvents], [(0.0, 0.5), (0.5, 1.0)])
-
-    def test_no_note_id_is_assigned_to_multiple_tokens(self):
-        arrangement = build_arrangement("job_1", [segment_with_word("aa")], [note("n1", 0.0, 1.0, 64)])
-        assigned_note_ids = [token.noteId for token in arrangement.tokens if token.noteId]
-
-        self.assertEqual(len(assigned_note_ids), len(set(assigned_note_ids)))
 
     def test_none_syllabification_uses_whole_words(self):
         arrangement = build_arrangement(
@@ -176,7 +131,7 @@ class SyllableNoteMappingTest(unittest.TestCase):
             language_source="forced",
         )
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["Panie"])
+        self.assertEqual([item.text for item in syllables(arrangement)], ["Panie"])
         self.assertEqual(arrangement.syllabification.requestedMethod, "none")
         self.assertEqual(arrangement.syllabification.appliedMethod, "none")
 
@@ -193,7 +148,7 @@ class SyllableNoteMappingTest(unittest.TestCase):
                 language_source="forced",
             )
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["Pa", "nie"])
+        self.assertEqual([item.text for item in syllables(arrangement)], ["Pa", "nie"])
         self.assertEqual(arrangement.syllabification.requestedMethod, "kokosznicka")
         self.assertEqual(arrangement.syllabification.appliedMethod, "kokosznicka")
         self.assertIsNone(arrangement.syllabification.fallbackReason)
@@ -208,7 +163,7 @@ class SyllableNoteMappingTest(unittest.TestCase):
             language_source="detected",
         )
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["Pan", "i", "e"])
+        self.assertEqual([item.text for item in syllables(arrangement)], ["Pan", "i", "e"])
         self.assertEqual(arrangement.syllabification.requestedMethod, "kokosznicka")
         self.assertEqual(arrangement.syllabification.appliedMethod, "heuristic")
         self.assertIn("Kokosznicka", arrangement.syllabification.fallbackReason)
@@ -226,7 +181,7 @@ class SyllableNoteMappingTest(unittest.TestCase):
                 language_source="forced",
             )
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["Pa", "nie"])
+        self.assertEqual([item.text for item in syllables(arrangement)], ["Pa", "nie"])
         self.assertEqual(arrangement.syllabification.appliedMethod, "pyphen")
 
     def test_pyphen_missing_dictionary_falls_back_to_heuristic(self):
@@ -242,7 +197,7 @@ class SyllableNoteMappingTest(unittest.TestCase):
                 language_source="detected",
             )
 
-        self.assertEqual([token.text for token in arrangement.tokens], ["Pan", "i", "e"])
+        self.assertEqual([item.text for item in syllables(arrangement)], ["Pan", "i", "e"])
         self.assertEqual(arrangement.syllabification.requestedMethod, "pyphen")
         self.assertEqual(arrangement.syllabification.appliedMethod, "heuristic")
         self.assertIn("Pyphen", arrangement.syllabification.fallbackReason)

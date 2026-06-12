@@ -897,6 +897,42 @@ summary:hover {
   box-shadow: 0 0 8px rgba(255, 0, 110, 0.4);
 }
 
+.sentence-gap-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 4px 2px 10px;
+  color: var(--secondary);
+  background: rgba(18, 18, 58, 0.58);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sentence-gap-control input {
+  width: 72px;
+  min-height: 28px;
+  padding: 4px 8px;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.sentence-gap-control input:focus {
+  border-color: var(--hot-pink);
+  box-shadow: 0 0 8px rgba(255, 0, 110, 0.4);
+}
+
+.sentence-gap-control .button {
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
 .quality-badge {
   display: inline-flex;
   align-items: center;
