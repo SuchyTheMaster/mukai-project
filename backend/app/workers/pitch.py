@@ -550,15 +550,9 @@ def build_arrangement(
             )
         )
 
-    assigned_notes = note_ids_overlapping_slots(note_events, slots)
     for note in note_events:
-        if note.noteId not in assigned_notes:
-            note.requiresReview = True
-            note.qualityFlags = sorted(set(note.qualityFlags + ["unassigned_note"]))
-        else:
-            requires_review = note.requiresReview
-            note.qualityFlags = [flag for flag in note.qualityFlags if flag != "unassigned_note"]
-            note.requiresReview = requires_review or bool(note.qualityFlags)
+        note.qualityFlags = [flag for flag in note.qualityFlags if flag != "unassigned_note"]
+        note.requiresReview = note.requiresReview or bool(note.qualityFlags)
 
     quality_summary = summarize_quality(sentences, note_events)
     return Arrangement(
@@ -1089,7 +1083,6 @@ def summarize_quality(sentences: list[ArrangementSentence], notes: list[NoteEven
         "syllablesRequiringReview": sum(1 for syllable in syllables if syllable.requiresReview),
         "notesRequiringReview": sum(1 for note in notes if note.requiresReview),
         "missingNoteSyllables": sum(1 for syllable in syllables if "missing_note" in syllable.qualityFlags),
-        "unassignedNotes": sum(1 for note in notes if "unassigned_note" in note.qualityFlags),
         "uncertainPitchNotes": sum(1 for note in notes if "uncertain_pitch" in note.qualityFlags),
     }
     return summary

@@ -8,7 +8,6 @@ import {
   Lock,
   Magnet,
   Merge,
-  Minus,
   Music2,
   Pause,
   Play,
@@ -33,7 +32,7 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const EDITOR_WINDOW_SEC = 30;
 const MIN_EDITOR_WINDOW_SEC = 0.1;
 const MAX_EDITOR_WINDOW_SEC = 120;
-const DEFAULT_SNAP_MS = 50;
+const DEFAULT_SNAP_MS = 20;
 const GRAPH_PAN_THRESHOLD_PX = 4;
 const DEFAULT_TOKEN_MIDI = 60;
 const MIN_EDITOR_MIDI = 24;
@@ -203,7 +202,7 @@ const TRANSCRIPTION_SETTING_FIELDS = [
   ["vadOnset", { label: "Próg startu VAD", step: "0.001" }],
   ["vadOffset", { label: "Próg końca VAD", step: "0.001" }],
   ["vadChunkSizeSec", { label: "Okno VAD/ASR (s)", step: "1" }],
-  ["sentenceGapMs", { label: "ms między sentencjami", step: "10", nullable: true, placeholder: "auto" }],
+  ["sentenceGapMs", { label: "Cs między sentencjami", step: "1", nullable: true, placeholder: "auto" }],
   ["sentencePaddingMs", { label: "Padding frazy (ms)", step: "10" }],
 ];
 
@@ -240,7 +239,6 @@ const PREPROCESSING_DISPLAY_ARTIFACT_TYPES = new Set(["whisperx_input", "torchcr
 const FLAG_LABELS = {
   uncertain_pitch: "Niska periodicity",
   missing_note: "Brak nuty dla tekstu",
-  unassigned_note: "Nuta bez tekstu",
   uncertain_text: "Niska pewność tekstu",
   needs_syllable_review: "Sylaby do sprawdzenia",
   contains_review_items: "Elementy do recenzji",
@@ -413,7 +411,7 @@ function App() {
     try {
       const saved = await apiJson(`/api/jobs/${job.jobId}/arrangement/resegment`, {
         method: "POST",
-        body: JSON.stringify({ sentenceGapMs: sentenceGapMs === "" || sentenceGapMs == null ? null : Number(sentenceGapMs) }),
+        body: JSON.stringify({ sentenceGapMs: centisecondsToMilliseconds(sentenceGapMs) }),
         headers: { "Content-Type": "application/json" },
       });
       setArrangement(toEditorArrangement(saved));
@@ -635,8 +633,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const selectedContext = useMemo(() => selectionContext(arrangement, selected), [arrangement, selected]);
   const selectedLineId = selected.type === "line" ? selected.id : selectedContext.lineIds[0];
   const selectedLine = arrangement?.lines.find((line) => line.lineId === selectedLineId) ?? arrangement?.lines[0] ?? null;
+  const selectedWord = selected.type === "word" ? findWordById(arrangement, selected.id)?.word ?? null : null;
   const selectedToken = selected.type === "token" ? arrangement?.tokens.find((token) => token.tokenId === selected.id) : null;
-  const selectedNote = selected.type === "note" ? arrangement?.noteEvents.find((note) => note.noteId === selected.id) : null;
   const duration = job.audio?.durationSec ?? arrangementDuration(arrangement);
   const maxViewportStart = Math.max(duration - zoomSec, 0);
   const windowStart = Math.max(0, Math.min(viewportStart, maxViewportStart));
@@ -663,7 +661,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
 
   useEffect(() => {
     const requested = arrangement?.lines?.[0]?.requestedSentenceGapMs;
-    setSentenceGapInput(Number.isFinite(requested) ? String(requested) : "");
+    setSentenceGapInput(Number.isFinite(requested) ? millisecondsToCentisecondsString(requested) : "");
   }, [arrangement?.arrangementId, arrangement?.revision]);
 
   useEffect(() => {
@@ -867,6 +865,12 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     playRange(token.startSec, token.endSec, { returnToStart: true });
   }
 
+  function playWordRange(word) {
+    if (!word) return;
+    selectAndSeek("word", word.wordId, word.startSec);
+    playRange(word.startSec, word.endSec, { returnToStart: true });
+  }
+
   function playLineRange(line) {
     if (!line) return;
     selectAndSeek("line", line.lineId, line.startSec);
@@ -930,8 +934,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     if (!window.confirm("Usunąć zaznaczony element?")) return;
     commit((draft) => {
       if (selected.type === "line") return deleteLine(draft, selected.id);
+      if (selected.type === "word") return deleteWord(draft, selected.id);
       if (selected.type === "token") return deleteToken(draft, selected.id);
-      if (selected.type === "note") return deleteNote(draft, selected.id);
       return draft;
     });
     setSelected({ type: "line", id: null });
@@ -1058,8 +1062,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       <div className="quality-strip">
         <SyllabificationBadge info={arrangement.syllabification} />
         <label className="sentence-gap-control">
-          <span>ms między sentencjami</span>
-          <input type="number" min="0" step="10" placeholder="auto" value={sentenceGapInput} onChange={(event) => setSentenceGapInput(event.target.value)} />
+          <span>Cs między sentencjami</span>
+          <input type="number" min="0" step="1" placeholder="auto" value={sentenceGapInput} onChange={(event) => setSentenceGapInput(event.target.value)} />
           <button className="button secondary" type="button" disabled={saving} onClick={() => onResegment(sentenceGapInput)}>Przelicz</button>
         </label>
         {qualityBadges(arrangement).map(([flag, count]) => (
@@ -1077,14 +1081,14 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} />
 
       <div className="editor-grid">
-        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
+        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playWordRange={playWordRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
         <PropertiesPanel
           arrangement={arrangement}
           selected={selected}
           selectAndSeek={selectAndSeek}
           selectedLine={selectedLine}
+          selectedWord={selectedWord}
           selectedToken={selectedToken}
-          selectedNote={selectedNote}
           commit={commit}
           onSplitLine={splitSelectedLineAtPlayhead}
         />
@@ -1165,25 +1169,14 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
           {visibleGhostNotes.map((note) => (
             <div
               key={note.noteId}
-              className={`ghost-note-block ${selectedContext.noteIds.includes(note.noteId) ? "selected" : ""} ${note.requiresReview ? "review" : ""}`}
+              className={`ghost-note-block ${note.requiresReview ? "review" : ""}`}
               style={{
                 left: `${percent(note.startSec, windowStart, windowEnd)}%`,
                 width: `${spanPercent(note.startSec, note.endSec, windowStart, windowEnd)}%`,
                 top: `${pitchTopPercent(note.midi, pitchRange.minMidi, pitchRange.maxMidi)}%`,
               }}
-              role="button"
-              tabIndex={0}
               title={`${note.noteId} MIDI ${note.midi}`}
-              onPointerDown={(event) => startGraphDrag("note", note.noteId, "move", event, windowStart, windowEnd, pitchRange)}
-              onClick={(event) => {
-                event.stopPropagation();
-                selectAndSeek("note", note.noteId, note.startSec);
-              }}
-            >
-              <span className="drag-handle start" onPointerDown={(event) => startGraphDrag("note", note.noteId, "resize-start", event, windowStart, windowEnd)} />
-              <span className="marker-label">MIDI {note.midi}</span>
-              <span className="drag-handle end" onPointerDown={(event) => startGraphDrag("note", note.noteId, "resize-end", event, windowStart, windowEnd)} />
-            </div>
+            />
           ))}
           {visibleTokens.map((token) => {
             const midi = tokenAssignedMidi(token, noteById);
@@ -1191,7 +1184,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
             return (
               <div
                 key={token.tokenId}
-                className={`syllable-block ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${token.requiresReview ? "review" : ""}`}
+                className={`syllable-block note-type-${token.noteType ?? "normal"} ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${token.requiresReview ? "review" : ""}`}
                 style={{
                   left: `${percent(token.startSec, windowStart, windowEnd)}%`,
                   width: `${spanPercent(token.startSec, token.endSec, windowStart, windowEnd)}%`,
@@ -1292,7 +1285,7 @@ function GraphScrollbar({ duration, windowStart, zoomSec, onChange }) {
   );
 }
 
-function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, playTokenRange, playLineRange, commit, zoomToLine, zoomToToken }) {
+function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, playTokenRange, playWordRange, playLineRange, commit, zoomToLine, zoomToToken }) {
   const [insertIndex, setInsertIndex] = useState(null);
   const [insertText, setInsertText] = useState("");
   const trimmedInsertText = insertText.trim();
@@ -1353,25 +1346,79 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
               }}
             >
               <span>{formatTime(line.startSec)} - {formatTime(line.endSec)}</span>
-              <strong>{lineText(arrangement, line) || "(pusta sentencja)"}</strong>
             </button>
-            <textarea value={lineText(arrangement, line)} rows={2} onChange={(event) => commit((draft) => updateLineText(draft, line.lineId, event.target.value))} />
-            <div className="token-list">
-              {tokensForLine(arrangement, line).map((token) => (
-                <button
-                  key={token.tokenId}
-                  className={`token-chip ${token.requiresReview ? "review" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""}`}
-                  type="button"
-                  onClick={() => selectAndSeek("token", token.tokenId, token.startSec)}
-                  onDoubleClick={() => zoomToToken(token)}
-                  onContextMenu={(event) => {
-                    event.preventDefault();
-                    playTokenRange(token);
-                  }}
-                >
-                  {token.text || "..." }
-                </button>
+            <div className="word-list">
+              {wordsForLine(arrangement, line).map((word) => (
+                  <div
+                    key={word.wordId}
+                    className={`word-block ${word.requiresReview ? "review" : ""} ${selectedContext.wordIds.includes(word.wordId) ? "selected" : ""}`}
+                    draggable
+                    onDragStart={(event) => startWordDrag(event, word.wordId)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => dropWord(event, commit, line.lineId, word.wordId)}
+                  >
+                    <button
+                      className="word-chip"
+                      type="button"
+                      onClick={() => selectAndSeek("word", word.wordId, word.startSec)}
+                      onDoubleClick={() => zoomToToken(word)}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        playWordRange(word);
+                      }}
+                    >
+                      {word.text || "..."}
+                    </button>
+                    <div className="syllable-chip-list">
+                      {word.tokens.map((token) => (
+                        <input
+                          key={token.tokenId}
+                          className={`token-chip syllable-inline-input note-type-${token.noteType ?? "normal"} ${token.midi == null ? "missing-note" : ""} ${token.requiresReview ? "review" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""}`}
+                          draggable
+                          value={token.text || ""}
+                          aria-label="Treść sylaby"
+                          onDragStart={(event) => startSyllableDrag(event, token.tokenId)}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={(event) => dropSyllable(event, commit, token.tokenId)}
+                          onFocus={() => selectAndSeek("token", token.tokenId, token.startSec)}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            selectAndSeek("token", token.tokenId, token.startSec);
+                          }}
+                          onChange={(event) => commit((draft) => updateToken(draft, token.tokenId, { text: event.target.value || "~", isExtension: false, extendsTokenId: null }))}
+                          onDoubleClick={(event) => {
+                            event.stopPropagation();
+                            zoomToToken(token);
+                          }}
+                          onContextMenu={(event) => {
+                            event.preventDefault();
+                            playTokenRange(token);
+                          }}
+                        />
+                      ))}
+                      <button
+                        className="mini-add"
+                        type="button"
+                        title="Dodaj sylabę"
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => dropSyllableToEnd(event, commit, word.wordId)}
+                        onClick={() => addSyllableFromPrompt(commit, word.tokens.at(-1)?.tokenId)}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
               ))}
+              <button
+                className="mini-add word-insert"
+                type="button"
+                title="Dodaj wyraz"
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => dropWordToEnd(event, commit, line.lineId)}
+                onClick={() => addWordFromPrompt(commit, line.lineId, wordsForLine(arrangement, line).at(-1)?.wordId ?? null)}
+              >
+                +
+              </button>
             </div>
           </article>
           {renderInsertControl(index + 1)}
@@ -1381,11 +1428,16 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
   );
 }
 
-function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, selectedToken, selectedNote, commit, onSplitLine }) {
+function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, selectedWord, selectedToken, commit, onSplitLine }) {
   if (!selectedLine) {
     return <div className="properties-panel"><div className="panel-heading"><strong>Właściwości</strong></div></div>;
   }
-  const heading = selected.type === "token" ? "Sylaba/wyraz" : selected.type === "note" ? "Nuta" : "Sentencja";
+  const heading = selected.type === "word" ? "Wyraz" : selected.type === "token" ? "Sylaba" : "Sentencja";
+  const sortedLines = [...arrangement.lines].sort((left, right) => left.startSec - right.startSec);
+  const selectedLineIndex = sortedLines.findIndex((line) => line.lineId === selectedLine.lineId);
+  const previousLine = selectedLineIndex > 0 ? sortedLines[selectedLineIndex - 1] : null;
+  const lineInsertIndex = selectedLineIndex === -1 ? sortedLines.length : selectedLineIndex + 1;
+  const selectedLineText = lineText(arrangement, selectedLine) || "...";
 
   return (
     <div className="properties-panel">
@@ -1395,49 +1447,120 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
 
       {selected.type === "line" && (
         <div className="property-stack">
-          <TextField label="Start frazy" type="number" value={selectedLine.startSec} onChange={(value) => commit((draft) => updateLine(draft, selectedLine.lineId, { startSec: Number(value) }))} />
-          <TextField label="Koniec frazy" type="number" value={selectedLine.endSec} onChange={(value) => commit((draft) => updateLine(draft, selectedLine.lineId, { endSec: Number(value) }))} />
+          <PropertyReadout label="Treść sentencji" value={selectedLineText} />
+          <PropertyTimeRow startSec={selectedLine.startSec} endSec={selectedLine.endSec} />
           <div className="property-actions">
-            <button className="button secondary" type="button" onClick={onSplitLine}><Scissors size={16} /> podziel</button>
-            <button className="button secondary" type="button" onClick={() => commit((draft) => mergeLineWithNext(draft, selectedLine.lineId))}><Merge size={16} /> scal</button>
+            <PropertyIconButton title="Scal w lewo" disabled={!previousLine} onClick={() => commit((draft) => mergeLineWithPrevious(draft, selectedLine.lineId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
+            <PropertyIconButton title="Scal w prawo" disabled={selectedLineIndex === -1 || selectedLineIndex >= sortedLines.length - 1} onClick={() => commit((draft) => mergeLineWithNext(draft, selectedLine.lineId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
+            <PropertyIconButton title="Dodaj sentencję" onClick={() => addLineFromPrompt(commit, lineInsertIndex)}><Plus size={16} /></PropertyIconButton>
+            <PropertyIconButton title="Podziel sentencję" onClick={onSplitLine}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title="Usuń sentencję" danger onClick={() => commit((draft) => deleteLine(draft, selectedLine.lineId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
           <QualityFlags flags={selectedLine.qualityFlags} />
         </div>
       )}
 
+      {selected.type === "word" && selectedWord && (
+        <div className="property-stack">
+          <PropertyReadout label="Treść wyrazu" value={selectedWord.text || "..."} />
+          <PropertyTimeRow startSec={selectedWord.startSec} endSec={selectedWord.endSec} />
+          <div className="property-actions">
+            <PropertyIconButton title="Scal w lewo" onClick={() => commit((draft) => mergeWordWithPrevious(draft, selectedWord.wordId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
+            <PropertyIconButton title="Scal w prawo" onClick={() => commit((draft) => mergeWordWithNext(draft, selectedWord.wordId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
+            <PropertyIconButton title="Dodaj wyraz" onClick={() => addWordFromPrompt(commit, selectedLine.lineId, selectedWord.wordId)}><Plus size={16} /></PropertyIconButton>
+            <PropertyIconButton title="Podziel wyraz" onClick={() => commit((draft) => splitWord(draft, selectedWord.wordId))}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title="Usuń wyraz" danger onClick={() => commit((draft) => deleteWord(draft, selectedWord.wordId))}><Trash2 size={16} /></PropertyIconButton>
+          </div>
+          <QualityFlags flags={selectedWord.qualityFlags} />
+        </div>
+      )}
+
       {selected.type === "token" && selectedToken && (
         <div className="property-stack">
-          <TextField label="Sylaba" value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value || "~", isExtension: false, extendsTokenId: null }))} />
-          <TextField label="Start" type="number" value={selectedToken.startSec} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { startSec: Number(value) }))} />
-          <TextField label="Czas trwania" type="number" value={roundTime(selectedToken.endSec - selectedToken.startSec)} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: selectedToken.startSec + Number(value) }))} />
-          <TextField label="Koniec" type="number" value={selectedToken.endSec} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: Number(value) }))} />
-          <TextField label="MIDI sylaby" type="number" step="1" value={selectedToken.midi ?? ""} placeholder="brak" onChange={(value) => commit((draft) => updateTokenMidi(draft, selectedToken.tokenId, value))} />
-          <Select label="Typ nuty" value={selectedToken.noteType} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { noteType: value }))} options={NOTE_TYPES} />
+          <div className="property-inline-row property-inline-row-token">
+            <InlineField label="Sylaba" value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value || "~", isExtension: false, extendsTokenId: null }))} />
+            <InlineField label="MIDI" type="number" step="1" value={selectedToken.midi ?? ""} placeholder="brak" onChange={(value) => commit((draft) => updateTokenMidi(draft, selectedToken.tokenId, value))} />
+            <InlineSelect label="Typ" value={selectedToken.noteType} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { noteType: value }))} options={NOTE_TYPES} />
+          </div>
+          <EditableTimeRow
+            startSec={selectedToken.startSec}
+            endSec={selectedToken.endSec}
+            onStartChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { startSec: Number(value) }))}
+            onDurationChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: selectedToken.startSec + Number(value) }))}
+            onEndChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: Number(value) }))}
+          />
           <div className="property-actions">
-            <button className="button secondary" type="button" onClick={() => commit((draft) => splitToken(draft, selectedToken.tokenId))}><Scissors size={16} /> Podziel</button>
-            <button className="button secondary" type="button" onClick={() => commit((draft) => mergeTokenWithNext(draft, selectedToken.tokenId))}><Merge size={16} /> Scal</button>
-            <button className="button ghost danger" type="button" onClick={() => commit((draft) => deleteToken(draft, selectedToken.tokenId))}><Trash2 size={16} /> Usuń</button>
+            <PropertyIconButton title="Scal w lewo" onClick={() => commit((draft) => mergeTokenWithPrevious(draft, selectedToken.tokenId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
+            <PropertyIconButton title="Scal w prawo" onClick={() => commit((draft) => mergeTokenWithNext(draft, selectedToken.tokenId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
+            <PropertyIconButton title="Dodaj sylabę" onClick={() => addSyllableFromPrompt(commit, selectedToken.tokenId)}><Plus size={16} /></PropertyIconButton>
+            <PropertyIconButton title="Podziel sylabę" onClick={() => commit((draft) => splitToken(draft, selectedToken.tokenId))}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title="Usuń sylabę" danger onClick={() => commit((draft) => deleteToken(draft, selectedToken.tokenId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
           <QualityFlags flags={selectedToken.qualityFlags} />
         </div>
       )}
 
-      {selected.type === "note" && selectedNote && (
-        <div className="property-stack">
-          <TextField label="Start nuty" type="number" value={selectedNote.startSec} onChange={(value) => commit((draft) => updateNote(draft, selectedNote.noteId, { startSec: Number(value) }))} />
-          <TextField label="Koniec nuty" type="number" value={selectedNote.endSec} onChange={(value) => commit((draft) => updateNote(draft, selectedNote.noteId, { endSec: Number(value) }))} />
-          <TextField label="MIDI" type="number" step="1" value={selectedNote.midi} onChange={(value) => commit((draft) => updateNoteMidi(draft, selectedNote.noteId, value))} />
-          <div className="property-actions compact-actions">
-            <button className="icon-button" type="button" title="Pitch w dół" aria-label="Pitch w dół" onClick={() => commit((draft) => updateNotePitch(draft, selectedNote.noteId, -1))}><Minus size={16} /></button>
-            <button className="icon-button" type="button" title="Pitch w górę" aria-label="Pitch w górę" onClick={() => commit((draft) => updateNotePitch(draft, selectedNote.noteId, 1))}><Plus size={16} /></button>
-            <button className="button secondary" type="button" onClick={() => commit((draft) => splitNote(draft, selectedNote.noteId))}><Scissors size={16} /> Podziel</button>
-            <button className="button secondary" type="button" onClick={() => commit((draft) => mergeNoteWithNext(draft, selectedNote.noteId))}><Merge size={16} /> Scal</button>
-          </div>
-          <QualityFlags flags={selectedNote.qualityFlags} />
-        </div>
-      )}
     </div>
   );
+}
+
+function PropertyReadout({ label, value }) {
+  return (
+    <div className="property-readout">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+function PropertyTimeRow({ startSec, endSec }) {
+  return (
+    <div className="property-inline-row property-time-row">
+      <PropertyReadout label="Start" value={formatPropertyTime(startSec)} />
+      <PropertyReadout label="Czas" value={formatPropertyTime(endSec - startSec)} />
+      <PropertyReadout label="Koniec" value={formatPropertyTime(endSec)} />
+    </div>
+  );
+}
+
+function EditableTimeRow({ startSec, endSec, onStartChange, onDurationChange, onEndChange }) {
+  return (
+    <div className="property-inline-row property-time-row">
+      <InlineField label="Start" type="number" value={startSec} onChange={onStartChange} />
+      <InlineField label="Czas" type="number" value={roundTime(endSec - startSec)} onChange={onDurationChange} />
+      <InlineField label="Koniec" type="number" value={endSec} onChange={onEndChange} />
+    </div>
+  );
+}
+
+function InlineField({ label, value, onChange, type = "text", placeholder = "", step }) {
+  return (
+    <label className="property-inline-field">
+      <span>{label}</span>
+      <input type={type} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} />
+    </label>
+  );
+}
+
+function InlineSelect({ label, value, onChange, options }) {
+  return (
+    <label className="property-inline-field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select>
+    </label>
+  );
+}
+
+function PropertyIconButton({ title, onClick, children, danger = false, disabled = false }) {
+  return (
+    <button className={`icon-button property-icon-action ${danger ? "danger" : ""}`} type="button" title={title} aria-label={title} disabled={disabled} onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+function formatPropertyTime(value) {
+  return `${roundTime(value)} s`;
 }
 
 function QualityFlags({ flags = [] }) {
@@ -1562,7 +1685,7 @@ function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSetti
       <dt className="summary-gap-after">Sylabizacja</dt><dd className="summary-gap-after">{SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method}</dd>
       {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
         <React.Fragment key={`transcription-${key}`}>
-          <dt>{field.label}</dt><dd>{formatSettingValue(transcription[key])}</dd>
+          <dt>{field.label}</dt><dd>{formatTranscriptionSettingValue(key, transcription[key])}</dd>
         </React.Fragment>
       ))}
       {PITCH_SETTING_FIELDS.map(([key, field]) => (
@@ -1607,6 +1730,13 @@ function formatSettingValue(value) {
   return String(value);
 }
 
+function formatTranscriptionSettingValue(key, value) {
+  if (key === "sentenceGapMs") {
+    return value == null || value === "" ? "-" : millisecondsToCentisecondsString(Number(value));
+  }
+  return formatSettingValue(value);
+}
+
 function normalizeSearchText(value) {
   return String(value ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 }
@@ -1619,7 +1749,7 @@ function Progress({ stage }) {
 function serializeTranscriptionSettings(settings) {
   return {
     ...settings,
-    sentenceGapMs: settings.sentenceGapMs === "" || settings.sentenceGapMs == null ? null : Number(settings.sentenceGapMs),
+    sentenceGapMs: centisecondsToMilliseconds(settings.sentenceGapMs),
   };
 }
 
@@ -1666,7 +1796,7 @@ function toEditorArrangement(arrangement) {
 
 function fromEditorArrangement(arrangement) {
   const sentences = (arrangement.lines ?? []).map((line, lineIndex) => {
-    const lineTokens = tokensForLine(arrangement, line).sort((left, right) => left.startSec - right.startSec);
+    const lineTokens = tokensForLine(arrangement, line);
     const wordGroups = [];
     lineTokens.forEach((token, tokenIndex) => {
       const groupId = token.wordId || `word_client_${lineIndex}_${tokenIndex}`;
@@ -1715,6 +1845,66 @@ function fromEditorArrangement(arrangement) {
   });
   const { lines, tokens, ...rest } = arrangement;
   return { ...rest, sentences };
+}
+
+function addWordFromPrompt(commit, lineId, afterWordId = null) {
+  const text = window.prompt("Nowy wyraz");
+  if (!text?.trim()) return;
+  commit((draft) => insertWordAfter(draft, lineId, afterWordId, text.trim()));
+}
+
+function addLineFromPrompt(commit, insertIndex) {
+  const text = window.prompt("Nowa sentencja");
+  if (!text?.trim()) return;
+  commit((draft) => insertLineAtBoundary(draft, insertIndex, text.trim()));
+}
+
+function addSyllableFromPrompt(commit, afterTokenId) {
+  if (!afterTokenId) return;
+  const text = window.prompt("Nowa sylaba");
+  if (!text?.trim()) return;
+  commit((draft) => insertSyllableAfter(draft, afterTokenId, text.trim()));
+}
+
+function startWordDrag(event, wordId) {
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("application/x-mukai-word", wordId);
+}
+
+function dropWord(event, commit, lineId, targetWordId) {
+  const sourceWordId = event.dataTransfer.getData("application/x-mukai-word");
+  if (!sourceWordId || sourceWordId === targetWordId) return;
+  event.preventDefault();
+  commit((draft) => moveWordBefore(draft, lineId, sourceWordId, targetWordId));
+}
+
+function dropWordToEnd(event, commit, lineId) {
+  const sourceWordId = event.dataTransfer.getData("application/x-mukai-word");
+  if (!sourceWordId) return;
+  event.preventDefault();
+  commit((draft) => moveWordToEnd(draft, lineId, sourceWordId));
+}
+
+function startSyllableDrag(event, tokenId) {
+  event.stopPropagation();
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("application/x-mukai-syllable", tokenId);
+}
+
+function dropSyllable(event, commit, targetTokenId) {
+  const sourceTokenId = event.dataTransfer.getData("application/x-mukai-syllable");
+  if (!sourceTokenId || sourceTokenId === targetTokenId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  commit((draft) => moveSyllableBefore(draft, sourceTokenId, targetTokenId));
+}
+
+function dropSyllableToEnd(event, commit, wordId) {
+  const sourceTokenId = event.dataTransfer.getData("application/x-mukai-syllable");
+  if (!sourceTokenId) return;
+  event.preventDefault();
+  event.stopPropagation();
+  commit((draft) => moveSyllableToEnd(draft, sourceTokenId, wordId));
 }
 
 function updateLineText(draft, lineId, text) {
@@ -1777,7 +1967,7 @@ function updateNote(draft, noteId, changes) {
 }
 
 function updateGraphItem(draft, kind, id, mode, deltaSec, deltaMidi = 0, options = {}) {
-  if (kind === "note") return updateNoteGraphItem(draft, id, mode, deltaSec, deltaMidi, options);
+  if (kind === "note") return draft;
   return updateTokenGraphItem(draft, id, mode, deltaSec, deltaMidi, options);
 }
 
@@ -2030,6 +2220,12 @@ function mergeLineWithNext(draft, lineId) {
   return draft;
 }
 
+function mergeLineWithPrevious(draft, lineId) {
+  const index = draft.lines.findIndex((line) => line.lineId === lineId);
+  if (index <= 0) return draft;
+  return mergeLineWithNext(draft, draft.lines[index - 1].lineId);
+}
+
 function insertLineAtBoundary(draft, insertIndex, text) {
   const trimmed = text.trim();
   if (!trimmed) return draft;
@@ -2040,10 +2236,11 @@ function insertLineAtBoundary(draft, insertIndex, text) {
   const timing = insertedLineTiming(previous, next);
   const lineId = nextId("line", draft.lines);
   const tokenId = nextId("tok", draft.tokens);
+  const wordId = nextId("word", draft.tokens);
   draft.tokens.push({
     tokenId,
     text: trimmed,
-    wordId: null,
+    wordId,
     syllableIndex: 0,
     noteId: null,
     startSec: timing.startSec,
@@ -2129,6 +2326,7 @@ function mergeTokenWithNext(draft, tokenId) {
   const token = draft.tokens.find((item) => item.tokenId === tokenId);
   const next = draft.tokens.find((item) => item.tokenId === line.tokenIds[index + 1]);
   if (!token || !next) return draft;
+  if ((token.wordId || token.tokenId) !== (next.wordId || next.tokenId)) return draft;
   token.text = `${token.text ?? ""}${next.text ?? ""}` || "~";
   token.endSec = Math.max(token.endSec, next.endSec);
   token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), ...(next.qualityFlags ?? [])])];
@@ -2156,7 +2354,7 @@ function insertTokenAfterSelection(draft, lineId, afterTokenId, text) {
   const token = {
     tokenId: nextId("tok", draft.tokens),
     text: text.trim(),
-    wordId: null,
+    wordId: previous?.wordId ?? nextId("word", draft.tokens),
     syllableIndex: insertIndex,
     noteId: null,
     startSec,
@@ -2180,6 +2378,227 @@ function insertTokenAfterSelection(draft, lineId, afterTokenId, text) {
   return draft;
 }
 
+function insertWordAfter(draft, lineId, afterWordId, text) {
+  const line = draft.lines.find((item) => item.lineId === lineId);
+  if (!line || !text.trim()) return draft;
+  const words = wordsForLine(draft, line);
+  const afterIndex = afterWordId ? words.findIndex((word) => word.wordId === afterWordId) : -1;
+  const insertIndex = Math.max(0, afterIndex + 1);
+  const previous = words[insertIndex - 1] ?? null;
+  const next = words[insertIndex] ?? null;
+  const fallbackLength = Math.max(previous ? previous.endSec - previous.startSec : 0.25, 0.2);
+  const startSec = roundTime(previous ? previous.endSec : line.startSec);
+  const boundedEnd = next ? Math.min(next.startSec, startSec + Math.max((next.startSec - startSec) / 2, 0.02)) : startSec + fallbackLength;
+  const token = {
+    tokenId: nextId("tok", draft.tokens),
+    text: text.trim(),
+    wordId: nextId("word", draft.tokens),
+    syllableIndex: 0,
+    noteId: null,
+    startSec,
+    endSec: roundTime(Math.max(startSec + 0.02, boundedEnd)),
+    midi: null,
+    noteType: "normal",
+    isExtension: false,
+    extendsTokenId: null,
+    requiresReview: true,
+    qualityFlags: ["missing_note", "needs_syllable_review"],
+  };
+  draft.tokens.push(token);
+  if (previous?.tokens?.length) {
+    const previousLastId = previous.tokens.at(-1).tokenId;
+    line.tokenIds.splice(line.tokenIds.indexOf(previousLastId) + 1, 0, token.tokenId);
+  } else {
+    line.tokenIds.unshift(token.tokenId);
+  }
+  return draft;
+}
+
+function insertSyllableAfter(draft, afterTokenId, text) {
+  const line = draft.lines.find((item) => item.tokenIds.includes(afterTokenId));
+  const after = draft.tokens.find((item) => item.tokenId === afterTokenId);
+  if (!line || !after || !text.trim()) return draft;
+  const lineTokens = tokensForLine(draft, line);
+  const tokenIndex = line.tokenIds.indexOf(afterTokenId);
+  const next = lineTokens.find((token) => line.tokenIds.indexOf(token.tokenId) > tokenIndex);
+  const fallbackLength = Math.max(after.endSec - after.startSec, 0.2);
+  const startSec = roundTime(after.endSec);
+  const boundedEnd = next ? Math.min(next.startSec, startSec + Math.max((next.startSec - startSec) / 2, 0.02)) : startSec + fallbackLength;
+  const token = {
+    ...after,
+    tokenId: nextId("tok", draft.tokens),
+    text: text.trim(),
+    wordId: after.wordId || after.tokenId,
+    syllableIndex: (after.syllableIndex ?? 0) + 1,
+    noteId: null,
+    startSec,
+    endSec: roundTime(Math.max(startSec + 0.02, boundedEnd)),
+    midi: null,
+    requiresReview: true,
+    qualityFlags: ["missing_note", "needs_syllable_review"],
+  };
+  if (!after.wordId) after.wordId = token.wordId;
+  draft.tokens.push(token);
+  line.tokenIds.splice(tokenIndex + 1, 0, token.tokenId);
+  renumberWordSyllables(draft, token.wordId);
+  return draft;
+}
+
+function updateWordText(draft, wordId, text) {
+  const found = findWordById(draft, wordId);
+  if (!found) return draft;
+  const nextText = text.trim() || "~";
+  const totalLength = found.word.tokens.reduce((sum, token) => sum + Math.max((token.text || "").length, 1), 0);
+  let offset = 0;
+  found.word.tokens.forEach((token, index) => {
+    if (index === found.word.tokens.length - 1) {
+      token.text = nextText.slice(offset) || "~";
+      return;
+    }
+    const ratio = Math.max((token.text || "").length, 1) / Math.max(totalLength, 1);
+    const length = Math.max(1, Math.round(nextText.length * ratio));
+    token.text = nextText.slice(offset, offset + length) || "~";
+    offset += length;
+  });
+  return draft;
+}
+
+function updateWordTiming(draft, wordId, changes) {
+  const found = findWordById(draft, wordId);
+  if (!found) return draft;
+  const tokens = found.word.tokens;
+  const start = "startSec" in changes ? Number(changes.startSec) : found.word.startSec;
+  const end = "endSec" in changes ? Number(changes.endSec) : found.word.endSec;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return draft;
+  const spans = distributeSpans(start, end, tokens.length);
+  tokens.forEach((token, index) => {
+    token.startSec = spans[index][0];
+    token.endSec = spans[index][1];
+  });
+  return draft;
+}
+
+function splitWord(draft, wordId) {
+  const found = findWordById(draft, wordId);
+  if (!found || found.word.tokens.length < 2) return draft;
+  const splitAt = Math.ceil(found.word.tokens.length / 2);
+  const newWordId = nextId("word", draft.tokens);
+  found.word.tokens.slice(splitAt).forEach((token, index) => {
+    token.wordId = newWordId;
+    token.syllableIndex = index;
+    token.requiresReview = true;
+    token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
+  });
+  renumberWordSyllables(draft, wordId);
+  return draft;
+}
+
+function mergeWordWithPrevious(draft, wordId) {
+  const found = findWordById(draft, wordId);
+  if (!found) return draft;
+  const words = wordsForLine(draft, found.line);
+  const index = words.findIndex((word) => word.wordId === wordId);
+  if (index <= 0) return draft;
+  return mergeWords(draft, words[index - 1].wordId, wordId);
+}
+
+function mergeWordWithNext(draft, wordId) {
+  const found = findWordById(draft, wordId);
+  if (!found) return draft;
+  const words = wordsForLine(draft, found.line);
+  const index = words.findIndex((word) => word.wordId === wordId);
+  if (index === -1 || index >= words.length - 1) return draft;
+  return mergeWords(draft, wordId, words[index + 1].wordId);
+}
+
+function mergeWords(draft, targetWordId, sourceWordId) {
+  draft.tokens.forEach((token) => {
+    if ((token.wordId || token.tokenId) === sourceWordId) token.wordId = targetWordId;
+    if ((token.wordId || token.tokenId) === targetWordId) {
+      token.requiresReview = token.requiresReview || false;
+      token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
+    }
+  });
+  renumberWordSyllables(draft, targetWordId);
+  return draft;
+}
+
+function mergeTokenWithPrevious(draft, tokenId) {
+  const line = draft.lines.find((item) => item.tokenIds.includes(tokenId));
+  if (!line) return draft;
+  const index = line.tokenIds.indexOf(tokenId);
+  if (index <= 0) return draft;
+  return mergeTokenWithNext(draft, line.tokenIds[index - 1]);
+}
+
+function moveWordBefore(draft, lineId, sourceWordId, targetWordId) {
+  const line = draft.lines.find((item) => item.lineId === lineId);
+  if (!line || sourceWordId === targetWordId) return draft;
+  const words = wordsForLine(draft, line);
+  const source = words.find((word) => word.wordId === sourceWordId);
+  const target = words.find((word) => word.wordId === targetWordId);
+  if (!source || !target) return draft;
+  const sourceIds = new Set(source.tokens.map((token) => token.tokenId));
+  const targetFirstId = target.tokens[0]?.tokenId;
+  const withoutSource = line.tokenIds.filter((tokenId) => !sourceIds.has(tokenId));
+  const targetIndex = withoutSource.indexOf(targetFirstId);
+  if (targetIndex === -1) return draft;
+  line.tokenIds = [
+    ...withoutSource.slice(0, targetIndex),
+    ...source.tokens.map((token) => token.tokenId),
+    ...withoutSource.slice(targetIndex),
+  ];
+  return draft;
+}
+
+function moveWordToEnd(draft, lineId, sourceWordId) {
+  const line = draft.lines.find((item) => item.lineId === lineId);
+  if (!line) return draft;
+  const words = wordsForLine(draft, line);
+  const source = words.find((word) => word.wordId === sourceWordId);
+  if (!source) return draft;
+  const sourceIds = new Set(source.tokens.map((token) => token.tokenId));
+  line.tokenIds = [
+    ...line.tokenIds.filter((tokenId) => !sourceIds.has(tokenId)),
+    ...source.tokens.map((token) => token.tokenId),
+  ];
+  return draft;
+}
+
+function moveSyllableBefore(draft, sourceTokenId, targetTokenId) {
+  const line = draft.lines.find((item) => item.tokenIds.includes(sourceTokenId) && item.tokenIds.includes(targetTokenId));
+  const source = draft.tokens.find((token) => token.tokenId === sourceTokenId);
+  const target = draft.tokens.find((token) => token.tokenId === targetTokenId);
+  if (!line || !source || !target) return draft;
+  const sourceWordId = source.wordId || source.tokenId;
+  const targetWordId = target.wordId || target.tokenId;
+  if (sourceWordId !== targetWordId) return draft;
+  line.tokenIds = line.tokenIds.filter((tokenId) => tokenId !== sourceTokenId);
+  const targetIndex = line.tokenIds.indexOf(targetTokenId);
+  if (targetIndex === -1) return draft;
+  line.tokenIds.splice(targetIndex, 0, sourceTokenId);
+  renumberWordSyllables(draft, sourceWordId);
+  return draft;
+}
+
+function moveSyllableToEnd(draft, sourceTokenId, wordId) {
+  const line = draft.lines.find((item) => item.tokenIds.includes(sourceTokenId));
+  const source = draft.tokens.find((token) => token.tokenId === sourceTokenId);
+  if (!line || !source || (source.wordId || source.tokenId) !== wordId) return draft;
+  const word = wordsForLine(draft, line).find((item) => item.wordId === wordId);
+  if (!word) return draft;
+  const sourceIndex = line.tokenIds.indexOf(sourceTokenId);
+  line.tokenIds.splice(sourceIndex, 1);
+  const lastRemaining = [...word.tokens.map((token) => token.tokenId)].filter((tokenId) => tokenId !== sourceTokenId).at(-1);
+  if (lastRemaining && line.tokenIds.includes(lastRemaining)) {
+    line.tokenIds.splice(line.tokenIds.indexOf(lastRemaining) + 1, 0, sourceTokenId);
+  } else {
+    line.tokenIds.push(sourceTokenId);
+  }
+  renumberWordSyllables(draft, wordId);
+  return draft;
+}
+
 function deleteToken(draft, tokenId) {
   const token = draft.tokens.find((item) => item.tokenId === tokenId);
   if (!token) return draft;
@@ -2187,6 +2606,16 @@ function deleteToken(draft, tokenId) {
     line.tokenIds = line.tokenIds.filter((item) => item !== tokenId);
   });
   draft.tokens = draft.tokens.filter((item) => item.tokenId !== tokenId);
+  draft.lines = draft.lines.filter((line) => line.tokenIds.length > 0);
+  return draft;
+}
+
+function deleteWord(draft, wordId) {
+  const found = findWordById(draft, wordId);
+  if (!found) return draft;
+  const ids = new Set(found.word.tokens.map((token) => token.tokenId));
+  found.line.tokenIds = found.line.tokenIds.filter((tokenId) => !ids.has(tokenId));
+  draft.tokens = draft.tokens.filter((token) => !ids.has(token.tokenId));
   draft.lines = draft.lines.filter((line) => line.tokenIds.length > 0);
   return draft;
 }
@@ -2218,7 +2647,7 @@ function splitNote(draft, noteId) {
     startSec: midpoint,
     endSec: Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd),
     requiresReview: true,
-    qualityFlags: [...new Set([...(note.qualityFlags ?? []), "unassigned_note"])],
+    qualityFlags: [...new Set([...(note.qualityFlags ?? []), "uncertain_pitch"])],
   };
   draft.noteEvents.push(nextNote);
   return draft;
@@ -2240,6 +2669,7 @@ function mergeNoteWithNext(draft, noteId) {
 }
 
 function normalizeArrangement(arrangement) {
+  normalizeWordIds(arrangement);
   normalizeTokenTexts(arrangement);
   syncAssignmentQualityFlags(arrangement);
   arrangement.lines.forEach((line) => {
@@ -2250,15 +2680,28 @@ function normalizeArrangement(arrangement) {
   });
   arrangement.lines.sort((left, right) => left.startSec - right.startSec);
   arrangement.noteEvents.sort((left, right) => left.startSec - right.startSec);
+  syncOverlapQualityFlags(arrangement);
   arrangement.updatedAt = new Date().toISOString();
   arrangement.qualitySummary = {
     syllablesRequiringReview: arrangement.tokens.filter((token) => token.requiresReview).length,
     notesRequiringReview: arrangement.noteEvents.filter((note) => note.requiresReview).length,
     missingNoteSyllables: arrangement.tokens.filter((token) => token.qualityFlags?.includes("missing_note")).length,
-    unassignedNotes: arrangement.noteEvents.filter((note) => note.qualityFlags?.includes("unassigned_note")).length,
     uncertainPitchNotes: arrangement.noteEvents.filter((note) => note.qualityFlags?.includes("uncertain_pitch")).length,
+    overlappingLineItems: countFlaggedItems(arrangement, "overlapping_line"),
   };
   return arrangement;
+}
+
+function normalizeWordIds(arrangement) {
+  arrangement.lines.forEach((line) => {
+    wordsForLine(arrangement, line).forEach((word) => {
+      const stableWordId = word.wordId || word.tokens[0]?.tokenId || nextId("word", arrangement.tokens);
+      word.tokens.forEach((token, index) => {
+        token.wordId = stableWordId;
+        token.syllableIndex = index;
+      });
+    });
+  });
 }
 
 function normalizeTokenTexts(arrangement) {
@@ -2285,14 +2728,18 @@ function syncAssignmentQualityFlags(arrangement) {
     token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "missing_note"])];
   });
   arrangement.noteEvents.forEach((note) => {
-    const hasTextOverlap = arrangement.tokens.some((token) => overlaps(token, note));
-    if (hasTextOverlap) {
-      note.qualityFlags = withoutFlags(note.qualityFlags, ["unassigned_note"]);
-      note.requiresReview = note.qualityFlags.length > 0;
-      return;
-    }
-    note.requiresReview = true;
-    note.qualityFlags = [...new Set([...(note.qualityFlags ?? []), "unassigned_note"])];
+    note.qualityFlags = withoutFlags(note.qualityFlags, ["unassigned_note"]);
+    note.requiresReview = note.qualityFlags.length > 0;
+  });
+}
+
+function syncOverlapQualityFlags(arrangement) {
+  [...(arrangement.lines ?? []), ...(arrangement.tokens ?? [])].forEach((item) => clearQualityFlag(item, "overlapping_line"));
+  flagOverlaps(arrangement.lines ?? [], (line) => markQualityFlag(line, "overlapping_line"));
+  (arrangement.lines ?? []).forEach((line) => {
+    const words = wordsForLine(arrangement, line);
+    flagOverlaps(words, (word) => word.tokens.forEach((token) => markQualityFlag(token, "overlapping_line")));
+    words.forEach((word) => flagOverlaps(word.tokens, (token) => markQualityFlag(token, "overlapping_line")));
   });
 }
 
@@ -2411,9 +2858,30 @@ function withoutFlags(flags = [], blocked = []) {
   return flags.filter((flag) => !blocked.includes(flag));
 }
 
+function markQualityFlag(item, flag) {
+  item.qualityFlags = [...new Set([...(item.qualityFlags ?? []), flag])];
+  item.requiresReview = true;
+}
+
+function clearQualityFlag(item, flag) {
+  item.qualityFlags = withoutFlags(item.qualityFlags, [flag]);
+  item.requiresReview = item.qualityFlags.length > 0;
+}
+
 function clearMissingNoteFlag(token) {
-  token.qualityFlags = withoutFlags(token.qualityFlags, ["missing_note"]);
-  token.requiresReview = token.qualityFlags.length > 0;
+  clearQualityFlag(token, "missing_note");
+}
+
+function centisecondsToMilliseconds(value) {
+  if (value === "" || value == null) return null;
+  const centiseconds = Number(value);
+  return Number.isFinite(centiseconds) ? Math.round(centiseconds * 10) : null;
+}
+
+function millisecondsToCentisecondsString(value) {
+  if (!Number.isFinite(value)) return "";
+  const centiseconds = value / 10;
+  return Number.isInteger(centiseconds) ? String(centiseconds) : String(Number(centiseconds.toFixed(1)));
 }
 
 function waveformPixelsPerSecond(container, zoomSec) {
@@ -2463,38 +2931,58 @@ function syncWaveformViewport(waveSurfer, container, startSec, zoomSec) {
 }
 
 function qualityBadges(arrangement) {
-  const flags = ["uncertain_text", "uncertain_pitch", "missing_note", "unassigned_note", "too_short_note", "overlapping_line"];
+  const flags = ["uncertain_text", "uncertain_pitch", "missing_note", "too_short_note", "overlapping_line"];
   const counts = Object.fromEntries(flags.map((flag) => [flag, 0]));
+  arrangement.lines.forEach((line) => line.qualityFlags?.forEach((flag) => counts[flag] = (counts[flag] ?? 0) + 1));
   arrangement.tokens.forEach((token) => token.qualityFlags?.forEach((flag) => counts[flag] = (counts[flag] ?? 0) + 1));
   arrangement.noteEvents.forEach((note) => note.qualityFlags?.forEach((flag) => counts[flag] = (counts[flag] ?? 0) + 1));
   arrangement.noteEvents.forEach((note) => {
     if (note.endSec - note.startSec < 0.08) counts.too_short_note += 1;
   });
-  arrangement.lines.forEach((line, index) => {
-    const next = arrangement.lines[index + 1];
-    if (next && line.endSec > next.startSec) counts.overlapping_line += 1;
-  });
   return flags.map((flag) => [flag, counts[flag] ?? 0]);
+}
+
+function countFlaggedItems(arrangement, flag) {
+  return [...(arrangement.lines ?? []), ...(arrangement.tokens ?? [])].filter((item) => item.qualityFlags?.includes(flag)).length;
+}
+
+function flagOverlaps(items, mark) {
+  const sorted = [...items].filter((item) => Number.isFinite(item.startSec) && Number.isFinite(item.endSec)).sort((left, right) => left.startSec - right.startSec);
+  sorted.forEach((item, index) => {
+    const next = sorted[index + 1];
+    if (next && item.endSec > next.startSec) {
+      mark(item);
+      mark(next);
+    }
+  });
 }
 
 function sentenceGapLabel(arrangement) {
   const line = arrangement?.lines?.[0];
   const effective = line?.effectiveSentenceGapMs;
   const requested = line?.requestedSentenceGapMs;
-  if (Number.isFinite(requested)) return `${requested} ms`;
-  if (Number.isFinite(effective)) return `${effective} ms auto`;
+  if (Number.isFinite(requested)) return `${millisecondsToCentisecondsString(requested)} Cs`;
+  if (Number.isFinite(effective)) return `${millisecondsToCentisecondsString(effective)} Cs auto`;
   return "auto";
 }
 
 function selectionContext(arrangement, selected) {
-  if (!arrangement || !selected?.id) return { lineIds: [], tokenIds: [], noteIds: [] };
+  if (!arrangement || !selected?.id) return { lineIds: [], wordIds: [], tokenIds: [], noteIds: [] };
   const lineIds = new Set();
+  const wordIds = new Set();
   const tokenIds = new Set();
   const noteIds = new Set();
   const addToken = (token) => {
     if (!token) return;
     tokenIds.add(token.tokenId);
+    wordIds.add(token.wordId || token.tokenId);
     arrangement.lines.filter((line) => line.tokenIds.includes(token.tokenId)).forEach((line) => lineIds.add(line.lineId));
+  };
+  const addWord = (word) => {
+    if (!word) return;
+    wordIds.add(word.wordId);
+    word.tokens.forEach(addToken);
+    arrangement.lines.filter((line) => line.tokenIds.includes(word.tokens[0]?.tokenId)).forEach((line) => lineIds.add(line.lineId));
   };
   const addNote = (note) => {
     if (!note) return;
@@ -2508,21 +2996,19 @@ function selectionContext(arrangement, selected) {
     const line = arrangement.lines.find((item) => item.lineId === selected.id);
     if (line) {
       lineIds.add(line.lineId);
-      tokensForLine(arrangement, line).forEach(addToken);
+      wordsForLine(arrangement, line).forEach(addWord);
       arrangement.noteEvents.filter((note) => overlaps(line, note)).forEach(addNote);
     }
+  }
+  if (selected.type === "word") {
+    addWord(findWordById(arrangement, selected.id)?.word);
   }
   if (selected.type === "token") {
     const token = arrangement.tokens.find((item) => item.tokenId === selected.id);
     addToken(token);
     if (token) arrangement.noteEvents.filter((note) => overlaps(token, note)).forEach(addNote);
   }
-  if (selected.type === "note") {
-    const note = arrangement.noteEvents.find((item) => item.noteId === selected.id);
-    addNote(note);
-  }
-
-  return { lineIds: [...lineIds], tokenIds: [...tokenIds], noteIds: [...noteIds] };
+  return { lineIds: [...lineIds], wordIds: [...wordIds], tokenIds: [...tokenIds], noteIds: [...noteIds] };
 }
 
 function overlaps(left, right) {
@@ -2590,18 +3076,44 @@ function tokensForLine(arrangement, line) {
   return line.tokenIds.map((tokenId) => byId[tokenId]).filter(Boolean);
 }
 
-function lineText(arrangement, line) {
-  const words = [];
+function wordsForLine(arrangement, line) {
+  const groups = [];
   tokensForLine(arrangement, line).forEach((token, index) => {
-    const groupId = token.wordId || `token_${index}`;
-    const previous = words[words.length - 1];
-    if (previous && previous.wordId === groupId) {
+    const wordId = token.wordId || token.tokenId || `word_${index}`;
+    const previous = groups[groups.length - 1];
+    if (previous && previous.wordId === wordId) {
+      previous.tokens.push(token);
       previous.text += token.text || "";
-    } else {
-      words.push({ wordId: groupId, text: token.text || "" });
+      previous.startSec = Math.min(previous.startSec, token.startSec);
+      previous.endSec = Math.max(previous.endSec, token.endSec);
+      previous.requiresReview = previous.requiresReview || token.requiresReview;
+      previous.qualityFlags = [...new Set([...(previous.qualityFlags ?? []), ...(token.qualityFlags ?? [])])];
+      return;
     }
+    groups.push({
+      wordId,
+      tokens: [token],
+      text: token.text || "",
+      startSec: token.startSec,
+      endSec: token.endSec,
+      requiresReview: Boolean(token.requiresReview),
+      qualityFlags: token.qualityFlags ?? [],
+    });
   });
-  return words.map((word) => word.text).filter(Boolean).join(" ");
+  return groups;
+}
+
+function findWordById(arrangement, wordId) {
+  if (!arrangement || !wordId) return null;
+  for (const line of arrangement.lines ?? []) {
+    const word = wordsForLine(arrangement, line).find((item) => item.wordId === wordId);
+    if (word) return { line, word };
+  }
+  return null;
+}
+
+function lineText(arrangement, line) {
+  return wordsForLine(arrangement, line).map((word) => word.text).filter(Boolean).join(" ");
 }
 
 function makeToken(line, index, text) {
@@ -2610,7 +3122,7 @@ function makeToken(line, index, text) {
   return {
     tokenId: `tok_client_${Date.now()}_${index}`,
     text,
-    wordId: null,
+    wordId: `word_client_${Date.now()}_${index}`,
     syllableIndex: index,
     noteId: null,
     startSec: start,
@@ -2622,6 +3134,26 @@ function makeToken(line, index, text) {
     requiresReview: true,
     qualityFlags: ["missing_note"],
   };
+}
+
+function renumberWordSyllables(arrangement, wordId) {
+  arrangement.lines.forEach((line) => {
+    tokensForLine(arrangement, line).filter((token) => (token.wordId || token.tokenId) === wordId).forEach((token, index) => {
+      token.wordId = wordId;
+      token.syllableIndex = index;
+    });
+  });
+}
+
+function distributeSpans(startSec, endSec, count) {
+  const safeCount = Math.max(1, count);
+  const start = roundTime(Math.max(0, startSec));
+  const end = roundTime(Math.max(start + 0.01, endSec));
+  const step = (end - start) / safeCount;
+  return Array.from({ length: safeCount }, (_, index) => [
+    roundTime(start + step * index),
+    roundTime(index === safeCount - 1 ? end : start + step * (index + 1)),
+  ]);
 }
 
 function nextId(prefix, items) {

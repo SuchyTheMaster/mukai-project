@@ -114,12 +114,12 @@ class SyllableNoteMappingTest(unittest.TestCase):
         self.assertTrue(all("missing_note" in item.qualityFlags for item in syllables(arrangement)))
         self.assertTrue(all("needs_syllable_review" in item.qualityFlags for item in syllables(arrangement)))
 
-    def test_unoverlapped_note_stays_diagnostic_unassigned_note(self):
+    def test_unoverlapped_note_stays_diagnostic_without_unassigned_flag(self):
         arrangement = build_arrangement("job_1", [segment_with_word("a")], [note("n1", 1.1, 1.4)])
 
         self.assertIsNone(syllables(arrangement)[0].midi)
         self.assertEqual([item.noteId for item in arrangement.noteEvents], ["n1"])
-        self.assertIn("unassigned_note", arrangement.noteEvents[0].qualityFlags)
+        self.assertNotIn("unassigned_note", arrangement.noteEvents[0].qualityFlags)
 
     def test_none_syllabification_uses_whole_words(self):
         arrangement = build_arrangement(

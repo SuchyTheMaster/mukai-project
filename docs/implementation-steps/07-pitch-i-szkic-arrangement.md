@@ -62,7 +62,7 @@ Dodać detekcję wysokości śpiewanych nut oraz pierwszy edytowalny szkic karao
 - UI pokazuje finalną metodę sylabizacji w pasku jakości, a fallback wyróżnia ostrzeżeniem.
 - Niepewny pitch oznacza element do korekty, a nie automatyczne usunięcie.
 - Kolejne sylaby tego samego słowa z tym samym `midi` mogą zostać automatycznie scalone.
-- Brakujące sylaby dostają `missing_note` i `needs_syllable_review`, a nuty bez przecięcia z sylabami dostają `unassigned_note`.
+- Brakujące sylaby dostają `missing_note` i `needs_syllable_review`, a nuty bez przecięcia z sylabami pozostają diagnostyczne bez osobnej flagi jakości.
 - `Arrangement` jest aktualnym stanem w Postgresie, a nie plikiem JSON jako źródłem prawdy podczas pracy.
 - `draft.arrangement.json` pozostaje artefaktem szkicu.
 

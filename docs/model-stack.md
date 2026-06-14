@@ -142,7 +142,7 @@ Aktualna decyzja implementacyjna dla etapu 07:
 - Kokosznicka `0.2.5` jest pakietem GPLv3; akceptacja tej zależności jest decyzją projektową dla obsługi polskiej sylabizacji.
 - Pyphen `0.17.2` jest pakietem tri-license `GPLv2+ / LGPLv2+ / MPL 1.1` i używa słowników hyphenation; jest traktowany jako sylabizator przybliżony, bo słowniki dzielenia wyrazów nie zawsze odpowiadają podziałowi śpiewanych sylab.
 - `draft.arrangement.json` pozostaje artefaktem szkicu, a aktywny `Arrangement` jest inicjalizowany w tabeli `arrangements`.
-- Brak `midi` dla sylaby, nuta bez przecięcia z tekstem, niepewny pitch oraz sylaby wymagające recenzji sylabizacji są oznaczane flagami jakości do ręcznej recenzji.
+- Brak `midi` dla sylaby, niepewny pitch oraz sylaby wymagające recenzji sylabizacji są oznaczane flagami jakości do ręcznej recenzji. Nuty bez przecięcia z tekstem pozostają w `noteEvents` jako niezależna warstwa diagnostyczna bez osobnej flagi jakości.
 
 ## Źródła
 

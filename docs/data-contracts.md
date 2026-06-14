@@ -512,13 +512,12 @@ Reguły automatycznego szkicu:
 - `midi` sylaby jest uśrednioną wartością nut przecinających jej czas trwania.
 - Kolejne sylaby tego samego słowa z tą samą wartością `midi` mogą zostać scalone w szkicu.
 - Jeśli sylaba nie ma wyliczonego `midi`, dostaje `missing_note` oraz `needs_syllable_review`.
-- Jeśli nuta nie przecina żadnej sylaby, pozostaje w `noteEvents` jako nuta bez tekstu z `unassigned_note`.
+- Jeśli nuta nie przecina żadnej sylaby, pozostaje w `noteEvents` jako niezależny element diagnostyczny bez flagi jakości.
 
 `qualityFlags` oznaczają elementy do ręcznej recenzji bez usuwania danych AI. MVP używa co najmniej:
 
 - `uncertain_pitch`: nuta ma niską pewność detekcji pitch.
 - `missing_note`: sylaba nie ma wartości MIDI.
-- `unassigned_note`: nuta diagnostyczna nie przecina żadnej sylaby.
 - `uncertain_text`: segment albo słowo z transkrypcji wymaga korekty.
 - `needs_syllable_review`: podział sylaby, tokenu albo nuty wymaga ręcznej kontroli.
 

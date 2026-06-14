@@ -204,7 +204,7 @@ Reguły startowe:
 - Sylaba dostaje własną wartość `midi` wyliczoną jako uśrednienie nut przecinających jej czas trwania.
 - `NoteEvent` pozostaje niezależną warstwą diagnostyczną; initial alignment nie dzieli nut pod sylaby i nie zapisuje trwałej relacji sylaba-nuta.
 - Jeśli kolejne sylaby tego samego słowa mają tę samą wartość `midi`, szkic może scalić je w jeden blok sylaby.
-- Sylaby bez `midi` i nuty bez przecięcia z sylabami zostawiać jako elementy do recenzji, zamiast dopasowywać je na siłę.
+- Sylaby bez `midi` zostawiać jako elementy do recenzji. Nuty bez przecięcia z sylabami zostają w niezależnej warstwie diagnostycznej bez dopasowywania ich na siłę.
 - Jeśli pitch jest niepewny, oznaczać nutę jako wymagającą korekty zamiast usuwać ją automatycznie.
 
 Wyjście:

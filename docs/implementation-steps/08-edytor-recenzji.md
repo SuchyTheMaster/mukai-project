@@ -22,7 +22,7 @@ Zbudować właściwe narzędzie pracy użytkownika nad wynikiem AI: edycję teks
 - Edycja start/end fraz, słów i nut.
 - Podział i scalanie fraz, słów, sylab oraz nut.
 - Przesuwanie pitch o półton, ustawianie typu nuty i scalanie krótkich nut.
-- Statusy jakości AI: niska pewność transkrypcji, niska periodicity, brak nuty dla tekstu, nuta bez tekstu, zbyt krótka nuta i nachodzące frazy.
+- Statusy jakości AI: niska pewność transkrypcji, niska periodicity, brak nuty dla tekstu, zbyt krótka nuta i nachodzące frazy.
 - Sesyjne undo/redo po stronie edytora.
 - Zapis aktualnego `Arrangement` przez `PUT /api/jobs/{jobId}/arrangement`.
 - Kontrola współbieżności zapisu przez `revision`.
@@ -64,4 +64,3 @@ Zbudować właściwe narzędzie pracy użytkownika nad wynikiem AI: edycję teks
 - Test sesyjnego undo/redo bez trwałej historii.
 - Test synchronizacji odtwarzania z markerami fraz i nutami.
 - Test responsywności edytora dla małej szerokości ekranu.
-
