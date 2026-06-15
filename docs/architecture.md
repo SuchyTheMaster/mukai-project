@@ -56,23 +56,31 @@ Project ZIP Import
 - Waliduje rozszerzenie, MIME oraz wynik `ffprobe`, żeby przyjmować tylko faktyczne pliki audio albo kontenery z obsługiwaną ścieżką audio.
 - Odczytuje tagi audio biblioteką metadanych, np. Mutagen; `ffprobe` pozostaje walidacją techniczną ścieżki audio i źródłem danych technicznych.
 - Tworzy `Job`.
-- Obsługuje import projektu z ZIP-a projektu.
-- Obsługuje eksport projektu jako ZIP zawierający pełny `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
+- W docelowym MVP obsługuje import projektu z ZIP-a projektu.
+- W docelowym MVP obsługuje eksport projektu jako ZIP zawierający pełny `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
 - Udostępnia statusy, artefakty i zapis edycji.
 - Zabezpiecza ścieżki plików przed dostępem poza katalogiem roboczym aplikacji.
 - Nie wykonuje ciężkich obliczeń synchronicznie w żądaniu HTTP.
 - Nie implementuje logowania ani autoryzacji użytkowników w MVP, także przy wystawieniu aplikacji w sieci.
 
-Minimalne API MVP:
+Minimalne API MVP obejmuje endpointy już zaimplementowane oraz endpointy planowane dla etapów eksportu/importu.
 
+Obecnie zaimplementowane:
+
+- `GET /api/health`: podstawowy healthcheck API, Postgresa i Redisa.
 - `POST /api/uploads/inspect`: preflight wybranego pliku audio, odczyt tagów, technicznych danych audio i osadzonego covera bez tworzenia `Job`.
+- `GET /api/uploads/drafts/{draftId}/cover`: podgląd osadzonego covera wykrytego podczas preflightu.
 - `POST /api/jobs/uploads`: utworzenie `Job` z `uploadDraftId`, zaakceptowanych metadanych, covera i profili modeli.
-- `POST /api/projects/import`: import ZIP-a projektu.
 - `GET /api/jobs/{jobId}`: status, metadane, błędy i aktualny etap pipeline'u.
-- `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu audio.
-- `POST /api/jobs/{jobId}/stages/{stage}/reset`: planowany reset wskazanego etapu i ponowne kolejkowanie zależnych etapów.
+- `GET /api/jobs/{jobId}/arrangement`: pobranie aktualnego `Arrangement`.
 - `PUT /api/jobs/{jobId}/arrangement`: zapis aktualnego `Arrangement`.
 - `POST /api/jobs/{jobId}/arrangement/resegment`: ponowna agregacja aligned words do sentencji z nowym `sentenceGapMs`, bez uruchamiania przetwarzania audio.
+- `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu.
+- `POST /api/jobs/{jobId}/stages/{stage}/reset`: reset wskazanego etapu i ponowne kolejkowanie zależnych etapów.
+
+Planowane, ale wymagane w MVP:
+
+- `POST /api/projects/import`: import ZIP-a projektu.
 - `POST /api/jobs/{jobId}/exports/validate`: walidacja przed eksportem.
 - `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej albo wielu paczek karaoke; po sukcesie `Job` wraca do `awaiting_review`.
 - `POST /api/jobs/{jobId}/exports/project`: eksport ZIP-a projektu, ustawienie TTL retencji i powrót `Job` do `awaiting_review`.
@@ -128,7 +136,7 @@ Minimalne API MVP:
 - `failed`
 - `cancelled`
 
-`exporting` i `exporting_project` są statusami przejściowymi. Po udanym eksporcie paczek karaoke albo ZIP-a projektu `Job` wraca do `awaiting_review`; eksport projektu dodatkowo ustawia pola retencji. `completed` jest zarezerwowany na przyszłe przepływy i nie jest ustawiany po zwykłym eksporcie w MVP.
+`exporting`, `exporting_project` i `importing_project` istnieją w kontraktach jako statusy przepływów eksportu/importu wymaganych w MVP. W obecnej implementacji endpointy eksportu i importu nie są jeszcze dostępne. Po ich wdrożeniu udany eksport paczek karaoke albo ZIP-a projektu ma przywracać `Job` do `awaiting_review`; eksport projektu dodatkowo ustawia pola retencji. `completed` jest zarezerwowany na przyszłe przepływy i nie jest ustawiany po zwykłym eksporcie w MVP.
 
 ## Założenia niefunkcjonalne
 

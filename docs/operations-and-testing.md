@@ -148,7 +148,18 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Sprawdzić, czy dokumenty nie mieszają przejściowego workera etapu 2 z docelowymi rolami `worker-separate-stems`, `worker-transcribe` i `worker-pitch`.
 - Sprawdzić, czy specyfikacja builda workera eliminuje niekontrolowane pobieranie pełnego stosu PyTorch/CUDA przez `torch==...` z domyślnego PyPI i wskazuje jawny wariant obrazu bazowego albo indeks wheelów PyTorch.
 
+Checklist audytu `docs` względem kodu:
+
+- Porównać endpointy opisane w [Architektura](architecture.md) z dekoratorami `@router.*` w `backend/app/api/routes.py`.
+- Rozdzielić endpointy obecnie zaimplementowane od endpointów wymaganych w MVP, ale planowanych.
+- Porównać typy `AudioAsset.type` opisywane w [Kontrakty danych](data-contracts.md) i [Pipeline przetwarzania](processing-pipeline.md) z workerami w `backend/app/workers/`.
+- Sprawdzić, czy statusy `JobStatus` z kodu mają zgodną semantykę w dokumentach, szczególnie statusy eksportu/importu istniejące w kontraktach przed implementacją endpointów.
+- Porównać domyślne wartości UI z `frontend/src/main.jsx`, w tym modele, sylabizację, pozycjonowanie, snap i limity edytora.
+- Sprawdzić jednostki czasu w UI i API: backendowe pola z sufiksem `Ms` przechowują milisekundy, nawet jeśli UI pokazuje wygodniejszą jednostkę i przelicza ją przed wysłaniem.
+
 ## Przyszłe testy jednostkowe
+
+Testy eksportu karaoke, eksportu projektu, importu projektu i retencji pozostają wymagane dla MVP, ale są zależne od implementacji etapów 09-10.
 
 - Konwersja `seconds -> UltraStar beats`.
 - Konwersja `MIDI -> UltraStar pitch`.

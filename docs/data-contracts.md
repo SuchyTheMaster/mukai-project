@@ -230,6 +230,7 @@ Zasady:
 - `producedByStage` jest nazwą statusu/etapu pipeline'u, który utworzył artefakt.
 - `producedBySubstep` jest nazwą podetapu widocznego w UI, np. `ffmpeg`, `bpm`, `demucs`, `whisperx`, `pitch_detection`, `alignment`.
 - UI pobiera artefakty przez `GET /api/jobs/{jobId}/artifacts/{assetId}`; pola `producedByStage` i `producedBySubstep` służą tylko do grupowania przycisków pobierania przy podetapach.
+- Nazwa pliku i typ assetu nie muszą być identyczne. Aktualne typy assetów używane przez backend to: `source_audio`, `cover`, `mix`, `bpm_input`, `audio_metadata`, `tempo`, `demucs_input`, `vocals`, `instrumental`, `whisperx_input`, `torchcrepe_input`, `separation_manifest`, `transcript_raw`, `transcript_aligned`, `pitch_frames`, `pitch_notes` i `draft_arrangement`.
 
 ## UploadInspection
 
@@ -703,7 +704,8 @@ Aktywny `Arrangement` jest przechowywany wyłącznie w Postgresie. `mukai-projec
 
 ## Semantyka statusów eksportu
 
-- `exporting` i `exporting_project` są statusami przejściowymi.
+- `exporting`, `exporting_project` i `importing_project` są statusami przejściowymi dla przepływów eksportu/importu wymaganych w MVP.
+- W obecnej implementacji statusy istnieją w kontraktach, ale endpointy eksportu karaoke, eksportu projektu i importu projektu są jeszcze planowane.
 - Po udanym eksporcie paczek karaoke `Job` wraca do `awaiting_review`, a ZIP-y i raport walidacji są zapisywane jako artefakty eksportu.
 - Po udanym eksporcie projektu `Job` wraca do `awaiting_review` i ma ustawione `projectExportedAt`, `cleanupEligibleAt` oraz `cleanupReason`.
 - `completed` jest statusem zarezerwowanym poza normalnym flow MVP i nie jest ustawiany po zwykłym eksporcie karaoke ani po eksporcie projektu.
@@ -715,15 +717,16 @@ Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pr
 | Status | Wymagane artefakty |
 | --- | --- |
 | `uploaded` | oryginalny plik źródłowy, `Job`, `SourceMetadata` jeśli wykryto tagi, cover asset jeśli użyto covera z tagów albo ręcznego uploadu |
-| `preprocessing` | artefakty statusu `uploaded`, `audio_metadata.json`, `mix.wav`, `worker_inputs/bpm.wav`, opcjonalnie `worker_inputs/demucs.wav` |
+| `preprocessing` | artefakty statusu `uploaded`, assety `audio_metadata`, `mix`, `bpm_input` |
 | `detecting_bpm` | artefakty statusu `preprocessing` |
-| `separating_vocals` | artefakty statusu `preprocessing`, `tempo.json` |
-| `transcribing` | artefakty statusu `separating_vocals`, `vocals.wav`, `instrumental.wav`, `separation.json`, `worker_inputs/whisperx.wav`, `worker_inputs/torchcrepe.wav` |
-| `detecting_pitch` | artefakty statusu `transcribing`, `transcript.raw.json`, `transcript.aligned.json` |
-| `aligning` | artefakty statusu `detecting_pitch`, `pitch.frames.json`, `pitch.notes.json` |
+| `separating_vocals` | artefakty statusu `preprocessing`, asset `tempo` |
+| `transcribing` | artefakty statusu `separating_vocals`, assety `demucs_input`, `vocals`, `instrumental`, `separation_manifest`, `whisperx_input`, `torchcrepe_input` |
+| `detecting_pitch` | artefakty statusu `transcribing`, assety `transcript_raw`, `transcript_aligned` |
+| `aligning` | artefakty statusu `detecting_pitch`, assety `pitch_frames`, `pitch_notes` |
 | `awaiting_review` | artefakty statusu `aligning`, aktualny `Arrangement` w Postgresie |
 | `exporting` | artefakty statusu `awaiting_review`, aktualny zatwierdzony `Arrangement` |
 | `exporting_project` | artefakty wymagane dla bieżącego statusu `Job` oraz manifest eksportu projektu |
+| `importing_project` | poprawny ZIP projektu, manifest `mukai-project.json` i artefakty wymagane dla odtwarzanego statusu |
 | `completed` | status zarezerwowany poza normalnym flow MVP; jeśli zostanie użyty później, wymaga artefaktów ostatniego ukończonego etapu |
 | `failed` / `cancelled` | artefakty ostatniego poprawnie zakończonego etapu oraz diagnostyka błędu, jeśli istnieje |
 

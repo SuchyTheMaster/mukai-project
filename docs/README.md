@@ -1,6 +1,6 @@
 # Specyfikacja projektu Mukai
 
-Ostatnia weryfikacja źródeł: 2026-06-04.
+Ostatnia weryfikacja źródeł: 2026-06-15.
 
 ## Cel aplikacji
 
@@ -21,6 +21,10 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Eksport jednej lub wielu paczek ZIP zgodnych z wybranymi odtwarzaczami, bez danych projektu w tych paczkach.
 - Osobny eksport pełnego projektu jako ZIP zawierający `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
 - Retencja lokalnego `Job` i artefaktów przez 24 godziny po eksporcie projektu.
+
+## Status implementacji
+
+Dokumentacja nadrzędna opisuje pełny docelowy zakres MVP. Aktualny kod implementuje upload z preflightem, tworzenie `Job`, orkiestrację pipeline'u do edytowalnego `Arrangement`, zapis/resegmentację edycji, pobieranie artefaktów i reset etapów. Eksport paczek karaoke, eksport ZIP-a projektu, import ZIP-a projektu i retencja po eksporcie pozostają wymaganymi etapami MVP, ale nie mają jeszcze endpointów API ani pełnego UI w obecnej implementacji.
 
 ## Poza zakresem pierwszej wersji
 

@@ -61,7 +61,6 @@ Cel:
 Artefakty:
 
 - `mix.wav`: znormalizowane audio robocze, WAV PCM, 44100 Hz, stereo, bez zmiany długości i offsetu.
-- `worker_inputs/demucs.wav`: WAV PCM, 44100 Hz, stereo, jeśli różni się od `mix.wav`.
 - `worker_inputs/bpm.wav`: WAV PCM, 44100 Hz, mono jako downmix wszystkich kanałów, dopasowane do Essentia `RhythmExtractor2013`.
 - `audio_metadata.json`: sample rate, kanały, duration, loudness, hash.
 
@@ -71,6 +70,7 @@ Decyzje:
 - Roboczo używać WAV PCM jako formatu pośredniego.
 - Zachować oryginalny czas trwania i offset bez przycinania początku.
 - Resampling wykonywać oddzielnie dla wymagań modeli, nie nadpisując `mix.wav`.
+- W obecnej implementacji `worker_inputs/demucs.wav` jest tworzony leniwie w workerze separacji jako kopia `mix.wav` i zapisywany jako asset typu `demucs_input`, a nie jako artefakt etapu preprocessingu.
 - Jeśli worker wymaga mono, tworzyć je jako downmix wszystkich kanałów, a nie przez odrzucenie jednego kanału.
 - Dla `MP4` traktować plik jako kontener z audio; jeśli zawiera wideo, pipeline ignoruje obraz.
 
@@ -86,7 +86,7 @@ Wejście:
 
 Wyjście:
 
-- `tempo.json`: wykryte BPM, confidence, metoda, ewentualne alternatywne wartości.
+- `tempo.json`: wykryte BPM, confidence, metoda, ewentualne alternatywne wartości; asset typu `tempo`.
 
 Wymagania:
 
@@ -106,7 +106,7 @@ Demucs v4 z wyborem użytkownika:
 
 Wejście:
 
-- `worker_inputs/demucs.wav` albo `mix.wav`, jeśli Demucs nie wymaga osobnego przygotowania.
+- `worker_inputs/demucs.wav` przygotowany przez worker separacji z `mix.wav`.
 
 Wyjście:
 
@@ -115,6 +115,15 @@ Wyjście:
 - `worker_inputs/whisperx.wav`: WAV PCM, 16000 Hz, mono jako downmix wszystkich kanałów `vocals.wav`, przygotowany po separacji.
 - `worker_inputs/torchcrepe.wav`: WAV PCM, 16000 Hz, mono jako downmix wszystkich kanałów `vocals.wav`, przygotowany po separacji.
 - `separation.json` z modelem, parametrami i czasem przetwarzania.
+
+Typy assetów zapisywane przez aktualną implementację:
+
+- `demucs_input` dla `worker_inputs/demucs.wav`.
+- `vocals` dla `vocals.wav`.
+- `instrumental` dla `instrumental.wav`.
+- `whisperx_input` dla `worker_inputs/whisperx.wav`.
+- `torchcrepe_input` dla `worker_inputs/torchcrepe.wav`.
+- `separation_manifest` dla `separation.json`.
 
 Wymagania:
 
@@ -140,8 +149,8 @@ Wejście:
 
 Wyjście:
 
-- `transcript.raw.json`: segmenty modelu ASR.
-- `transcript.aligned.json`: finalne frazy karaoke, słowa, czasy start/end, opcjonalne czasy znaków, confidence.
+- `transcript.raw.json`: segmenty modelu ASR; asset typu `transcript_raw`.
+- `transcript.aligned.json`: finalne frazy karaoke, słowa, czasy start/end, opcjonalne czasy znaków, confidence; asset typu `transcript_aligned`.
 
 Wymagania:
 
@@ -173,8 +182,8 @@ Wejście:
 
 Wyjście:
 
-- `pitch.frames.json`: ramki `time`, `frequency_hz`, `periodicity`, `confidence`.
-- `pitch.notes.json`: zsegmentowane nuty po filtracji.
+- `pitch.frames.json`: ramki `time`, `frequency_hz`, `periodicity`, `confidence`; asset typu `pitch_frames`.
+- `pitch.notes.json`: zsegmentowane nuty po filtracji; asset typu `pitch_notes`.
 
 Wymagania:
 
@@ -212,7 +221,7 @@ Reguły startowe:
 
 Wyjście:
 
-- `draft.arrangement.json` jako artefakt szkicu.
+- `draft.arrangement.json` jako artefakt szkicu; asset typu `draft_arrangement`.
 - Aktualny `Arrangement` w Postgresie zainicjalizowany na podstawie szkicu.
 - Szkic zawiera sentencje, wyrazy, sylaby oraz niezależne `NoteEvent` w strukturze `Arrangement`.
 - `Arrangement.syllabification` zapisuje `requestedMethod`, `appliedMethod`, język, źródło języka, ewentualny `fallbackReason` oraz wersje pakietów sylabizacji.

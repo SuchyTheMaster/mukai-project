@@ -43,6 +43,7 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Każda z tych trzech pozycji ma ikonę informacyjną z tooltipem, który krótko wyjaśnia cel kroku i wpływ wyboru.
 - Wybór modelu transkrypcji pokazuje w selekcie tylko nazwy `large-v3` i `large-v3-turbo`; tooltip wyjaśnia, że `large-v3` jest dokładniejszy, a `large-v3-turbo` szybszy.
 - Zaawansowane ustawienia transkrypcji zawierają select `Pozycjonowanie` z opcjami `słowa i sylaby` oraz `tylko słowa`; `słowa i sylaby` jest domyślne, ale przy sylabizacji `Bez podziału` UI wymusza i blokuje `tylko słowa`.
+- Pole `Cs między sentencjami` edytuje próg przerwy w centisekundach dla wygody UI. Kontrakt backendu nadal przechowuje `sentenceGapMs` w milisekundach, więc frontend przelicza wartość z centisekund na milisekundy przed wysłaniem payloadu.
 - Zaawansowane ustawienia pitch: próg ciszy, próg periodicity, krok ramek, minimalna długość nuty i scalanie krótkich przerw.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
 - Podgląd covera jest widoczny od razu po wykryciu grafiki z tagów albo po ręcznym wgraniu pliku.
@@ -137,7 +138,7 @@ Edytor powinien wizualnie oznaczać:
 - Przycisk z ikoną zapętlania znajduje się bezpośrednio po prawej stronie `Play`, ma systemowy tooltip `Zapętl odtwarzanie` i przełącza zapętlanie aktualnego odtwarzania.
 - Gdy zapętlanie jest włączone, każde odtwarzanie uruchomione z `Play` albo z dwukliku na elemencie powtarza się od miejsca rozpoczęcia do miejsca zakończenia, dopóki użytkownik nie zatrzyma odtwarzania albo nie wyłączy zapętlania.
 - Magnes przełącza przyciąganie elementów na wykresie, jest ostatnim przyciskiem w pasku narzędzi i pokazuje aktywny stan neonowym świeceniem; tooltip ma treść `przyciągaj elementy na wykresie`.
-- Po prawej stronie magnesu znajduje się pole liczbowe zakresu przyciągania w milisekundach. Domyślna wartość to `50`, minimum to `0`, a krok kontrolek to `10`.
+- Po prawej stronie magnesu znajduje się pole liczbowe zakresu przyciągania w milisekundach. Domyślna wartość to `20`, minimum to `0`, a krok kontrolek to `10`.
 - Kłódka przełącza odtwarzanie tylko widocznego zakresu wykresu; tooltip ma treść `ogranicz odtwarzanie do widocznego zakresu`. Gdy opcja jest aktywna, `Play` startuje z bieżącej pozycji w widocznym zakresie albo z początku zakresu, zatrzymuje się na końcu zakresu i wraca playheadem do startu tego odtwarzania bez przewijania wykresu dalej.
 - Nagłówek wykresu nie pokazuje czasów początku i końca widocznego zakresu.
 - Pasek pozycji okna wykresu znajduje się bezpośrednio pod wykresem i pokazuje widoczny zakres jako uchwyt o szerokości zależnej od zoomu. Na styku wykresu i paska nie ma podwójnej ramki ani zaokrągleń.
