@@ -206,19 +206,19 @@ const WHISPER_LANGUAGE_OPTIONS = [
 ];
 
 const TRANSCRIPTION_SETTING_FIELDS = [
-  ["vadOnset", { label: "Próg startu VAD", step: "0.001" }],
-  ["vadOffset", { label: "Próg końca VAD", step: "0.001" }],
-  ["vadChunkSizeSec", { label: "Okno VAD/ASR (s)", step: "1" }],
-  ["sentenceGapMs", { label: "Ms między sentencjami", step: "1", nullable: true, placeholder: "auto" }],
-  ["sentencePaddingMs", { label: "Padding frazy (ms)", step: "10" }],
+  ["vadOnset", { label: "Próg startu VAD", step: "0.001", tooltip: "Określa, jak pewny musi być detektor, że zaczyna się wokal. Większa wartość ogranicza fałszywe wejścia, ale może uciąć ciche początki fraz. Mniejsza wartość łapie cichszy wokal, ale częściej przepuszcza oddechy lub szum." }],
+  ["vadOffset", { label: "Próg końca VAD", step: "0.001", tooltip: "Określa, kiedy detektor uznaje, że wokal się skończył. Większa wartość szybciej zamyka fragment i może skracać końcówki słów. Mniejsza wartość dłużej trzyma frazę, ale może dodać ciszę po wokalu." }],
+  ["vadChunkSizeSec", { label: "Okno VAD/ASR (s)", step: "1", tooltip: "Długość fragmentów audio wysyłanych do wykrywania wokalu i transkrypcji. Większa wartość daje modelowi więcej kontekstu, ale zużywa więcej pamięci i może wolniej działać. Mniejsza wartość jest lżejsza, ale może pogorszyć rozpoznanie na granicach fragmentów." }],
+  ["sentenceGapMs", { label: "Ms między sentencjami", step: "1", nullable: true, placeholder: "auto", tooltip: "Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Większa wartość łączy więcej słów w dłuższe linie karaoke. Mniejsza wartość częściej rozdziela tekst na krótsze linie." }],
+  ["sentencePaddingMs", { label: "Padding frazy (ms)", step: "10", tooltip: "Dodatkowy margines czasu przed i po frazie. Większa wartość daje bezpieczniejszy zapas na wejścia i wybrzmienia, ale może powodować nakładanie sąsiednich fraz. Mniejsza wartość ciaśniej przycina frazy, ale łatwiej utnie początek lub koniec." }],
 ];
 
 const PITCH_SETTING_FIELDS = [
-  ["silenceThresholdDb", { label: "Czułość na cichy wokal (dB)", step: "1" }],
-  ["periodicityThreshold", { label: "Minimalna pewność tonu (0-1)", step: "0.01" }],
-  ["frameStepMs", { label: "Dokładność czasu analizy (ms)", step: "1" }],
-  ["minNoteLengthMs", { label: "Najkrótsza nuta karaoke (ms)", step: "1" }],
-  ["mergeGapMs", { label: "Scalanie krótkich przerw (ms)", step: "1" }],
+  ["silenceThresholdDb", { label: "Czułość na cichy wokal (dB)", step: "1", tooltip: "Próg głośności używany przy analizie tonu. Większa wartość ignoruje więcej cichych fragmentów i szumu, ale może pominąć delikatny wokal. Mniejsza wartość analizuje cichsze dźwięki, ale częściej łapie tło jako wokal." }],
+  ["periodicityThreshold", { label: "Minimalna pewność tonu (0-1)", step: "0.01", tooltip: "Minimalna pewność, że wykryty dźwięk ma stabilną wysokość. Większa wartość zostawia tylko pewniejsze nuty, ale może tworzyć braki. Mniejsza wartość wykrywa więcej nut, ale częściej przepuszcza błędne wysokości." }],
+  ["frameStepMs", { label: "Dokładność czasu analizy (ms)", step: "1", tooltip: "Odstęp między kolejnymi pomiarami tonu. Większa wartość jest szybsza, ale mniej dokładna czasowo. Mniejsza wartość daje gęstszy pomiar i lepsze granice nut, kosztem dłuższej analizy." }],
+  ["minNoteLengthMs", { label: "Najkrótsza nuta karaoke (ms)", step: "1", tooltip: "Minimalny czas trwania nuty w szkicu karaoke. Większa wartość usuwa krótkie ozdobniki i przypadkowe skoki, ale może zgubić szybkie sylaby. Mniejsza wartość zachowuje krótkie nuty, ale wynik może być bardziej poszarpany." }],
+  ["mergeGapMs", { label: "Scalanie krótkich przerw (ms)", step: "1", tooltip: "Maksymalna przerwa, którą można złączyć między sąsiednimi nutami. Większa wartość wygładza linię melodyczną, ale może zlewać oddzielne sylaby. Mniejsza wartość zostawia więcej przerw, ale może rozbić jedną nutę na kilka części." }],
 ];
 
 const PIPELINE_ORDER = [
@@ -265,7 +265,7 @@ const MODEL_TOOLTIPS = {
   separation: "Separacja rozdziela utwór na wokal i instrumental. htdemucs_ft jest dokładniejszy, a htdemucs szybszy.",
   vad: "Wykrywanie mowy wskazuje fragmenty z wokalem przed transkrypcją. Ma wpływ na pominięcie ciszy, oddechów i nieśpiewanych fragmentów.",
   transcription: "Transkrypcja zamienia wokal na tekst. large-v3 jest dokładniejszy, a large-v3-turbo szybszy.",
-  positioning: "Pozycjonowanie słów i sylab pobiera z WhisperX dodatkowe czasy liter, żeby lepiej ustawić początkowe czasy sylab.",
+  positioning: "Pozycjonowanie wybiera szczegółowość danych czasowych z WhisperX. Opcja słowa i sylaby włącza return_char_alignments, więc sylaby mogą dostać dokładniejsze początki, ale przetwarzanie jest cięższe. Opcja tylko słowa jest prostsza i szybsza, ale daje mniej precyzji dla sylab.",
   syllabification: 'Dla polskich piosenek zalecany sylabizator to "Kokosznicka", ale czasami może lepiej sprawdzić się "Pyphen". Dla zagranicznych tylko "Pyphen". Jeżeli jakiś język nie jest obsługiwany przez wybraną metodę, to zostanie użyta metoda heurystyczna. Jeżeli całe słowa piosenki są śpiewane w jednym tonie, to lepiej sprawdzi się tryb bez podziału na sylaby.',
 };
 
@@ -599,19 +599,19 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
 
           <details className="advanced">
             <summary>Zaawansowane ustawienia transkrypcji</summary>
-            <div className="form-grid compact">
-              <Select label="Pozycjonowanie" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, positioning: value })} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
+            <div className="form-grid compact transcription-settings-grid">
+              <Select label="Pozycjonowanie" helper="return_char_alignments" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, positioning: value })} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
               {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
-                <TextField key={key} label={field.label} helper={key} type="number" step={field.step} placeholder={field.placeholder} value={transcriptionSettings[key] ?? ""} onChange={(next) => setTranscriptionSettings({ ...transcriptionSettings, [key]: field.nullable && next === "" ? "" : Number(next) })} />
+                <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} placeholder={field.placeholder} value={transcriptionSettings[key] ?? ""} onChange={(next) => setTranscriptionSettings({ ...transcriptionSettings, [key]: field.nullable && next === "" ? "" : Number(next) })} />
               ))}
             </div>
           </details>
 
           <details className="advanced">
             <summary>Zaawansowane ustawienia pitch</summary>
-            <div className="form-grid compact">
+            <div className="form-grid compact pitch-settings-grid">
               {PITCH_SETTING_FIELDS.map(([key, field]) => (
-                <TextField key={key} label={field.label} helper={key} type="number" step={field.step} value={pitchSettings[key]} onChange={(next) => setPitchSettings({ ...pitchSettings, [key]: Number(next) })} />
+                <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={pitchSettings[key]} onChange={(next) => setPitchSettings({ ...pitchSettings, [key]: Number(next) })} />
               ))}
             </div>
           </details>
@@ -1703,14 +1703,16 @@ function QualityFlags({ flags = [] }) {
   return <div className="flag-list">{flags.map((flag) => <span key={flag} className="quality-badge warning">{FLAG_LABELS[flag] ?? flag}</span>)}</div>;
 }
 
-function TextField({ label, helper, value, onChange, type = "text", placeholder = "", step }) {
-  return <label className="field"><FieldLabel label={label} />{helper && <small>{helper}</small>}<input type={type} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
+function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step }) {
+  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<input type={type} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function LanguageSelect({ label, value, onChange, options }) {
   const rootRef = useRef(null);
+  const optionRefs = useRef([]);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
   const selected = options.find(([code]) => code === value) ?? [value, value || "Auto"];
   const normalizedQuery = normalizeSearchText(query);
   const visibleOptions = [
@@ -1732,10 +1734,77 @@ function LanguageSelect({ label, value, onChange, options }) {
     return () => document.removeEventListener("mousedown", closeOnOutsideClick);
   }, []);
 
+  useEffect(() => {
+    if (!open) return;
+    const selectedIndex = visibleOptions.findIndex(([code]) => code === value);
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [open, query, value, visibleOptions.length]);
+
+  useEffect(() => {
+    if (!open) return;
+    optionRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open]);
+
   function chooseLanguage(code) {
     onChange(code);
     setOpen(false);
     setQuery("");
+  }
+
+  function moveActiveOption(delta) {
+    setActiveIndex((current) => {
+      const lastIndex = visibleOptions.length - 1;
+      if (lastIndex < 0) return 0;
+      return Math.min(Math.max(current + delta, 0), lastIndex);
+    });
+  }
+
+  function handleLanguageKeyDown(event) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setQuery("");
+        return;
+      }
+      moveActiveOption(1);
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setQuery("");
+        return;
+      }
+      moveActiveOption(-1);
+      return;
+    }
+
+    if (event.key === "Home" && open) {
+      event.preventDefault();
+      setActiveIndex(0);
+      return;
+    }
+
+    if (event.key === "End" && open) {
+      event.preventDefault();
+      setActiveIndex(Math.max(visibleOptions.length - 1, 0));
+      return;
+    }
+
+    if (event.key === "Enter" && open) {
+      event.preventDefault();
+      const activeOption = visibleOptions[activeIndex];
+      if (activeOption) chooseLanguage(activeOption[0]);
+      return;
+    }
+
+    if (event.key === "Escape") {
+      setOpen(false);
+      setQuery("");
+    }
   }
 
   return (
@@ -1746,6 +1815,8 @@ function LanguageSelect({ label, value, onChange, options }) {
         role="combobox"
         aria-expanded={open}
         aria-autocomplete="list"
+        aria-controls="language-options"
+        aria-activedescendant={open && visibleOptions[activeIndex] ? `language-option-${visibleOptions[activeIndex][0] || "auto"}` : undefined}
         value={open ? query : selected[1]}
         onFocus={() => {
           setOpen(true);
@@ -1754,18 +1825,25 @@ function LanguageSelect({ label, value, onChange, options }) {
         onChange={(event) => {
           setQuery(event.target.value);
           setOpen(true);
+          setActiveIndex(0);
         }}
-        onKeyDown={(event) => {
-          if (event.key === "Escape") {
-            setOpen(false);
-            setQuery("");
-          }
-        }}
+        onKeyDown={handleLanguageKeyDown}
       />
       {open && (
-        <div className="language-options" role="listbox">
-          {visibleOptions.map(([code, text]) => (
-            <button key={code || "auto"} className={code === value ? "selected" : ""} type="button" role="option" aria-selected={code === value} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseLanguage(code)}>
+        <div className="language-options" id="language-options" role="listbox">
+          {visibleOptions.map(([code, text], index) => (
+            <button
+              key={code || "auto"}
+              ref={(node) => { optionRefs.current[index] = node; }}
+              id={`language-option-${code || "auto"}`}
+              className={`${code === value ? "selected" : ""} ${index === activeIndex ? "active" : ""}`}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              onMouseDown={(event) => event.preventDefault()}
+              onMouseEnter={() => setActiveIndex(index)}
+              onClick={() => chooseLanguage(code)}
+            >
               <span>{text}</span>
             </button>
           ))}
@@ -1775,8 +1853,8 @@ function LanguageSelect({ label, value, onChange, options }) {
   );
 }
 
-function Select({ label, value, onChange, options, tooltip, disabled = false }) {
-  return <label className="field"><FieldLabel label={label} tooltip={tooltip} /><select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
+function Select({ label, helper, value, onChange, options, tooltip, disabled = false }) {
+  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
 }
 
 function FieldLabel({ label, tooltip }) {
