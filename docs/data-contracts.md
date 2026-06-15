@@ -389,7 +389,7 @@ Zasady:
 - Reset zachowuje oryginalny plik audio, zaakceptowane metadane, cover oraz aktualne ustawienia modeli i pitch, chyba że użytkownik zmieni je przed resetem.
 - Reset unieważnia artefakty wybranego etapu i wszystkich dalszych etapów zależnych.
 - Reset jest niedostępny podczas aktywnego przetwarzania, dopóki nie zostanie dodany osobny kontrakt anulowania albo pauzowania.
-- Reset nie usuwa eksportów projektu ani paczek karaoke już pobranych przez użytkownika.
+- Reset nie usuwa eksportów projektu ani paczek karaoke już pobranych przez użytkownika z wcześniejszych eksportów.
 
 ## Tempo
 
@@ -545,20 +545,21 @@ Reguły automatycznego szkicu:
   "packageName": "source-file-name",
   "internalDirectoryName": "Artist - Song Title",
   "baseFilename": "Artist - Song Title",
-  "zipNamePattern": "{baseFilename} [{target} {variant}].zip",
-  "targets": ["ultrastar_deluxe", "ultrastar_play", "vocaluxe"],
-  "variants": ["original_audio", "instrumental"],
-  "coverAssetId": null,
-  "includeVocalsInInstrumentalPackage": true,
-  "includeInstrumentalTag": true,
-  "instrumentalPackageAudioRouting": "audio_and_instrumental_same_file"
+  "zipNamePattern": "{baseFilename} [karaoke].zip",
+  "audioFilenames": {
+    "audio": "{baseFilename} [FULL].mp3",
+    "instrumental": "{baseFilename} [INSTR].mp3",
+    "vocals": "{baseFilename} [VOC].mp3"
+  },
+  "coverAssetId": null
 }
 ```
 
-`variants`:
+`audioFilenames`:
 
-- `original_audio`: `.txt` + playback MP3 zawierający oryginalne audio + opcjonalny cover.
-- `instrumental`: `.txt` + playback MP3 zawierający audio bez wokalu + osobny plik wokalu + opcjonalny cover.
+- `audio`: plik wskazywany przez tag `#AUDIO`, czyli oryginalne audio w MP3 z sufiksem `[FULL]`.
+- `instrumental`: plik wskazywany przez tag `#INSTRUMENTAL`, czyli instrumental w MP3 z sufiksem `[INSTR]`.
+- `vocals`: plik wskazywany przez tag `#VOCALS`, czyli wokal/a capella w MP3 z sufiksem `[VOC]`.
 
 `coverAssetId`:
 
@@ -567,14 +568,10 @@ Reguły automatycznego szkicu:
 
 `internalDirectoryName` i `baseFilename`:
 
-- Są takie same dla wszystkich profili docelowych i wariantów audio.
-- Różnice między profilami i wariantami występują w nazwie ZIP, np. przez `zipNamePattern`.
+- Są bazą dla katalogu wewnątrz ZIP-a, pliku `.txt` i trzech plików audio.
+- Nazwy plików audio są deterministyczne i muszą odpowiadać tagom `#AUDIO`, `#INSTRUMENTAL` oraz `#VOCALS`.
 
-`instrumentalPackageAudioRouting`:
-
-- `audio_and_instrumental_same_file`: w paczce instrumentalnej `#AUDIO` i `#INSTRUMENTAL` wskazują ten sam plik instrumentalny, a `#VOCALS` wskazuje osobny stem wokalu.
-
-Paczki karaoke nie zawierają `mukai-project.json` ani innych danych projektu.
+Paczka karaoke nie zawiera `mukai-project.json` ani innych danych projektu.
 
 ## ProjectExport
 
@@ -595,11 +592,11 @@ Zasady:
 - `includeOriginalAudio`, `includeAllJobArtifacts`, `includeJobManifest` i `retainJobAfterSuccessfulExport` są zawsze `true` w MVP.
 - Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia `projectExportedAt`, `cleanupEligibleAt = projectExportedAt + 24h` i `cleanupReason = "project_export_ttl"`.
 - Lokalny rekord `Job` oraz artefakty mogą zostać usunięte dopiero przez mechanizm czyszczenia po upływie TTL.
-- Zwykły eksport paczek karaoke nie ustawia retencji po eksporcie projektu.
+- Zwykły eksport karaoke nie ustawia retencji po eksporcie projektu.
 
 ## MukaiProject
 
-`mukai-project.json` jest manifestem wewnątrz ZIP-a projektu. Nie jest dodawany do paczek karaoke i nie jest samodzielnym formatem importu w MVP.
+`mukai-project.json` jest manifestem wewnątrz ZIP-a projektu. Nie jest dodawany do paczki karaoke i nie jest samodzielnym formatem importu w MVP.
 
 ZIP projektu musi pozwalać kontynuować pracę bez ponownego uruchamiania normalizacji audio, separacji, wykrywania BPM, transkrypcji, timingów i pitch.
 
@@ -706,7 +703,7 @@ Aktywny `Arrangement` jest przechowywany wyłącznie w Postgresie. `mukai-projec
 
 - `exporting`, `exporting_project` i `importing_project` są statusami przejściowymi dla przepływów eksportu/importu wymaganych w MVP.
 - W obecnej implementacji statusy istnieją w kontraktach, ale endpointy eksportu karaoke, eksportu projektu i importu projektu są jeszcze planowane.
-- Po udanym eksporcie paczek karaoke `Job` wraca do `awaiting_review`, a ZIP-y i raport walidacji są zapisywane jako artefakty eksportu.
+- Po udanym eksporcie karaoke `Job` wraca do `awaiting_review`, a ZIP i raport walidacji są zapisywane jako artefakty eksportu.
 - Po udanym eksporcie projektu `Job` wraca do `awaiting_review` i ma ustawione `projectExportedAt`, `cleanupEligibleAt` oraz `cleanupReason`.
 - `completed` jest statusem zarezerwowanym poza normalnym flow MVP i nie jest ustawiany po zwykłym eksporcie karaoke ani po eksporcie projektu.
 

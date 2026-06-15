@@ -12,6 +12,9 @@ from app.domain.contracts import (
     AudioAsset,
     CreateJobUpload,
     EmbeddedCover,
+    ExportKaraokeResponse,
+    ExportSelection,
+    ExportValidationReport,
     JobStatus,
     NoteEvent,
     ResetStageRequest,
@@ -37,6 +40,12 @@ from app.services.storage import (
     save_upload,
     sha256_file,
     write_json,
+)
+from app.services.ultrastar_export import (
+    export_ref,
+    generate_karaoke_exports,
+    validate_export,
+    write_validation_report_artifact,
 )
 from app.workers.pitch import build_arrangement, resolve_syllabification_language
 from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
@@ -304,6 +313,52 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
         effective_sentence_gap_ms=effective_gap_ms,
     )
     return repository.save_arrangement(job_id, arrangement)
+
+
+@router.post("/jobs/{job_id}/exports/validate", response_model=ExportValidationReport)
+def validate_karaoke_export(job_id: str, selection: ExportSelection) -> ExportValidationReport:
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    arrangement = repository.get_arrangement(job_id)
+    repository.upsert_export_selection(job_id, selection)
+    report = validate_export(job, arrangement, selection)
+    repository.create_artifact(job_id, write_validation_report_artifact(job_id, report))
+    return report
+
+
+@router.post("/jobs/{job_id}/exports/karaoke", response_model=ExportKaraokeResponse)
+def export_karaoke(job_id: str, selection: ExportSelection) -> ExportKaraokeResponse:
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    arrangement = repository.get_arrangement(job_id)
+    repository.upsert_export_selection(job_id, selection)
+    report = validate_export(job, arrangement, selection)
+    validation_asset = write_validation_report_artifact(job_id, report)
+    repository.create_artifact(job_id, validation_asset)
+    if report.errors:
+        raise api_error(409, "export_validation_failed", "Eksport wymaga poprawek przed wygenerowaniem ZIP.", {"report": report.model_dump(mode="json")})
+    if arrangement is None:
+        raise api_error(409, "missing_arrangement", "Arrangement nie istnieje dla tego joba.")
+
+    repository.update_job_status(job_id, JobStatus.exporting)
+    try:
+        export_assets = generate_karaoke_exports(job, arrangement, selection)
+        for asset in export_assets:
+            repository.create_artifact(job_id, asset)
+        repository.update_job_status(job_id, JobStatus.awaiting_review)
+    except Exception:
+        repository.update_job_status(job_id, JobStatus.awaiting_review)
+        raise
+
+    return ExportKaraokeResponse(
+        jobId=job_id,
+        status=JobStatus.awaiting_review,
+        validationReport=report,
+        validationArtifact=export_ref(validation_asset),
+        exports=[export_ref(asset) for asset in export_assets],
+    )
 
 
 @router.get("/jobs/{job_id}/artifacts/{asset_id}")

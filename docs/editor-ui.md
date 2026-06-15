@@ -162,14 +162,13 @@ Edytor powinien wizualnie oznaczać:
 
 ## Eksport w UI
 
-- Użytkownik może zaznaczyć jeden lub wiele formatów docelowych: UltraStar Deluxe, UltraStar Play, Vocaluxe.
-- Użytkownik może zaznaczyć jeden lub oba warianty paczki: oryginalne audio albo audio bez wokalu.
-- Każda paczka karaoke jest eksportowana jako ZIP zawierający cały katalog utworu.
+- Użytkownik eksportuje jedną paczkę ZIP zgodną z aktualnymi wersjami UltraStar Deluxe, UltraStar Play i Vocaluxe.
+- Paczka karaoke zawiera cały katalog utworu, plik `.txt`, oryginalne audio, instrumental i wokal/a capella.
 - Paczki karaoke nie zawierają `mukai-project.json` ani innych danych projektu.
 - Domyślna nazwa katalogu pochodzi z nazwy pliku źródłowego i może zostać zmieniona przed eksportem.
+- Nazwy plików audio są generowane z bazowej nazwy utworu jako `[FULL]`, `[INSTR]` i `[VOC]`; tagi w pliku `.txt` muszą wskazywać te same nazwy.
 - Użytkownik może wybrać cover z importu, jeśli jest dostępny, albo wgrać inny cover przed eksportem.
 - Jeśli cover nie jest ustawiony, eksport przebiega bez covera.
-- ZIP-y dla różnych profili eksportu mają różne nazwy, ale katalog i pliki wewnątrz używają tego samego schematu nazw.
 - Osobna akcja `Wyeksportuj projekt` generuje ZIP zawierający cały `Job`, oryginalny plik, artefakty i manifesty JSON potrzebne do odtworzenia projektu.
 - Przed akcją `Wyeksportuj projekt` UI powinien jasno poinformować, że po udanym eksporcie lokalny `Job` i artefakty pozostaną dostępne przez 24 godziny, a potem mogą zostać usunięte przez mechanizm czyszczenia.
 

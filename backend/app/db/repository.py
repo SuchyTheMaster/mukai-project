@@ -7,6 +7,7 @@ from app.domain.contracts import (
     Arrangement,
     AudioAsset,
     AudioInfo,
+    ExportSelection,
     Job,
     JobStatus,
     ModelProfiles,
@@ -242,6 +243,29 @@ def get_artifact(job_id: str, asset_id: str) -> AudioAsset | None:
             (job_id, asset_id),
         ).fetchone()
     return _row_to_asset(row) if row else None
+
+
+def upsert_export_selection(job_id: str, selection: ExportSelection) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            """
+            INSERT INTO export_selections (job_id, selection)
+            VALUES (%s, %s::jsonb)
+            ON CONFLICT (job_id) DO UPDATE SET
+              selection = EXCLUDED.selection,
+              updated_at = now()
+            """,
+            (job_id, json.dumps(_json(selection))),
+        )
+        conn.commit()
+
+
+def get_export_selection(job_id: str) -> ExportSelection | None:
+    with get_conn() as conn:
+        row = conn.execute("SELECT selection FROM export_selections WHERE job_id = %s", (job_id,)).fetchone()
+    if not row or not row["selection"]:
+        return None
+    return ExportSelection.model_validate(row["selection"])
 
 
 def invalidate_from_stage(job_id: str, stages: list[str]) -> None:

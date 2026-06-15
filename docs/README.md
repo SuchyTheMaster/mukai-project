@@ -4,7 +4,7 @@ Ostatnia weryfikacja źródeł: 2026-06-15.
 
 ## Cel aplikacji
 
-Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików karaoke dla UltraStar Deluxe, UltraStar Play i Vocaluxe. Użytkownik wgrywa utwór audio, aplikacja izoluje wokal, rozpoznaje tekst z czasami, wykrywa wysokości śpiewanych nut, pozwala ręcznie poprawić wynik i eksportuje wybrane paczki ZIP. Aplikacja pozwala też osobno wyeksportować pełny projekt jako ZIP do późniejszego importu.
+Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików karaoke dla aktualnych wersji UltraStar Deluxe, UltraStar Play i Vocaluxe. Użytkownik wgrywa utwór audio, aplikacja izoluje wokal, rozpoznaje tekst z czasami, wykrywa wysokości śpiewanych nut, pozwala ręcznie poprawić wynik i eksportuje jedną paczkę ZIP z oryginalnym audio, instrumentalem i wokalem/a capella. Aplikacja pozwala też osobno wyeksportować pełny projekt jako ZIP do późniejszego importu.
 
 ## Zakres MVP
 
@@ -18,13 +18,13 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Detekcja wysokości dźwięku z wokalu i segmentacja do nut.
 - Edytor tekstu, sylab, timingów, typów nut i pitch.
 - Import i kontynuacja pracy z ZIP-em projektu utworzonym przez opcję `Wyeksportuj projekt`.
-- Eksport jednej lub wielu paczek ZIP zgodnych z wybranymi odtwarzaczami, bez danych projektu w tych paczkach.
+- Eksport jednej paczki ZIP zgodnej z aktualnymi wersjami wspieranych odtwarzaczy, bez danych projektu w tej paczce.
 - Osobny eksport pełnego projektu jako ZIP zawierający `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
 - Retencja lokalnego `Job` i artefaktów przez 24 godziny po eksporcie projektu.
 
 ## Status implementacji
 
-Dokumentacja nadrzędna opisuje pełny docelowy zakres MVP. Aktualny kod implementuje upload z preflightem, tworzenie `Job`, orkiestrację pipeline'u do edytowalnego `Arrangement`, zapis/resegmentację edycji, pobieranie artefaktów i reset etapów. Eksport paczek karaoke, eksport ZIP-a projektu, import ZIP-a projektu i retencja po eksporcie pozostają wymaganymi etapami MVP, ale nie mają jeszcze endpointów API ani pełnego UI w obecnej implementacji.
+Dokumentacja nadrzędna opisuje pełny docelowy zakres MVP. Aktualny kod implementuje upload z preflightem, tworzenie `Job`, orkiestrację pipeline'u do edytowalnego `Arrangement`, zapis/resegmentację edycji, pobieranie artefaktów i reset etapów. Eksport karaoke, eksport ZIP-a projektu, import ZIP-a projektu i retencja po eksporcie pozostają wymaganymi etapami MVP, ale nie mają jeszcze endpointów API ani pełnego UI w obecnej implementacji.
 
 ## Poza zakresem pierwszej wersji
 

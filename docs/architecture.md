@@ -2,7 +2,7 @@
 
 ## Widok ogólny
 
-Aplikacja działa w Dockerze i składa się z interfejsu webowego React, backendu API w Pythonie/FastAPI, kolejki zadań Redis, bazy Postgres, workerów AI używających GPU, magazynu artefaktów na wolumenie Docker poza repozytorium, eksportera paczek karaoke oraz eksportera/importera projektu. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Przy wystawieniu w sieci MVP nadal nie dodaje auth, dlatego upload ma limit 500 MB oraz walidację rozszerzenia, MIME i `ffprobe`.
+Aplikacja działa w Dockerze i składa się z interfejsu webowego React, backendu API w Pythonie/FastAPI, kolejki zadań Redis, bazy Postgres, workerów AI używających GPU, magazynu artefaktów na wolumenie Docker poza repozytorium, eksportera karaoke oraz eksportera/importera projektu. Może być uruchomiona lokalnie albo wystawiona w sieci. Nie ma kont użytkowników, logowania, autoryzacji ani podziału uprawnień; zakładany jest jeden operator aplikacji. Przy wystawieniu w sieci MVP nadal nie dodaje auth, dlatego upload ma limit 500 MB oraz walidację rozszerzenia, MIME i `ffprobe`.
 
 Każde przetwarzanie utworu jest reprezentowane jako `Job`, który przechodzi przez jawne statusy i zapisuje pośrednie artefakty.
 
@@ -43,7 +43,7 @@ Project ZIP Import
 - Udostępnia reset aktualnego etapu, jeśli backend pozwala przeliczyć pracę od tego miejsca.
 - Udostępnia edytor tekstu, sylab, fraz, nut i timingów.
 - Pozwala odsłuchać oryginał, wokal i instrumental.
-- Uruchamia eksport jednej lub wielu paczek karaoke ZIP po zatwierdzeniu aktualnego stanu edycji.
+- Uruchamia eksport jednej paczki karaoke ZIP po zatwierdzeniu aktualnego stanu edycji.
 - Udostępnia osobną akcję `Wyeksportuj projekt`, która pakuje pełny `Job` do ZIP-a projektu.
 - Stosuje design system RetroWave opisany w [UI.md](UI.md) dla kolorów, typografii, komponentów i stanów.
 
@@ -82,7 +82,7 @@ Planowane, ale wymagane w MVP:
 
 - `POST /api/projects/import`: import ZIP-a projektu.
 - `POST /api/jobs/{jobId}/exports/validate`: walidacja przed eksportem.
-- `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej albo wielu paczek karaoke; po sukcesie `Job` wraca do `awaiting_review`.
+- `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej paczki karaoke; po sukcesie `Job` wraca do `awaiting_review`.
 - `POST /api/jobs/{jobId}/exports/project`: eksport ZIP-a projektu, ustawienie TTL retencji i powrót `Job` do `awaiting_review`.
 
 ### Kolejka i orkiestracja
@@ -101,7 +101,7 @@ Planowane, ale wymagane w MVP:
 - `worker-transcribe`: transkrypcja i forced alignment tekstu przez WhisperX.
 - `worker-pitch`: pitch detection i segmentacja nut przez torchcrepe.
 - `worker-aligner`: łączenie tekstu, słów, nut i fraz w szkic karaoke.
-- Worker eksportu karaoke: generuje ZIP-y dla wybranych wariantów i odtwarzaczy, bez danych projektu w paczkach karaoke.
+- Worker eksportu karaoke: generuje jeden ZIP zgodny z aktualnymi wersjami wspieranych odtwarzaczy, bez danych projektu w paczce karaoke.
 - Worker eksportu projektu: generuje ZIP projektu zawierający pełny `Job`, wszystkie wymagane artefakty, oryginalny plik i manifesty JSON.
 - Worker importu projektu: odtwarza `Job` i artefakty z ZIP-a projektu bez ponownego uruchamiania normalizacji, BPM, separacji, transkrypcji, alignacji ani pitch detection.
 
@@ -111,7 +111,7 @@ Planowane, ale wymagane w MVP:
 - Każdy artefakt ma typ, hash, czas utworzenia i parametry procesu.
 - Pliki audio użytkownika nie powinny trafiać do repozytorium.
 - Po pomyślnym eksporcie projektu ustawia `cleanupEligibleAt` na 24 godziny po eksporcie. Lokalny rekord `Job`, oryginalny plik i artefakty mogą zostać usunięte dopiero po upływie tego TTL.
-- Zwykły eksport paczek karaoke nie usuwa automatycznie `Job` ani artefaktów.
+- Zwykły eksport karaoke nie usuwa automatycznie `Job` ani artefaktów.
 
 ### Warstwa trwałości
 
@@ -136,7 +136,7 @@ Planowane, ale wymagane w MVP:
 - `failed`
 - `cancelled`
 
-`exporting`, `exporting_project` i `importing_project` istnieją w kontraktach jako statusy przepływów eksportu/importu wymaganych w MVP. W obecnej implementacji endpointy eksportu i importu nie są jeszcze dostępne. Po ich wdrożeniu udany eksport paczek karaoke albo ZIP-a projektu ma przywracać `Job` do `awaiting_review`; eksport projektu dodatkowo ustawia pola retencji. `completed` jest zarezerwowany na przyszłe przepływy i nie jest ustawiany po zwykłym eksporcie w MVP.
+`exporting`, `exporting_project` i `importing_project` istnieją w kontraktach jako statusy przepływów eksportu/importu wymaganych w MVP. W obecnej implementacji endpointy eksportu i importu nie są jeszcze dostępne. Po ich wdrożeniu udany eksport karaoke albo ZIP-a projektu ma przywracać `Job` do `awaiting_review`; eksport projektu dodatkowo ustawia pola retencji. `completed` jest zarezerwowany na przyszłe przepływy i nie jest ustawiany po zwykłym eksporcie w MVP.
 
 ## Założenia niefunkcjonalne
 

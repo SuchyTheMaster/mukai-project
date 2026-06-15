@@ -2,25 +2,23 @@
 
 ## Cel
 
-Eksporter karaoke zamienia zatwierdzony `Arrangement` na jedną lub wiele paczek ZIP. Każda paczka karaoke zawiera katalog z plikiem `.txt` oraz audio w MP3. Cover jest dodawany tylko wtedy, gdy użytkownik go ustawił. Paczki karaoke nie zawierają `mukai-project.json` ani innych danych projektu.
+Eksporter karaoke zamienia zatwierdzony `Arrangement` na jedną paczkę ZIP zgodną z aktualnymi wersjami UltraStar Deluxe, UltraStar Play i Vocaluxe. Paczka karaoke zawiera katalog z plikiem `.txt`, oryginalnym audio, instrumentalem i wokalem/a capella w MP3. Cover jest dodawany tylko wtedy, gdy użytkownik go ustawił. Paczka karaoke nie zawiera `mukai-project.json` ani innych danych projektu.
 
 Eksport projektu jest osobną akcją `Wyeksportuj projekt`. Ta akcja generuje oddzielny ZIP projektu do późniejszego importu w Mukai.
 
 Użytkownik wybiera:
 
-- format docelowy: UltraStar Deluxe, UltraStar Play, Vocaluxe;
-- wariant audio: oryginalne audio albo audio bez wokalu;
 - nazwę katalogu/paczki, domyślnie pochodzącą z nazwy pliku źródłowego;
 - cover z importu, jeśli jest dostępny, albo wgrany ręcznie; jeśli cover nie jest ustawiony, paczka nie zawiera covera.
 
-ZIP-y dla różnych profili eksportu i wariantów audio mają różne nazwy. Katalog i pliki wewnątrz ZIP-a używają konsekwentnie tej samej nazwy bazowej niezależnie od profilu docelowego i wariantu; zawartość pliku playback MP3 zależy od wariantu.
+Eksport nie ma osobnych profili odtwarzaczy ani wariantów audio. Jedna paczka zawiera komplet plików wymaganych przez najnowsze wersje wspieranych programów.
 
 ## Struktura paczki karaoke ZIP
 
-Przykład ZIP dla profilu UltraStar Deluxe i wariantu oryginalnego:
+Przykład ZIP:
 
 ```text
-Artist - Song Title [ultrastar-deluxe original].zip
+Artist - Song Title [karaoke].zip
 ```
 
 Zawartość:
@@ -28,7 +26,9 @@ Zawartość:
 ```text
 Artist - Song Title/
 ├── Artist - Song Title.txt
-└── Artist - Song Title.mp3
+├── Artist - Song Title [FULL].mp3
+├── Artist - Song Title [INSTR].mp3
+└── Artist - Song Title [VOC].mp3
 ```
 
 Jeśli ustawiono cover, zawartość zawiera dodatkowo:
@@ -37,43 +37,24 @@ Jeśli ustawiono cover, zawartość zawiera dodatkowo:
 cover.jpg
 ```
 
-Przykład ZIP dla profilu Vocaluxe i wariantu instrumentalnego:
-
-```text
-Artist - Song Title [vocaluxe instrumental].zip
-```
-
-Zawartość:
-
-```text
-Artist - Song Title/
-├── Artist - Song Title.txt
-├── Artist - Song Title.mp3
-└── Artist - Song Title [vocals].mp3
-```
-
 ## Format bazowy
 
 Plik powinien być zapisany jako UTF-8 bez BOM.
 
-Nagłówki dla wariantu `original_audio`:
+Nagłówki obowiązkowe:
 
 ```text
 #VERSION:1.1.0
 #TITLE:Song Title
 #ARTIST:Artist
-#AUDIO:Artist - Song Title.mp3
+#AUDIO:Artist - Song Title [FULL].mp3
+#INSTRUMENTAL:Artist - Song Title [INSTR].mp3
+#VOCALS:Artist - Song Title [VOC].mp3
 #BPM:493.8
 #GAP:12345
 ```
 
-Dodatkowy fallback dla profilu `ultrastar_deluxe`:
-
-```text
-#MP3:Artist - Song Title.mp3
-```
-
-Opcjonalne nagłówki dla wariantu `original_audio`:
+Opcjonalne nagłówki:
 
 ```text
 #CREATOR:Mukai
@@ -82,45 +63,13 @@ Opcjonalne nagłówki dla wariantu `original_audio`:
 #COMMENT:Generated draft reviewed in Mukai
 ```
 
-Nagłówki dla wariantu `instrumental`:
+Polityka plików audio:
 
-```text
-#VERSION:1.1.0
-#TITLE:Song Title
-#ARTIST:Artist
-#AUDIO:Artist - Song Title.mp3
-#INSTRUMENTAL:Artist - Song Title.mp3
-#VOCALS:Artist - Song Title [vocals].mp3
-#BPM:493.8
-#GAP:12345
-```
-
-Dodatkowy fallback dla profilu `ultrastar_deluxe`:
-
-```text
-#MP3:Artist - Song Title.mp3
-```
-
-Opcjonalne nagłówki dla wariantu `instrumental`:
-
-```text
-#CREATOR:Mukai
-#LANGUAGE:Polish
-#COVER:cover.jpg
-#COMMENT:Generated draft reviewed in Mukai
-```
-
-Polityka tagów MVP:
-
-- UltraStar Play i Vocaluxe używają `#AUDIO` jako głównego tagu playback.
-- UltraStar Deluxe używa `#AUDIO` oraz fallbacku `#MP3` wskazującego ten sam plik MP3.
-- Wariant instrumentalny używa `#INSTRUMENTAL` dla instrumentalnego playbacku i `#VOCALS` dla osobnego stemu wokalu.
-
-Warianty audio:
-
-- W paczce z oryginalnym audio `#AUDIO` wskazuje oryginalne audio skonwertowane do MP3. Jeśli w paczce są stems, `#VOCALS` i `#INSTRUMENTAL` wskazują osobne pliki wokalu i instrumentalu.
-- W paczce instrumentalnej `#AUDIO` wskazuje plik MP3 używany do odtwarzania, a `#INSTRUMENTAL` wskazuje ten sam plik instrumentalny. Wewnętrzna nazwa pliku pozostaje `Artist - Song Title.mp3`.
-- Paczka instrumentalna zawiera też `#VOCALS` wskazujący osobny plik wokalu, nawet jeśli użytkownik eksportuje tylko wersję bez wokalu.
+- `#AUDIO` wskazuje oryginalne audio skonwertowane do MP3 z sufiksem `[FULL]`.
+- `#INSTRUMENTAL` wskazuje instrumentalny stem skonwertowany do MP3 z sufiksem `[INSTR]`.
+- `#VOCALS` wskazuje wokal/a capella skonwertowany do MP3 z sufiksem `[VOC]`.
+- Nazwy plików audio muszą być spójne z tagami w pliku `.txt`.
+- Eksporter nie generuje tagu `#MP3`; starsze tryby kompatybilności nie są częścią MVP.
 - Jeśli cover nie jest ustawiony, nie generować tagu `#COVER` i nie dodawać pliku covera do ZIP-a.
 
 ## Mapowanie czasu
@@ -215,45 +164,36 @@ E
 
 Eksporter musi zgłosić błąd, jeśli:
 
-- brakuje `TITLE`, `ARTIST`, `AUDIO`;
-- profil `ultrastar_deluxe` nie zawiera `#MP3`;
+- brakuje `TITLE`, `ARTIST`, `AUDIO`, `INSTRUMENTAL` albo `VOCALS`;
+- `#AUDIO`, `#INSTRUMENTAL` albo `#VOCALS` wskazuje plik, którego nie ma w paczce;
+- nazwy plików audio nie odpowiadają wzorowi `{baseFilename} [FULL].mp3`, `{baseFilename} [INSTR].mp3`, `{baseFilename} [VOC].mp3`;
 - nuta ma długość mniejszą niż 1 beat;
 - frazy są poza kolejnością;
 - sylaba eksportowana jako nuta punktowana nie ma wartości `midi`;
 - wynikowy plik nie kończy się `E`.
-- tag `#VOCALS` albo `#INSTRUMENTAL` wskazuje plik, którego nie ma w paczce.
-- profil UltraStar Deluxe wygenerował `#MP3`, który nie wskazuje tego samego pliku co `#AUDIO`.
 
 Eksporter powinien zgłosić ostrzeżenie, jeśli:
 
 - `#GAP` jest ujemny;
 - pitch jest poza typowym zakresem wokalu;
 - fraza ma bardzo długą pauzę bez znacznika końca;
-- użyto `#VOCALS` albo `#INSTRUMENTAL`, ale docelowy odtwarzacz może ich jeszcze nie wspierać.
+- paczka nie została jeszcze ręcznie sprawdzona w aktualnych wersjach UltraStar Deluxe, UltraStar Play i Vocaluxe.
 
 Walidacja przez parser konkretnego odtwarzacza nie jest wymagana w MVP.
 
-## Warianty kompatybilności
+## Kompatybilność
 
-Eksporter musi mieć osobne profile dla:
+Eksporter generuje jedną paczkę dla aktualnych wersji:
 
 - UltraStar Deluxe;
 - UltraStar Play;
 - Vocaluxe.
 
-Profile różnią się wyłącznie polityką tagów kompatybilności, ale nie zmieniają schematu nazw katalogu i plików wewnątrz ZIP-a. Wszystkie profile bazują na tych samych danych `Arrangement`; dane projektu nie są zapisywane w paczkach karaoke. Każdy profil musi mieć test kompatybilności z docelowym odtwarzaczem albo jawnie opisane założenie, jeśli test manualny nie został jeszcze wykonany.
-
-Polityka profili:
-
-- `ultrastar_play`: generuje `#AUDIO`; w wariancie instrumentalnym dodatkowo `#INSTRUMENTAL` i `#VOCALS`.
-- `vocaluxe`: generuje `#AUDIO`; w wariancie instrumentalnym dodatkowo `#INSTRUMENTAL` i `#VOCALS`.
-- `ultrastar_deluxe`: generuje `#AUDIO` oraz fallback `#MP3` wskazujący ten sam plik; w wariancie instrumentalnym dodatkowo `#INSTRUMENTAL` i `#VOCALS`.
-
-Nazwa ZIP-a zawiera profil eksportu i wariant audio, np. `[ultrastar-deluxe original]`, `[ultrastar-play instrumental]`, `[vocaluxe original]`. Wewnętrzny katalog i nazwy plików zachowują tę samą nazwę bazową.
+Założenie MVP: najnowsze dostępne wersje tych programów obsługują wspólny zestaw tagów `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS`. Każda paczka powinna mieć test ręcznego otwarcia w aktualnych wersjach wspieranych programów albo jawnie opisane założenie, jeśli test manualny nie został jeszcze wykonany.
 
 ## Eksport projektu
 
-Akcja `Wyeksportuj projekt` jest oddzielna od eksportu paczek karaoke. Nie modyfikuje zawartości paczek UltraStar, tylko tworzy osobny ZIP projektu.
+Akcja `Wyeksportuj projekt` jest oddzielna od eksportu karaoke. Nie modyfikuje zawartości paczki UltraStar, tylko tworzy osobny ZIP projektu.
 
 Przykładowa nazwa:
 

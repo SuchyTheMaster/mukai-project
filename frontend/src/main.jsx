@@ -19,7 +19,6 @@ import {
   Scissors,
   SkipBack,
   SkipForward,
-  SlidersHorizontal,
   Trash2,
   Undo2,
   UploadCloud,
@@ -287,7 +286,6 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [reviewRailVisible, setReviewRailVisible] = useState(false);
 
   useEffect(() => {
     if (!job || ["failed", "awaiting_review", "cancelled"].includes(job.status)) return undefined;
@@ -317,10 +315,6 @@ function App() {
   const coverPreview = coverFile ? URL.createObjectURL(coverFile) : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
   const isReview = job?.status === "awaiting_review";
   const jobCreated = Boolean(job);
-
-  useEffect(() => {
-    if (!isReview) setReviewRailVisible(false);
-  }, [isReview]);
 
   useEffect(() => {
     if (syllabificationTouched) return;
@@ -400,22 +394,32 @@ function App() {
     }
   }
 
-  async function saveArrangement() {
+  async function saveArrangement(approved = false) {
     if (!job || !arrangement) return;
     setError(null);
     setSaving(true);
     try {
+      const payloadArrangement = fromEditorArrangement({ ...arrangement, approved });
       const saved = await apiJson(`/api/jobs/${job.jobId}/arrangement`, {
         method: "PUT",
-        body: JSON.stringify({ revision: arrangement.revision, arrangement: fromEditorArrangement(arrangement) }),
+        body: JSON.stringify({ revision: arrangement.revision, arrangement: payloadArrangement }),
         headers: { "Content-Type": "application/json" },
       });
       setArrangement(toEditorArrangement(saved));
+      return saved;
     } catch (err) {
       setError(err.message);
+      throw err;
     } finally {
       setSaving(false);
     }
+  }
+
+  async function refreshJob() {
+    if (!job) return null;
+    const refreshed = await apiJson(`/api/jobs/${job.jobId}`);
+    setJob(refreshed);
+    return refreshed;
   }
 
   async function resegmentArrangement(sentenceGapMs) {
@@ -448,7 +452,7 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${isReview && !reviewRailVisible ? "review-expanded" : ""}`}>
+    <div className={`app-shell ${isReview ? "review-expanded" : ""}`}>
       <aside className="left-rail panel">
         <section className="brand-section">
           <div className="brand">
@@ -518,8 +522,7 @@ function App() {
             onResegment={resegmentArrangement}
             saving={saving}
             onResetStage={resetStage}
-            railVisible={reviewRailVisible}
-            onToggleRail={() => setReviewRailVisible((visible) => !visible)}
+            onJobRefresh={refreshJob}
           />
         ) : (
           <>
@@ -544,7 +547,7 @@ function App() {
         )}
       </main>
 
-      {(!isReview || reviewRailVisible) && (
+      {!isReview && (
         <aside className="right-rail panel">
           <section>
             <div className="section-title">Aktualny etap</div>
@@ -622,7 +625,7 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
   );
 }
 
-function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, saving, onResetStage, railVisible, onToggleRail }) {
+function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, saving, onResetStage, onJobRefresh }) {
   const waveformRef = useRef(null);
   const waveSurferRef = useRef(null);
   const resumeAfterTrackChange = useRef(false);
@@ -644,6 +647,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const [showNotes, setShowNotes] = useState(false);
   const [sentenceGapInput, setSentenceGapInput] = useState("");
   const [editorNotice, setEditorNotice] = useState(null);
+  const [validationModal, setValidationModal] = useState(null);
   const [past, setPast] = useState([]);
   const [future, setFuture] = useState([]);
 
@@ -1071,9 +1075,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         <div className="editor-actions">
           <button className="icon-button" type="button" title="Undo" aria-label="Undo" disabled={!past.length} onClick={undo}><Undo2 size={16} /></button>
           <button className="icon-button" type="button" title="Redo" aria-label="Redo" disabled={!future.length} onClick={redo}><Redo2 size={16} /></button>
-          <button className="button secondary" type="button" onClick={onToggleRail}><SlidersHorizontal size={16} /> {railVisible ? "Ukryj pipeline" : "Pokaż pipeline"}</button>
           <button className="button secondary" type="button" onClick={() => onResetStage("aligning")}><RefreshCcw size={16} /> Reset szkicu</button>
-          <button className="button primary" type="button" disabled={saving} onClick={onSave}><Save size={16} /> {saving ? "Zapis..." : "Zapisz"}</button>
+          <SaveExportMenu job={job} saving={saving} onSave={onSave} onJobRefresh={onJobRefresh} onValidationError={setValidationModal} />
         </div>
       </div>
 
@@ -1111,7 +1114,121 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
           onSplitLine={splitSelectedLineAtPlayhead}
         />
       </div>
+      {validationModal && <ValidationModal report={validationModal} onClose={() => setValidationModal(null)} />}
     </section>
+  );
+}
+
+function SaveExportMenu({ job, saving, onSave, onJobRefresh, onValidationError }) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function closeOnOutsideClick(event) {
+      if (!menuRef.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, [open]);
+
+  async function saveProject() {
+    setOpen(false);
+    try {
+      await onSave(false);
+    } catch {
+      // Global error banner is set by onSave.
+    }
+  }
+
+  async function exportKaraoke() {
+    setOpen(false);
+    setBusy(true);
+    try {
+      await onSave(true);
+      const selection = exportSelectionForJob(job);
+      const report = await apiJson(`/api/jobs/${job.jobId}/exports/validate`, {
+        method: "POST",
+        body: JSON.stringify(selection),
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!report.valid) {
+        onValidationError(report);
+        return;
+      }
+      const result = await apiJson(`/api/jobs/${job.jobId}/exports/karaoke`, {
+        method: "POST",
+        body: JSON.stringify(selection),
+        headers: { "Content-Type": "application/json" },
+      });
+      await onJobRefresh?.();
+      const asset = result.exports?.[0];
+      if (asset) triggerArtifactDownload(job.jobId, asset);
+    } catch (err) {
+      const report = err.details?.report;
+      if (report) {
+        onValidationError(report);
+      } else {
+        onValidationError({
+          valid: false,
+          errors: [{ code: "export_failed", message: err.message, severity: "error" }],
+          warnings: [],
+        });
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const pending = saving || busy;
+
+  return (
+    <div className="save-menu" ref={menuRef}>
+      <button className="button primary save-menu-trigger" type="button" disabled={pending} onClick={() => setOpen((value) => !value)}>
+        <Save size={16} /> {pending ? "Praca..." : "Zapisz"}
+      </button>
+      {open && (
+        <div className="save-menu-list" role="menu">
+          <button type="button" role="menuitem" onClick={saveProject}>
+            <span>projekt</span>
+            <small>do późniejszej edycji</small>
+          </button>
+          <button type="button" role="menuitem" onClick={exportKaraoke}>
+            <span>paczka karaoke</span>
+            <small>UltraStar Deluxe, UltraStar Play, Vocaluxe</small>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ValidationModal({ report, onClose }) {
+  const errors = report?.errors ?? [];
+  const warnings = report?.warnings ?? [];
+  const issues = errors.length ? errors : warnings;
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <div className="validation-modal" role="dialog" aria-modal="true" aria-labelledby="validation-modal-title">
+        <div className="modal-header">
+          <strong id="validation-modal-title">Eksport zablokowany</strong>
+          <button className="icon-button" type="button" title="Zamknij" aria-label="Zamknij" onClick={onClose}>×</button>
+        </div>
+        <p>Projekt nie przeszedł walidacji eksportu. Popraw poniższe problemy i uruchom eksport ponownie.</p>
+        <ul>
+          {issues.map((issue, index) => (
+            <li key={`${issue.code}-${index}`}>
+              <strong>{issue.code}</strong>
+              <span>{issue.message}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="modal-actions">
+          <button className="button primary" type="button" onClick={onClose}>Zamknij</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -3076,6 +3193,42 @@ function displayArtifactIdsForStage(stage, job, artifactsById) {
   return [...new Set([...ownIds, ...movedIds])];
 }
 
+function exportSelectionForJob(job) {
+  const baseFilename = defaultExportBaseFilename(job);
+  const cover = (job.artifacts ?? []).find((asset) => asset.type === "cover");
+  return {
+    packageName: baseFilename,
+    internalDirectoryName: baseFilename,
+    baseFilename,
+    zipNamePattern: "{baseFilename} [karaoke].zip",
+    audioFilenames: {
+      audio: `${baseFilename} [FULL].mp3`,
+      instrumental: `${baseFilename} [INSTR].mp3`,
+      vocals: `${baseFilename} [VOC].mp3`,
+    },
+    coverAssetId: cover?.assetId ?? null,
+  };
+}
+
+function triggerArtifactDownload(jobId, asset) {
+  const link = document.createElement("a");
+  link.href = `${API_BASE}/api/jobs/${jobId}/artifacts/${asset.assetId}`;
+  link.download = asset.filename ?? "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function defaultExportBaseFilename(job) {
+  const title = job?.metadata?.title?.trim();
+  const artist = job?.metadata?.artist?.trim();
+  if (artist && title) return `${artist} - ${title}`;
+  if (title) return title;
+  const source = (job?.artifacts ?? []).find((asset) => asset.type === "source_audio");
+  const filename = source?.originalFilename || source?.path?.split("/").at(-1) || "Mukai Export";
+  return filename.replace(/\.[^.]+$/, "") || "Mukai Export";
+}
+
 function artifactFilename(asset, fallback) {
   if (!asset) return fallback;
   if (asset.originalFilename) return asset.originalFilename;
@@ -3213,7 +3366,9 @@ async function apiJson(path, init = {}) {
 async function parseResponse(response) {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error?.message ?? `HTTP ${response.status}`);
+    const error = new Error(payload?.error?.message ?? `HTTP ${response.status}`);
+    error.details = payload?.error?.details ?? {};
+    throw error;
   }
   return payload;
 }

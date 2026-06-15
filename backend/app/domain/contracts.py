@@ -395,6 +395,61 @@ class ResetStageResponse(BaseModel):
     queued: bool
 
 
+ExportIssueSeverity = Literal["error", "warning"]
+
+
+class ExportAudioFilenames(BaseModel):
+    audio: str | None = None
+    instrumental: str | None = None
+    vocals: str | None = None
+
+
+class ExportSelection(BaseModel):
+    packageName: str | None = None
+    internalDirectoryName: str
+    baseFilename: str
+    zipNamePattern: str = "{baseFilename} [karaoke].zip"
+    audioFilenames: ExportAudioFilenames = Field(default_factory=ExportAudioFilenames)
+    coverAssetId: str | None = None
+
+    @field_validator("internalDirectoryName", "baseFilename")
+    @classmethod
+    def non_blank_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("must not be blank")
+        return value
+
+
+class ExportValidationIssue(BaseModel):
+    severity: ExportIssueSeverity
+    code: str
+    message: str
+    details: dict = Field(default_factory=dict)
+
+
+class ExportValidationReport(BaseModel):
+    jobId: str
+    valid: bool
+    selection: ExportSelection
+    errors: list[ExportValidationIssue] = Field(default_factory=list)
+    warnings: list[ExportValidationIssue] = Field(default_factory=list)
+    generatedAt: datetime = Field(default_factory=utc_now)
+
+
+class ExportArtifactRef(BaseModel):
+    assetId: str
+    type: str
+    filename: str
+
+
+class ExportKaraokeResponse(BaseModel):
+    jobId: str
+    status: JobStatus
+    validationReport: ExportValidationReport
+    validationArtifact: ExportArtifactRef
+    exports: list[ExportArtifactRef] = Field(default_factory=list)
+
+
 STAGE_ORDER = [
     ("uploaded", "source", "Źródło", "api"),
     ("preprocessing", "ffmpeg", "Preprocessing audio", "orchestrator"),

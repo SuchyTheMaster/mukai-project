@@ -953,6 +953,121 @@ summary:hover {
   background: rgba(255, 215, 0, 0.15);
 }
 
+.save-menu {
+  position: relative;
+}
+
+.save-menu-trigger {
+  min-width: 118px;
+}
+
+.save-menu-list {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  width: min(340px, calc(100vw - 32px));
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.45);
+}
+
+.save-menu-list button {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.save-menu-list button:hover {
+  background: rgba(58, 134, 255, 0.14);
+}
+
+.save-menu-list span {
+  font-weight: 700;
+}
+
+.save-menu-list small {
+  color: var(--secondary);
+  font-size: 12px;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(6, 6, 32, 0.72);
+}
+
+.validation-modal {
+  display: grid;
+  gap: 14px;
+  width: min(620px, 100%);
+  max-height: min(720px, calc(100vh - 36px));
+  padding: 18px;
+  overflow: auto;
+  background: var(--raised);
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.52);
+}
+
+.modal-header,
+.modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.validation-modal p {
+  margin: 0;
+  color: var(--secondary);
+}
+
+.validation-modal ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.validation-modal li {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  color: var(--secondary);
+  background: rgba(255, 51, 102, 0.1);
+  border: 1px solid rgba(255, 51, 102, 0.38);
+  border-radius: 8px;
+}
+
+.validation-modal li strong {
+  color: var(--error);
+  font-size: 12px;
+}
+
+.validation-modal .icon-button {
+  width: 34px;
+  height: 34px;
+  color: var(--error);
+  border-color: var(--error);
+  font-size: 24px;
+  line-height: 1;
+}
+
 .toggle-button.active {
   color: var(--text);
   background: rgba(255, 0, 110, 0.16);

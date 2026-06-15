@@ -245,11 +245,10 @@ Wynik:
 
 Eksporter karaoke generuje:
 
-- Jedną albo wiele paczek ZIP.
-- Każda paczka zawiera katalog z plikiem UltraStar `.txt` i audio w MP3; cover jest dodawany tylko wtedy, gdy został ustawiony.
-- Paczki karaoke nie zawierają `mukai-project.json` ani innych danych potrzebnych do odtworzenia projektu w Mukai.
-- Dostępne warianty audio: oryginalne audio albo instrumental bez wokalu.
-- Dostępne formaty docelowe: UltraStar Deluxe, UltraStar Play, Vocaluxe.
+- Jedną paczkę ZIP zgodną z aktualnymi wersjami UltraStar Deluxe, UltraStar Play i Vocaluxe.
+- Paczka zawiera katalog z plikiem UltraStar `.txt`, oryginalnym audio, instrumentalem i wokalem/a capella w MP3; cover jest dodawany tylko wtedy, gdy został ustawiony.
+- Paczka karaoke nie zawiera `mukai-project.json` ani innych danych potrzebnych do odtworzenia projektu w Mukai.
+- Tagi `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS` wskazują odpowiednio pliki z sufiksami `[FULL]`, `[INSTR]` i `[VOC]`.
 - Raport walidacji eksportu.
 
 Osobna akcja `Wyeksportuj projekt` generuje ZIP projektu:

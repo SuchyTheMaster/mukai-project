@@ -9,7 +9,7 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - [Operacje i testowanie](../operations-and-testing.md)
 - [Stos modeli AI](../model-stack.md#benchmark-akceptacyjny-modeli)
 - [README](../README.md#zakres-mvp)
-- [Eksport UltraStar](../ultrastar-export.md#warianty-kompatybilności)
+- [Eksport UltraStar](../ultrastar-export.md#kompatybilność)
 
 ## Zakres
 
@@ -21,7 +21,7 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - Ograniczenie współbieżności ciężkich operacji GPU przy jednym GPU hosta.
 - Benchmark akceptacyjny modeli na co najmniej 20 krótkich fragmentach.
 - Testy integracyjne całego pipeline'u na krótkich plikach audio.
-- Testy eksportu paczek karaoke i projektu.
+- Testy eksportu karaoke i projektu.
 - Testy importu projektu bez ponownego przetwarzania.
 - Testy retencji i czyszczenia artefaktów.
 - Testy responsywności i reduced motion UI.
@@ -51,10 +51,10 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - Użytkownik może wgrać utwór i otrzymać draft do edycji.
 - Draft pokazuje tekst, czasy i nuty w zsynchronizowanym widoku.
 - Użytkownik może poprawić tekst, sylaby, typ nuty i pitch.
-- Eksportowana paczka karaoke ZIP zawiera katalog z `.txt` i MP3 bez danych projektu.
+- Eksportowana paczka karaoke ZIP zawiera katalog z `.txt`, oryginalnym audio, instrumentalem i wokalem/a capella w MP3 bez danych projektu.
 - Osobna akcja `Wyeksportuj projekt` tworzy ZIP pozwalający kontynuować edycję bez ponownego ASR, pitch i BPM.
 - Po eksporcie projektu lokalny `Job` i artefakty dostają TTL 24h.
-- Wynik da się ręcznie wczytać w wybranym kompatybilnym programie karaoke albo odnotowano jawne założenie o braku testu manualnego.
+- Wynik da się ręcznie wczytać w aktualnych wersjach UltraStar Deluxe, UltraStar Play i Vocaluxe albo odnotowano jawne założenie o braku testu manualnego.
 
 ## Proponowane testy
 
@@ -65,7 +65,7 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - `docker compose build worker-pitch --progress=plain`.
 - Smoke test GPU przez kontener CUDA, jeśli host ma GPU NVIDIA.
 - E2E: upload, preflight, przetwarzanie, edycja, eksport karaoke.
+- Test eksportu: jeden ZIP z plikami `[FULL]`, `[INSTR]`, `[VOC]`, spójnymi tagami i bez `#MP3`.
 - E2E: eksport projektu, import projektu, kontynuacja edycji.
 - Testy manualne dla utworu polskiego, angielskiego, wielojęzycznego, z długim intro, backing vocals i pogłosem.
 - Test dokumentacji: linki, spójność statusów, brak `review.approved.json` jako źródła prawdy i zgodność retencji 24h.
-

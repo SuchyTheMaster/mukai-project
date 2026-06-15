@@ -16,7 +16,7 @@ Ten katalog dzieli potencjalne wdrożenie MVP Mukai na uporządkowane etapy. Num
 | 06 | [06-transkrypcja-i-alignacja.md](06-transkrypcja-i-alignacja.md) | Worker WhisperX, segmenty, słowa i czasy |
 | 07 | [07-pitch-i-szkic-arrangement.md](07-pitch-i-szkic-arrangement.md) | Worker pitch, nuty i pierwszy edytowalny `Arrangement` |
 | 08 | [08-edytor-recenzji.md](08-edytor-recenzji.md) | Ręczna edycja tekstu, timingów, sylab, nut i pitch |
-| 09 | [09-eksport-karaoke.md](09-eksport-karaoke.md) | Paczki ZIP dla UltraStar Deluxe, UltraStar Play i Vocaluxe |
+| 09 | [09-eksport-karaoke.md](09-eksport-karaoke.md) | Jedna paczka ZIP dla aktualnych wersji UltraStar Deluxe, UltraStar Play i Vocaluxe |
 | 10 | [10-eksport-import-projektu-i-retencja.md](10-eksport-import-projektu-i-retencja.md) | ZIP projektu, import projektu i retencja 24h |
 | 11 | [11-utwardzenie-operacyjne-i-akceptacja-mvp.md](11-utwardzenie-operacyjne-i-akceptacja-mvp.md) | Hardening, benchmark modeli, testy końcowe i akceptacja MVP |
 
@@ -25,6 +25,5 @@ Ten katalog dzieli potencjalne wdrożenie MVP Mukai na uporządkowane etapy. Num
 - Etapy są ułożone tak, żeby najpierw ustabilizować kontrakty danych i przepływ statusów, a dopiero potem podłączać kosztowne workery AI.
 - Każdy etap powinien kończyć się działającym, testowalnym przyrostem, nawet jeśli część kolejnych modułów jest jeszcze mockowana.
 - Workery AI są rozdzielone etapami, bo mają inne zależności, profile zasobów, ryzyka GPU i testy akceptacyjne.
-- Eksport karaoke i eksport/import projektu są osobnymi etapami, ponieważ paczki karaoke nie zawierają danych projektu, a ZIP projektu ma inną semantykę retencji i importu.
+- Eksport karaoke i eksport/import projektu są osobnymi etapami, ponieważ paczka karaoke nie zawiera danych projektu, a ZIP projektu ma inną semantykę retencji i importu.
 - Etap 11 nie zastępuje testów w poprzednich etapach. Zbiera testy przekrojowe, wydajnościowe, operacyjne i manualne potrzebne przed uznaniem MVP za gotowe.
-

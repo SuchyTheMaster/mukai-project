@@ -34,7 +34,7 @@ Zbudować właściwe narzędzie pracy użytkownika nad wynikiem AI: edycję teks
 - Trwała historia wersji edycji.
 - Widok porównania oryginalnego wyniku AI z poprawioną wersją.
 - Skróty klawiaturowe jako wymaganie MVP.
-- Eksport paczek karaoke.
+- Eksport karaoke.
 
 ## Zależności
 
