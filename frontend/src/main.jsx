@@ -210,7 +210,7 @@ const TRANSCRIPTION_SETTING_FIELDS = [
   ["vadOnset", { label: "Próg startu VAD", step: "0.001" }],
   ["vadOffset", { label: "Próg końca VAD", step: "0.001" }],
   ["vadChunkSizeSec", { label: "Okno VAD/ASR (s)", step: "1" }],
-  ["sentenceGapMs", { label: "Cs między sentencjami", step: "1", nullable: true, placeholder: "auto" }],
+  ["sentenceGapMs", { label: "Ms między sentencjami", step: "1", nullable: true, placeholder: "auto" }],
   ["sentencePaddingMs", { label: "Padding frazy (ms)", step: "10" }],
 ];
 
@@ -425,7 +425,7 @@ function App() {
     try {
       const saved = await apiJson(`/api/jobs/${job.jobId}/arrangement/resegment`, {
         method: "POST",
-        body: JSON.stringify({ sentenceGapMs: centisecondsToMilliseconds(sentenceGapMs) }),
+        body: JSON.stringify({ sentenceGapMs: nullableNumber(sentenceGapMs) }),
         headers: { "Content-Type": "application/json" },
       });
       setArrangement(toEditorArrangement(saved));
@@ -679,7 +679,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
 
   useEffect(() => {
     const requested = arrangement?.lines?.[0]?.requestedSentenceGapMs;
-    setSentenceGapInput(Number.isFinite(requested) ? millisecondsToCentisecondsString(requested) : "");
+    setSentenceGapInput(Number.isFinite(requested) ? String(requested) : "");
   }, [arrangement?.arrangementId, arrangement?.revision]);
 
   useEffect(() => {
@@ -1080,7 +1080,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       <div className="quality-strip">
         <SyllabificationBadge info={arrangement.syllabification} />
         <label className="sentence-gap-control">
-          <span>Cs między sentencjami</span>
+          <span>Ms między sentencjami</span>
           <input type="number" min="0" step="1" placeholder="auto" value={sentenceGapInput} onChange={(event) => setSentenceGapInput(event.target.value)} />
           <button className="button secondary" type="button" disabled={saving} onClick={() => onResegment(sentenceGapInput)}>Przelicz</button>
         </label>
@@ -1750,9 +1750,6 @@ function formatSettingValue(value) {
 }
 
 function formatTranscriptionSettingValue(key, value) {
-  if (key === "sentenceGapMs") {
-    return value == null || value === "" ? "-" : millisecondsToCentisecondsString(Number(value));
-  }
   return formatSettingValue(value);
 }
 
@@ -1770,7 +1767,7 @@ function serializeTranscriptionSettings(settings, syllabificationSettings = defa
   return {
     ...settings,
     positioning,
-    sentenceGapMs: centisecondsToMilliseconds(settings.sentenceGapMs),
+    sentenceGapMs: nullableNumber(settings.sentenceGapMs),
   };
 }
 
@@ -2893,16 +2890,10 @@ function clearMissingNoteFlag(token) {
   clearQualityFlag(token, "missing_note");
 }
 
-function centisecondsToMilliseconds(value) {
+function nullableNumber(value) {
   if (value === "" || value == null) return null;
-  const centiseconds = Number(value);
-  return Number.isFinite(centiseconds) ? Math.round(centiseconds * 10) : null;
-}
-
-function millisecondsToCentisecondsString(value) {
-  if (!Number.isFinite(value)) return "";
-  const centiseconds = value / 10;
-  return Number.isInteger(centiseconds) ? String(centiseconds) : String(Number(centiseconds.toFixed(1)));
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 function waveformPixelsPerSecond(container, zoomSec) {
@@ -2982,8 +2973,8 @@ function sentenceGapLabel(arrangement) {
   const line = arrangement?.lines?.[0];
   const effective = line?.effectiveSentenceGapMs;
   const requested = line?.requestedSentenceGapMs;
-  if (Number.isFinite(requested)) return `${millisecondsToCentisecondsString(requested)} Cs`;
-  if (Number.isFinite(effective)) return `${millisecondsToCentisecondsString(effective)} Cs auto`;
+  if (Number.isFinite(requested)) return `${requested} ms`;
+  if (Number.isFinite(effective)) return `${effective} ms auto`;
   return "auto";
 }
 

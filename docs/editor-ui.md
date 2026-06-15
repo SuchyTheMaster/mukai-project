@@ -43,7 +43,7 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Każda z tych trzech pozycji ma ikonę informacyjną z tooltipem, który krótko wyjaśnia cel kroku i wpływ wyboru.
 - Wybór modelu transkrypcji pokazuje w selekcie tylko nazwy `large-v3` i `large-v3-turbo`; tooltip wyjaśnia, że `large-v3` jest dokładniejszy, a `large-v3-turbo` szybszy.
 - Zaawansowane ustawienia transkrypcji zawierają select `Pozycjonowanie` z opcjami `słowa i sylaby` oraz `tylko słowa`; `słowa i sylaby` jest domyślne, ale przy sylabizacji `Bez podziału` UI wymusza i blokuje `tylko słowa`.
-- Pole `Cs między sentencjami` edytuje próg przerwy w centisekundach dla wygody UI. Kontrakt backendu nadal przechowuje `sentenceGapMs` w milisekundach, więc frontend przelicza wartość z centisekund na milisekundy przed wysłaniem payloadu.
+- Pole `Ms między sentencjami` edytuje próg przerwy `sentenceGapMs` bezpośrednio w milisekundach; frontend wysyła wpisaną wartość bez przeliczania jednostek, a puste pole oznacza `null` i tryb auto.
 - Zaawansowane ustawienia pitch: próg ciszy, próg periodicity, krok ramek, minimalna długość nuty i scalanie krótkich przerw.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
 - Podgląd covera jest widoczny od razu po wykryciu grafiki z tagów albo po ręcznym wgraniu pliku.
