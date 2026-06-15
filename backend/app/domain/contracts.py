@@ -61,6 +61,7 @@ class ModelProfiles(BaseModel):
 
 SyllabificationMethod = Literal["kokosznicka", "pyphen", "heuristic", "none"]
 SyllabificationLanguageSource = Literal["forced", "detected", "alignment", "unknown"]
+TranscriptionPositioning = Literal["words_and_syllables", "words_only"]
 
 
 class TranscriptionSettings(BaseModel):
@@ -70,6 +71,7 @@ class TranscriptionSettings(BaseModel):
     vadChunkSizeSec: int = Field(default=30, ge=1)
     sentenceGapMs: int | None = Field(default=None, ge=0)
     sentencePaddingMs: int = Field(default=80, ge=0)
+    positioning: TranscriptionPositioning = "words_and_syllables"
 
     @model_validator(mode="before")
     @classmethod
@@ -89,6 +91,15 @@ class PitchSettings(BaseModel):
 
 class SyllabificationSettings(BaseModel):
     method: SyllabificationMethod = "pyphen"
+
+
+def final_transcription_settings(
+    transcription_settings: TranscriptionSettings,
+    syllabification_settings: SyllabificationSettings,
+) -> TranscriptionSettings:
+    if syllabification_settings.method == "none":
+        return transcription_settings.model_copy(update={"positioning": "words_only"})
+    return transcription_settings
 
 
 class StageSnapshot(BaseModel):
@@ -171,6 +182,21 @@ class Tempo(BaseModel):
     alternatives: list[float] = Field(default_factory=list)
 
 
+class TranscriptChar(BaseModel):
+    char: str
+    startSec: float
+    endSec: float
+    confidence: float | None = None
+
+    @field_validator("endSec")
+    @classmethod
+    def char_end_after_start(cls, value: float, info) -> float:
+        start = info.data.get("startSec")
+        if start is not None and value <= start:
+            raise ValueError("endSec must be greater than startSec")
+        return value
+
+
 class TranscriptWord(BaseModel):
     wordId: str
     startSec: float
@@ -178,6 +204,7 @@ class TranscriptWord(BaseModel):
     text: str
     confidence: float | None = None
     requiresReview: bool = False
+    chars: list[TranscriptChar] = Field(default_factory=list)
 
     @field_validator("endSec")
     @classmethod

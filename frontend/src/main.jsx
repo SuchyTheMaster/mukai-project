@@ -71,6 +71,7 @@ const defaultTranscription = {
   vadChunkSizeSec: 30,
   sentenceGapMs: "",
   sentencePaddingMs: 80,
+  positioning: "words_and_syllables",
 };
 
 const defaultSyllabification = {
@@ -91,6 +92,13 @@ const SYLLABIFICATION_BADGE_LABELS = {
   heuristic: "Heurystyka",
   none: "Bez podziału",
 };
+
+const TRANSCRIPTION_POSITIONING_OPTIONS = [
+  ["words_and_syllables", "słowa i sylaby"],
+  ["words_only", "tylko słowa"],
+];
+
+const TRANSCRIPTION_POSITIONING_LABELS = Object.fromEntries(TRANSCRIPTION_POSITIONING_OPTIONS);
 
 const WHISPER_LANGUAGE_OPTIONS = [
   ["", "Auto"],
@@ -258,6 +266,7 @@ const MODEL_TOOLTIPS = {
   separation: "Separacja rozdziela utwór na wokal i instrumental. htdemucs_ft jest dokładniejszy, a htdemucs szybszy.",
   vad: "Wykrywanie mowy wskazuje fragmenty z wokalem przed transkrypcją. Ma wpływ na pominięcie ciszy, oddechów i nieśpiewanych fragmentów.",
   transcription: "Transkrypcja zamienia wokal na tekst. large-v3 jest dokładniejszy, a large-v3-turbo szybszy.",
+  positioning: "Pozycjonowanie słów i sylab pobiera z WhisperX dodatkowe czasy liter, żeby lepiej ustawić początkowe czasy sylab.",
   syllabification: 'Dla polskich piosenek zalecany sylabizator to "Kokosznicka", ale czasami może lepiej sprawdzić się "Pyphen". Dla zagranicznych tylko "Pyphen". Jeżeli jakiś język nie jest obsługiwany przez wybraną metodę, to zostanie użyta metoda heurystyczna. Jeżeli całe słowa piosenki są śpiewane w jednym tonie, to lepiej sprawdzi się tryb bez podziału na sylaby.',
 };
 
@@ -318,6 +327,11 @@ function App() {
     setSyllabificationSettings(defaultSyllabificationForLanguage(metadata.language));
   }, [metadata.language, syllabificationTouched]);
 
+  useEffect(() => {
+    if (syllabificationSettings.method !== "none" || transcriptionSettings.positioning === "words_only") return;
+    setTranscriptionSettings((current) => ({ ...current, positioning: "words_only" }));
+  }, [syllabificationSettings.method, transcriptionSettings.positioning]);
+
   async function inspect(file) {
     setError(null);
     setBusy(true);
@@ -353,7 +367,7 @@ function App() {
         uploadDraftId: inspection.uploadDraftId,
         metadata: { ...metadata, language: language || null, languageMode: language ? "forced" : "auto" },
         profiles,
-        transcriptionSettings: serializeTranscriptionSettings(transcriptionSettings),
+        transcriptionSettings: serializeTranscriptionSettings(transcriptionSettings, syllabificationSettings),
         pitchSettings,
         syllabificationSettings,
         useEmbeddedCover: useEmbeddedCover && !coverFile,
@@ -550,6 +564,9 @@ function App() {
 }
 
 function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcriptionSettings, setTranscriptionSettings, pitchSettings, setPitchSettings, syllabificationSettings, setSyllabificationSettings, setSyllabificationTouched, inspection, job, createJob, busy }) {
+  const positioningDisabled = syllabificationSettings.method === "none";
+  const positioningValue = positioningDisabled ? "words_only" : transcriptionSettings.positioning ?? defaultTranscription.positioning;
+
   return (
     <section className="workspace-panel">
       <div className="workspace-header">
@@ -574,12 +591,13 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
             <Select label="Separacja" tooltip={MODEL_TOOLTIPS.separation} value={profiles.separationModel} onChange={(value) => setProfiles({ ...profiles, separationModel: value })} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
             <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={transcriptionSettings.vadMethod} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, vadMethod: value })} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
             <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={profiles.transcriptionModel} onChange={(value) => setProfiles({ ...profiles, transcriptionModel: value })} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
-            <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabificationSettings.method} onChange={(value) => { setSyllabificationTouched(true); setSyllabificationSettings({ method: value }); }} options={SYLLABIFICATION_OPTIONS} />
+            <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabificationSettings.method} onChange={(value) => { setSyllabificationTouched(true); setSyllabificationSettings({ method: value }); if (value === "none") setTranscriptionSettings({ ...transcriptionSettings, positioning: "words_only" }); }} options={SYLLABIFICATION_OPTIONS} />
           </div>
 
           <details className="advanced">
             <summary>Zaawansowane ustawienia transkrypcji</summary>
             <div className="form-grid compact">
+              <Select label="Pozycjonowanie" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, positioning: value })} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
               {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
                 <TextField key={key} label={field.label} helper={key} type="number" step={field.step} placeholder={field.placeholder} value={transcriptionSettings[key] ?? ""} onChange={(next) => setTranscriptionSettings({ ...transcriptionSettings, [key]: field.nullable && next === "" ? "" : Number(next) })} />
               ))}
@@ -1640,8 +1658,8 @@ function LanguageSelect({ label, value, onChange, options }) {
   );
 }
 
-function Select({ label, value, onChange, options, tooltip }) {
-  return <label className="field"><FieldLabel label={label} tooltip={tooltip} /><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
+function Select({ label, value, onChange, options, tooltip, disabled = false }) {
+  return <label className="field"><FieldLabel label={label} tooltip={tooltip} /><select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
 }
 
 function FieldLabel({ label, tooltip }) {
@@ -1682,6 +1700,7 @@ function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSetti
       <dt>Separacja</dt><dd>{profiles?.separationModel ?? "-"}</dd>
       <dt>Transkrypcja</dt><dd>{profiles?.transcriptionModel ?? "-"}</dd>
       <dt>Wykrywanie mowy</dt><dd>{transcription.vadMethod}</dd>
+      <dt>Pozycjonowanie</dt><dd>{TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning}</dd>
       <dt className="summary-gap-after">Sylabizacja</dt><dd className="summary-gap-after">{SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method}</dd>
       {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
         <React.Fragment key={`transcription-${key}`}>
@@ -1746,9 +1765,11 @@ function Progress({ stage }) {
   return <div className={`progress ${stage.progressMode} ${stage.status}`}><span style={{ width: `${width}%` }} /></div>;
 }
 
-function serializeTranscriptionSettings(settings) {
+function serializeTranscriptionSettings(settings, syllabificationSettings = defaultSyllabification) {
+  const positioning = syllabificationSettings.method === "none" ? "words_only" : settings.positioning ?? defaultTranscription.positioning;
   return {
     ...settings,
+    positioning,
     sentenceGapMs: centisecondsToMilliseconds(settings.sentenceGapMs),
   };
 }

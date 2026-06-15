@@ -141,7 +141,7 @@ Wejście:
 Wyjście:
 
 - `transcript.raw.json`: segmenty modelu ASR.
-- `transcript.aligned.json`: finalne frazy karaoke, słowa, czasy start/end, confidence.
+- `transcript.aligned.json`: finalne frazy karaoke, słowa, czasy start/end, opcjonalne czasy znaków, confidence.
 
 Wymagania:
 
@@ -152,6 +152,7 @@ Wymagania:
 - Worker nie może przekazywać do ASR tylko pierwszego okna 30 sekund. Do WhisperX trafia cały `worker_inputs/whisperx.wav`, a podział na okna 30 sekund jest realizowany przez VAD/Cut & Merge WhisperX z globalnymi czasami segmentów.
 - Domyślnie używać Silero VAD przez WhisperX `vad_method="silero"`, z `pyannote` jako trybem alternatywnym.
 - Jeśli wersja WhisperX w obrazie nie obsługuje jawnego `vad_method`, worker nie przerywa transkrypcji i zapisuje w diagnostyce, czy metoda VAD została wymuszona, wstrzyknięta przez `vad_model`, czy użyto domyślnego VAD tej wersji.
+- `TranscriptionSettings.positioning` steruje `return_char_alignments`: `words_and_syllables` zapisuje czasy znaków przy słowach, a `words_only` zostawia tylko czasy słów.
 - `transcript.raw.json` zachowuje surowe segmenty ASR bez przepisywania ich na frazy karaoke.
 - Po forced alignment worker buduje finalne `TranscriptSegment` z aligned words: dłuższe przerwy między słowami rozdzielają sentencje/frazy, a krótkie pauzy pozostają w obrębie jednej frazy.
 - Artefakty transkrypcji zapisują czas trwania wejścia, rozmiar okna, oczekiwaną liczbę okien i maksymalny czas końca segmentów, żeby dało się diagnostycznie wykryć wynik ucięty do pierwszych 30 sekund.
@@ -196,6 +197,8 @@ Reguły startowe:
 - Fraza tekstu wyznacza linię karaoke.
 - W ramach frazy dzielić słowa na sylaby przed dopasowaniem nut zgodnie z `Job.syllabificationSettings`.
 - Tryb `none` nie dzieli słów; całe wyrazy z transkrypcji są pojedynczymi sylabami edycyjnymi.
+- Jeśli `positioning=words_and_syllables` i słowo ma kompletne czasy znaków, granice sylab wyznaczać z pierwszej i ostatniej litery sylaby, przycinając wynik do czasu słowa.
+- Jeśli czasy znaków są niekompletne albo nie pasują do podziału sylab, użyć dotychczasowego równego podziału czasu słowa i oznaczyć sylaby do recenzji.
 - Tryb `heuristic` używa dotychczasowej heurystyki.
 - Tryb `kokosznicka` działa tylko dla języka `pl`.
 - Tryb `pyphen` mapuje język na dostępny słownik Pyphen.

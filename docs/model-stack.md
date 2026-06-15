@@ -123,12 +123,13 @@ Aktualna decyzja implementacyjna dla etapu 06:
 
 - `worker-transcribe` używa osobnego obrazu `backend/Transcribe.Dockerfile` opartego o `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime`, tak jak worker separacji, żeby nie instalować PyTorch/CUDA z domyślnego PyPI.
 - `backend/requirements-transcribe.txt` pinuje `whisperx==3.8.6`, czyli aktualną stabilną wersję PyPI z 2026-05-25; wersja `3.8.2` pozostaje pominięta, bo została wycofana przez problem z timestampami słów i kompatybilnością `faster-whisper`.
-- Worker zapisuje `transcript.raw.json` z wynikiem ASR oraz `transcript.aligned.json` z finalnymi frazami `TranscriptSegment`, słowami, confidence i `requiresReview`.
+- Worker zapisuje `transcript.raw.json` z wynikiem ASR oraz `transcript.aligned.json` z finalnymi frazami `TranscriptSegment`, słowami, opcjonalnymi czasami znaków, confidence i `requiresReview`.
 - Język jest przekazywany do WhisperX tylko dla `languageMode=forced` i nie jest przekazywany, gdy użytkownik zostawił język pusty.
 - Worker ładuje cały plik `worker_inputs/whisperx.wav` przez `whisperx.load_audio` i przekazuje cały waveform do `model.transcribe`; nie wykonuje własnego obcięcia do pierwszych 30 sekund.
 - Worker jawnie ustawia WhisperX `vad_method="silero"` jako domyślny VAD. `pyannote` pozostaje obsługiwanym trybem alternatywnym przez `TranscriptionSettings.vadMethod`.
 - Jeśli uruchomiona wersja WhisperX nie udostępnia parametru `vad_method`, worker nie przerywa transkrypcji. Próbuje użyć `vad_model`, jeśli API go udostępnia, a w przeciwnym razie działa z domyślnym VAD tej wersji i zapisuje tę informację w diagnostyce.
 - Worker przekazuje `vad_options` z `chunk_size=30`, `vad_onset=0.5` i `vad_offset=0.363`, żeby dopasować wewnętrzny podział VAD/Cut & Merge do okna kontekstowego Whispera i zachować globalne czasy długiego wokalu.
+- Worker przekazuje do `whisperx.align` `return_char_alignments=True` tylko dla `TranscriptionSettings.positioning="words_and_syllables"`; przy `words_only` zapisuje wyłącznie czasy słów.
 - Po forced alignment worker buduje finalne sentencje karaoke z aligned words. Sentencje są rozdzielane przerwą większą niż efektywny `sentenceGapMs`; `null` oznacza automatyczne oszacowanie z BPM i odstępów między słowami.
 - `transcript.raw.json` zachowuje surowe segmenty ASR, a `transcript.aligned.json` zapisuje finalne `TranscriptSegment` jako frazy karaoke oraz wersje WhisperX/PyTorch, wariant CUDA, źródło środowiska, model ASR, język alignacji, `batchSize`, `computeType`, hash wejścia, próg niskiej pewności, czas trwania wejścia, oczekiwaną liczbę okien 30 s, maksymalne czasy końca segmentów ASR/alignacji, metodę VAD, opcje VAD i parametry budowania fraz.
 
@@ -138,6 +139,7 @@ Aktualna decyzja implementacyjna dla etapu 07:
 - `backend/requirements-pitch.txt` pinuje `torchcrepe==0.0.24`, `kokosznicka==0.2.5` i `pyphen==0.17.2`; PyTorch pochodzi z obrazu bazowego, a nie z domyślnego resolvera PyPI.
 - Worker czyta `worker_inputs/torchcrepe.wav`, zapisuje surowe ramki `pitch.frames.json`, filtruje je progami pitch zaakceptowanymi w `Job.pitchSettings` i dopiero po filtracji zapisuje nuty `pitch.notes.json`.
 - Podział słów na sylaby używa `Job.syllabificationSettings`: `kokosznicka` tylko dla polskiego `pl`, `pyphen` dla języków z dostępnym słownikiem hyphenation, `heuristic` jako dotychczasowa heurystyka oraz `none` jako brak podziału na sylaby.
+- Przy pozycjonowaniu `words_and_syllables` worker szkicu używa czasów znaków do początkowych czasów sylab; brak kompletnych znaków powoduje fallback do równego podziału czasu słowa z flagą recenzji sylab.
 - Jeśli `kokosznicka` albo `pyphen` nie obsłużą języka lub zwrócą niepoprawny wynik, worker używa heurystyki i zapisuje powód w `Arrangement.syllabification.fallbackReason`.
 - Kokosznicka `0.2.5` jest pakietem GPLv3; akceptacja tej zależności jest decyzją projektową dla obsługi polskiej sylabizacji.
 - Pyphen `0.17.2` jest pakietem tri-license `GPLv2+ / LGPLv2+ / MPL 1.1` i używa słowników hyphenation; jest traktowany jako sylabizator przybliżony, bo słowniki dzielenia wyrazów nie zawsze odpowiadają podziałowi śpiewanych sylab.

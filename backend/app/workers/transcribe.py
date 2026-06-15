@@ -11,7 +11,7 @@ from pathlib import Path
 from app.core.config import get_settings
 from app.core.errors import sanitize_log
 from app.db import repository
-from app.domain.contracts import AudioAsset, JobStatus, ProgressMode, StageStatus, TranscriptSegment, TranscriptWord, TranscriptionSettings
+from app.domain.contracts import AudioAsset, JobStatus, ProgressMode, StageStatus, TranscriptChar, TranscriptSegment, TranscriptWord, TranscriptionSettings
 from app.services.audio_probe import ffprobe
 from app.services.ids import new_id
 from app.services.queue import enqueue_pitch, redis_client
@@ -104,7 +104,8 @@ def run_transcription(job_id: str) -> None:
 
     set_stage(job_id, "transcribing", "whisperx", StageStatus.running, "Alignacja slow", "worker-transcribe", ProgressMode.estimated, 70)
     model_a, align_metadata = whisperx.load_align_model(language_code=alignment_language, device=diagnostics["device"])
-    aligned = whisperx.align(result.get("segments", []), model_a, align_metadata, audio, diagnostics["device"], return_char_alignments=False)
+    return_char_alignments = return_char_alignments_enabled(transcription_settings)
+    aligned = whisperx.align(result.get("segments", []), model_a, align_metadata, audio, diagnostics["device"], return_char_alignments=return_char_alignments)
     del model_a
     cleanup_memory()
 
@@ -145,6 +146,8 @@ def run_transcription(job_id: str) -> None:
         "vadOptionsApplied": asr_vad_diagnostics["optionsApplied"],
         "vadModelInjected": asr_vad_diagnostics["modelInjected"],
         "vadCompatibilityNote": asr_vad_diagnostics["compatibilityNote"],
+        "positioning": transcription_settings.positioning,
+        "returnCharAlignments": return_char_alignments,
         "requestedSentenceGapMs": transcription_settings.sentenceGapMs,
         "detectedSentenceGapMs": detected_sentence_gap_ms,
         "effectiveSentenceGapMs": effective_sentence_gap_ms,
@@ -306,6 +309,10 @@ def transcribe_audio(model, audio, batch_size: int, language: str | None, chunk_
     return model.transcribe(audio, **kwargs), language_passed_to
 
 
+def return_char_alignments_enabled(transcription_settings: TranscriptionSettings) -> bool:
+    return transcription_settings.positioning == "words_and_syllables"
+
+
 def normalize_segments(raw_segments: list[dict], low_confidence_threshold: float) -> list[TranscriptSegment]:
     segments: list[TranscriptSegment] = []
     for segment_index, raw_segment in enumerate(raw_segments, start=1):
@@ -313,7 +320,7 @@ def normalize_segments(raw_segments: list[dict], low_confidence_threshold: float
         end = float(raw_segment.get("end") or start)
         if end <= start:
             end = start + 0.001
-        words = normalize_words(raw_segment.get("words") or [], start, end, segment_index, low_confidence_threshold)
+        words = normalize_words(raw_segment.get("words") or [], start, end, segment_index, low_confidence_threshold, raw_segment.get("chars") or [])
         confidence = segment_confidence(raw_segment, words)
         requires_review = confidence is None or confidence < low_confidence_threshold or any(word.requiresReview for word in words)
         segments.append(
@@ -456,9 +463,10 @@ def join_words(words: list[TranscriptWord]) -> str:
     return " ".join(word.text.strip() for word in words if word.text.strip()).strip()
 
 
-def normalize_words(raw_words: list[dict], segment_start: float, segment_end: float, segment_index: int, low_confidence_threshold: float) -> list[TranscriptWord]:
+def normalize_words(raw_words: list[dict], segment_start: float, segment_end: float, segment_index: int, low_confidence_threshold: float, segment_chars: list[dict] | None = None) -> list[TranscriptWord]:
     words: list[TranscriptWord] = []
     fallback_step = max((segment_end - segment_start) / max(len(raw_words), 1), 0.001)
+    chars_by_word = segment_chars_by_local_word(segment_chars or [], raw_words)
     for word_index, raw_word in enumerate(raw_words, start=1):
         has_timing = raw_word.get("start") is not None and raw_word.get("end") is not None
         start = float(raw_word.get("start")) if has_timing else segment_start + fallback_step * (word_index - 1)
@@ -468,6 +476,7 @@ def normalize_words(raw_words: list[dict], segment_start: float, segment_end: fl
         confidence = raw_word.get("score", raw_word.get("confidence"))
         confidence = float(confidence) if confidence is not None else None
         requires_review = not has_timing or confidence is None or confidence < low_confidence_threshold
+        raw_chars = raw_word.get("chars") or chars_by_word.get(word_index - 1, [])
         words.append(
             TranscriptWord(
                 wordId=f"word_{segment_index:04d}_{word_index:03d}",
@@ -476,9 +485,91 @@ def normalize_words(raw_words: list[dict], segment_start: float, segment_end: fl
                 text=(raw_word.get("word") or raw_word.get("text") or "").strip(),
                 confidence=confidence,
                 requiresReview=requires_review,
+                chars=normalize_chars(raw_chars, start, end),
             )
         )
     return words
+
+
+def segment_chars_by_local_word(segment_chars: list[dict], raw_words: list[dict]) -> dict[int, list[dict]]:
+    indexed: dict[int, list[dict]] = {}
+    for raw_char in segment_chars:
+        word_index = raw_char_word_index(raw_char)
+        if word_index is not None:
+            indexed.setdefault(word_index, []).append(raw_char)
+    if indexed:
+        unique_indexes = sorted(indexed)
+        if len(unique_indexes) == len(raw_words):
+            return {local_index: indexed[raw_index] for local_index, raw_index in enumerate(unique_indexes)}
+        return {index: chars for index, chars in indexed.items() if 0 <= index < len(raw_words)}
+    return segment_chars_by_text(segment_chars, raw_words)
+
+
+def raw_char_word_index(raw_char: dict) -> int | None:
+    for key in ("word-idx", "word_idx", "wordIndex", "word_index"):
+        value = raw_char.get(key)
+        if value is None:
+            continue
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def segment_chars_by_text(segment_chars: list[dict], raw_words: list[dict]) -> dict[int, list[dict]]:
+    grouped: dict[int, list[dict]] = {}
+    char_index = 0
+    for word_index, raw_word in enumerate(raw_words):
+        text = (raw_word.get("word") or raw_word.get("text") or "").strip()
+        if not text:
+            continue
+        matched: list[dict] = []
+        success = True
+        for expected in text:
+            while char_index < len(segment_chars) and raw_char_text(segment_chars[char_index]).isspace():
+                char_index += 1
+            if char_index >= len(segment_chars):
+                success = False
+                break
+            raw_char = segment_chars[char_index]
+            if raw_char_text(raw_char).lower() != expected.lower():
+                success = False
+                break
+            matched.append(raw_char)
+            char_index += 1
+        if success:
+            grouped[word_index] = matched
+    return grouped
+
+
+def normalize_chars(raw_chars: list[dict], word_start: float, word_end: float) -> list[TranscriptChar]:
+    chars: list[TranscriptChar] = []
+    for raw_char in raw_chars:
+        char = raw_char_text(raw_char)
+        if not char or char.isspace():
+            continue
+        has_timing = raw_char.get("start") is not None and raw_char.get("end") is not None
+        if not has_timing:
+            continue
+        start = max(word_start, float(raw_char["start"]))
+        end = min(word_end, float(raw_char["end"]))
+        if end <= start:
+            continue
+        confidence = raw_char.get("score", raw_char.get("confidence"))
+        chars.append(
+            TranscriptChar(
+                char=char,
+                startSec=round(start, 6),
+                endSec=round(end, 6),
+                confidence=float(confidence) if confidence is not None else None,
+            )
+        )
+    return chars
+
+
+def raw_char_text(raw_char: dict) -> str:
+    return str(raw_char.get("char") or raw_char.get("text") or "")
 
 
 def segment_confidence(raw_segment: dict, words: list[TranscriptWord]) -> float | None:

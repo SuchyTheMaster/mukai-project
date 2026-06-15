@@ -27,6 +27,7 @@ from app.domain.contracts import (
     StageStatus,
     SyllabificationInfo,
     SyllabificationSettings,
+    TranscriptWord,
     TranscriptSegment,
 )
 from app.services.ids import new_id
@@ -293,6 +294,7 @@ def run_draft_alignment(job_id: str) -> None:
         syllabification_settings=job.syllabificationSettings,
         language=syllabification_language,
         language_source=syllabification_language_source,
+        prefer_char_timings=job.transcriptionSettings.positioning == "words_and_syllables",
         requested_sentence_gap_ms=transcript_diagnostics.get("requestedSentenceGapMs"),
         detected_sentence_gap_ms=transcript_diagnostics.get("detectedSentenceGapMs"),
         effective_sentence_gap_ms=transcript_diagnostics.get("effectiveSentenceGapMs"),
@@ -470,6 +472,7 @@ def build_arrangement(
     syllabification_settings: SyllabificationSettings | None = None,
     language: str | None = None,
     language_source: str = "unknown",
+    prefer_char_timings: bool = False,
     requested_sentence_gap_ms: int | None = None,
     detected_sentence_gap_ms: int | None = None,
     effective_sentence_gap_ms: int | None = None,
@@ -485,7 +488,7 @@ def build_arrangement(
             if not word.text:
                 continue
             syllables = syllabification_plan.split(word.text)
-            syllable_spans = syllable_time_spans(word.startSec, word.endSec, len(syllables))
+            syllable_spans, timing_requires_review = syllable_time_spans_for_word(word, syllables, prefer_char_timings)
             word_syllables: list[ArrangementSyllable] = []
             for syllable_index, syllable in enumerate(syllables):
                 syllable_start, syllable_end = syllable_spans[syllable_index]
@@ -504,6 +507,8 @@ def build_arrangement(
                 midi, flags = syllable_midi_and_flags(note_events, syllable_start, syllable_end)
                 if slot.word_requires_review:
                     flags.append("uncertain_text")
+                if timing_requires_review:
+                    flags.append("needs_syllable_review")
                 word_syllables.append(
                     ArrangementSyllable(
                         syllableId=f"syl_{len(slots):04d}",
@@ -739,6 +744,36 @@ def syllable_time_spans(start_sec: float, end_sec: float, syllable_count: int) -
         start = start_sec + step * index
         end = end_sec if index == count - 1 else start_sec + step * (index + 1)
         spans.append((round(start, 6), round(max(end, start + 0.001), 6)))
+    return spans
+
+
+def syllable_time_spans_for_word(word: TranscriptWord, syllables: list[str], prefer_char_timings: bool) -> tuple[list[tuple[float, float]], bool]:
+    if prefer_char_timings and len(syllables) > 1:
+        char_spans = syllable_char_time_spans(word, syllables)
+        if char_spans:
+            return char_spans, False
+        return syllable_time_spans(word.startSec, word.endSec, len(syllables)), True
+    return syllable_time_spans(word.startSec, word.endSec, len(syllables)), False
+
+
+def syllable_char_time_spans(word: TranscriptWord, syllables: list[str]) -> list[tuple[float, float]] | None:
+    word_text = word.text.strip()
+    chars = word.chars or []
+    if not word_text or not syllables or "".join(syllables) != word_text or len(chars) != len(word_text):
+        return None
+
+    spans: list[tuple[float, float]] = []
+    char_index = 0
+    for syllable in syllables:
+        syllable_chars = chars[char_index : char_index + len(syllable)]
+        if len(syllable_chars) != len(syllable) or "".join(item.char for item in syllable_chars) != syllable:
+            return None
+        start = max(word.startSec, syllable_chars[0].startSec)
+        end = min(word.endSec, syllable_chars[-1].endSec)
+        if end <= start:
+            return None
+        spans.append((round(start, 6), round(end, 6)))
+        char_index += len(syllable)
     return spans
 
 

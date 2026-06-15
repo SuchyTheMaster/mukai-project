@@ -93,7 +93,8 @@ Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w fr
   "vadOffset": 0.363,
   "vadChunkSizeSec": 30,
   "sentenceGapMs": null,
-  "sentencePaddingMs": 80
+  "sentencePaddingMs": 80,
+  "positioning": "words_and_syllables"
 }
 ```
 
@@ -102,11 +103,17 @@ Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w fr
 - `silero`: domyślny VAD dla WhisperX.
 - `pyannote`: obsługiwany tryb alternatywny.
 
+`positioning`:
+
+- `words_and_syllables`: domyślnie włącza `return_char_alignments=True` w WhisperX i pozwala użyć czasów liter do początkowego ustawienia sylab.
+- `words_only`: używa tylko czasów słów i przekazuje do WhisperX `return_char_alignments=False`.
+
 Zasady:
 
 - `vadChunkSizeSec` pozostaje domyślnie `30`, żeby pasował do okna kontekstowego Whispera.
 - `sentenceGapMs` jest opcjonalnym progiem przerwy między słowami rozdzielającym finalne sentencje; `null` oznacza tryb auto.
 - `sentencePaddingMs` rozszerza start i koniec frazy, ale nie może powodować nachodzenia na sąsiednie frazy.
+- Jeśli `SyllabificationSettings.method` ma wartość `none`, backend wymusza finalne `positioning="words_only"`.
 - Artefakty transkrypcji zapisują wybraną metodę VAD, parametry VAD oraz parametry grupowania fraz.
 
 ## PitchSettings
@@ -151,6 +158,7 @@ Ustawienia sylabizacji sterują tym, jak słowa z `transcript.aligned.json` są 
 Zasady:
 
 - Jeśli użytkownik poda język `pl`, UI domyślnie wybiera `kokosznicka`; dla pozostałych języków domyślnie wybiera `pyphen`.
+- Jeśli użytkownik wybierze `none`, UI blokuje pozycjonowanie transkrypcji na `tylko słowa`, a backend zapisuje tę samą finalną wartość.
 - Język dla workera aligningu jest rozstrzygany kolejno z wymuszonego języka `Job.metadata`, `detectedLanguage`, a potem `alignmentLanguage` z `transcript.aligned.json`.
 - Jeśli wybrana metoda nie obsługuje języka, pakiet nie jest dostępny albo zwróci niepoprawny podział, worker używa `heuristic` i zapisuje powód w `Arrangement.syllabification.fallbackReason`.
 
@@ -418,13 +426,21 @@ Zasady:
       "endSec": 12.91,
       "text": "pierwsza",
       "confidence": 0.81,
-      "requiresReview": false
+      "requiresReview": false,
+      "chars": [
+        {
+          "char": "p",
+          "startSec": 12.34,
+          "endSec": 12.39,
+          "confidence": 0.82
+        }
+      ]
     }
   ]
 }
 ```
 
-`requiresReview` jest ustawiane bez usuwania tekstu, jeśli segment albo słowo ma niską pewność, brakujące czasy alignacji albo inną diagnostykę wymagającą ręcznej korekty w edytorze.
+`requiresReview` jest ustawiane bez usuwania tekstu, jeśli segment albo słowo ma niską pewność, brakujące czasy alignacji albo inną diagnostykę wymagającą ręcznej korekty w edytorze. `chars` jest opcjonalną listą znaków z czasami WhisperX; jest zapisywana tylko dla znaków z kompletnym `startSec` i `endSec` i może być pusta w trybie `words_only`.
 
 ## PitchFrame
 

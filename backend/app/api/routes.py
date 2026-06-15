@@ -21,6 +21,7 @@ from app.domain.contracts import (
     StageStatus,
     TranscriptSegment,
     UploadInspection,
+    final_transcription_settings,
     initial_processing,
     stage_key,
     utc_now,
@@ -141,6 +142,7 @@ async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | N
     source_dst = job_dir / "source" / safe_filename(draft["originalFilename"])
     source_dst.parent.mkdir(parents=True, exist_ok=True)
     source_src.replace(source_dst)
+    transcription_settings = final_transcription_settings(request.transcriptionSettings, request.syllabificationSettings)
 
     processing = initial_processing()
     upload_key = stage_key("uploaded", "source")
@@ -154,7 +156,7 @@ async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | N
         job_id=job_id,
         metadata=request.metadata,
         profiles=request.profiles,
-        transcription_settings=request.transcriptionSettings,
+        transcription_settings=transcription_settings,
         pitch_settings=request.pitchSettings,
         syllabification_settings=request.syllabificationSettings,
         processing=processing,
@@ -296,6 +298,7 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
         syllabification_settings=job.syllabificationSettings,
         language=language,
         language_source=language_source,
+        prefer_char_timings=job.transcriptionSettings.positioning == "words_and_syllables",
         requested_sentence_gap_ms=request.sentenceGapMs,
         detected_sentence_gap_ms=detected_gap_ms,
         effective_sentence_gap_ms=effective_gap_ms,

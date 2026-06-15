@@ -21,7 +21,7 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 - Globalny shell nie ma stałego headera pełnej szerokości; branding `MUKAI` zajmuje tylko szerokość lewej kolumny, dzięki czemu środkowa i prawa kolumna zaczynają się od góry strony z zachowaniem paddingu.
 - Po lewej stronie znajduje się pływająca kolumna robocza. Jej górny panel zawiera branding, upload audio, krótkie podsumowanie pliku, podgląd covera oraz akcje covera przed utworzeniem zadania.
 - Po utworzeniu zadania lewa kolumna pokazuje sekcję `WGRANE AUDIO`, dane pliku i nieklikalny podgląd covera; obszar uploadu audio oraz akcje covera są wtedy ukryte.
-- Lista `Ustawienia zadania` w lewej kolumnie używa większego odstępu `16px` pod wierszami `Język` i `Sylabizacja`, żeby rozdzielić metadane, główne modele i ustawienia zaawansowane.
+- Lista `Ustawienia zadania` w lewej kolumnie używa większego odstępu `16px` pod wierszami `Język` i `Sylabizacja`, żeby rozdzielić metadane, główne modele i ustawienia zaawansowane; w grupie transkrypcji pokazuje też finalne `Pozycjonowanie`.
 - Główny obszar pracy pomiędzy kolumnami pokazuje właściwą zawartość aktywnego widoku: upload, status przetwarzania, edytor albo eksport.
 - Po prawej stronie znajduje się pływająca kolumna etapów pipeline'u. Nad listą pipeline'u pokazuje aktualny etap, a niżej od razu wszystkie spodziewane etapy.
 - W widoku `Dopasowanie` prawa kolumna jest domyślnie ukryta, żeby zwiększyć przestrzeń roboczą edytora, ale użytkownik może ją pokazać i ponownie ukryć.

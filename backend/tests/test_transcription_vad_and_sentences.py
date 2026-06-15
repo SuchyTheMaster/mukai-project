@@ -1,8 +1,8 @@
 from pathlib import Path
 import unittest
 
-from app.domain.contracts import TranscriptSegment, TranscriptWord, TranscriptionSettings
-from app.workers.transcribe import build_sentence_segments, detected_sentence_gap, load_asr_model
+from app.domain.contracts import SyllabificationSettings, TranscriptSegment, TranscriptWord, TranscriptionSettings, final_transcription_settings
+from app.workers.transcribe import build_sentence_segments, detected_sentence_gap, load_asr_model, normalize_segments, return_char_alignments_enabled
 
 
 class FakeWhisperX:
@@ -50,6 +50,40 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
         self.assertEqual(settings.vadChunkSizeSec, 30)
         self.assertIsNone(settings.sentenceGapMs)
         self.assertEqual(settings.sentencePaddingMs, 80)
+        self.assertEqual(settings.positioning, "words_and_syllables")
+
+    def test_none_syllabification_forces_words_only_positioning(self):
+        settings = final_transcription_settings(
+            TranscriptionSettings(positioning="words_and_syllables"),
+            SyllabificationSettings(method="none"),
+        )
+
+        self.assertEqual(settings.positioning, "words_only")
+
+    def test_return_char_alignments_follows_positioning(self):
+        self.assertTrue(return_char_alignments_enabled(TranscriptionSettings(positioning="words_and_syllables")))
+        self.assertFalse(return_char_alignments_enabled(TranscriptionSettings(positioning="words_only")))
+
+    def test_normalize_segments_preserves_character_alignments_on_words(self):
+        segments = normalize_segments(
+            [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "aa",
+                    "words": [{"word": "aa", "start": 0.0, "end": 1.0, "score": 0.9}],
+                    "chars": [
+                        {"char": "a", "start": 0.0, "end": 0.4, "score": 0.8, "word-idx": 0},
+                        {"char": "a", "start": 0.5, "end": 1.0, "score": 0.9, "word-idx": 0},
+                    ],
+                }
+            ],
+            low_confidence_threshold=0.55,
+        )
+
+        chars = segments[0].words[0].chars
+        self.assertEqual([item.char for item in chars], ["a", "a"])
+        self.assertEqual([(item.startSec, item.endSec) for item in chars], [(0.0, 0.4), (0.5, 1.0)])
 
     def test_load_asr_model_passes_silero_vad_options(self):
         FakeWhisperX.calls = []

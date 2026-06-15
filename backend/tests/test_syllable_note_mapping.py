@@ -3,11 +3,11 @@ import types
 import unittest
 from unittest.mock import patch
 
-from app.domain.contracts import NoteEvent, SyllabificationSettings, TranscriptSegment, TranscriptWord
+from app.domain.contracts import NoteEvent, SyllabificationSettings, TranscriptChar, TranscriptSegment, TranscriptWord
 from app.workers.pitch import build_arrangement
 
 
-def segment_with_word(text: str) -> TranscriptSegment:
+def segment_with_word(text: str, chars: list[TranscriptChar] | None = None) -> TranscriptSegment:
     return TranscriptSegment(
         segmentId="seg_0001",
         startSec=0.0,
@@ -21,6 +21,7 @@ def segment_with_word(text: str) -> TranscriptSegment:
                 endSec=1.0,
                 text=text,
                 confidence=0.9,
+                chars=chars or [],
             )
         ],
     )
@@ -105,6 +106,47 @@ class SyllableNoteMappingTest(unittest.TestCase):
         self.assertEqual(syllables(arrangement)[0].endSec, 1.0)
         self.assertEqual(syllables(arrangement)[0].midi, 64)
         self.assertEqual([item.noteId for item in arrangement.noteEvents], ["n1"])
+
+    def test_syllables_use_character_timings_when_available(self):
+        chars = [
+            TranscriptChar(char="a", startSec=0.05, endSec=0.4),
+            TranscriptChar(char="a", startSec=0.52, endSec=0.95),
+        ]
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("aa", chars)],
+            [note("n1", 0.0, 0.45), note("n2", 0.5, 1.0, 62)],
+            prefer_char_timings=True,
+        )
+
+        self.assertEqual([(item.startSec, item.endSec) for item in syllables(arrangement)], [(0.05, 0.4), (0.52, 0.95)])
+        self.assertFalse(any("needs_syllable_review" in item.qualityFlags for item in syllables(arrangement)))
+
+    def test_character_syllable_timings_are_clamped_to_word_bounds(self):
+        chars = [
+            TranscriptChar(char="a", startSec=-0.05, endSec=0.4),
+            TranscriptChar(char="a", startSec=0.52, endSec=1.2),
+        ]
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("aa", chars)],
+            [note("n1", 0.0, 0.45), note("n2", 0.5, 1.0, 62)],
+            prefer_char_timings=True,
+        )
+
+        self.assertEqual([(item.startSec, item.endSec) for item in syllables(arrangement)], [(0.0, 0.4), (0.52, 1.0)])
+
+    def test_incomplete_character_timings_fall_back_to_equal_spans_for_review(self):
+        chars = [TranscriptChar(char="a", startSec=0.05, endSec=0.4)]
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("aa", chars)],
+            [note("n1", 0.0, 0.45), note("n2", 0.5, 1.0, 62)],
+            prefer_char_timings=True,
+        )
+
+        self.assertEqual([(item.startSec, item.endSec) for item in syllables(arrangement)], [(0.0, 0.5), (0.5, 1.0)])
+        self.assertTrue(all("needs_syllable_review" in item.qualityFlags for item in syllables(arrangement)))
 
     def test_missing_notes_keep_syllables_for_review(self):
         arrangement = build_arrangement("job_1", [segment_with_word("aa")], [])
