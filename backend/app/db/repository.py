@@ -121,6 +121,43 @@ def update_processing(job_id: str, processing: dict[str, StageSnapshot]) -> None
         conn.commit()
 
 
+def update_job_config(
+    job_id: str,
+    *,
+    metadata: SourceMetadata | None = None,
+    profiles: ModelProfiles | None = None,
+    transcription_settings: TranscriptionSettings | None = None,
+    pitch_settings: PitchSettings | None = None,
+    syllabification_settings: SyllabificationSettings | None = None,
+) -> None:
+    assignments = []
+    values = []
+    if metadata is not None:
+        assignments.append("metadata = %s::jsonb")
+        values.append(json.dumps(_json(metadata)))
+    if profiles is not None:
+        assignments.append("profiles = %s::jsonb")
+        values.append(json.dumps(_json(profiles)))
+    if transcription_settings is not None:
+        assignments.append("transcription_settings = %s::jsonb")
+        values.append(json.dumps(_json(transcription_settings)))
+    if pitch_settings is not None:
+        assignments.append("pitch_settings = %s::jsonb")
+        values.append(json.dumps(_json(pitch_settings)))
+    if syllabification_settings is not None:
+        assignments.append("syllabification_settings = %s::jsonb")
+        values.append(json.dumps(_json(syllabification_settings)))
+    if not assignments:
+        return
+    values.append(job_id)
+    with get_conn() as conn:
+        conn.execute(
+            f"UPDATE jobs SET {', '.join(assignments)}, updated_at = now() WHERE job_id = %s",
+            tuple(values),
+        )
+        conn.commit()
+
+
 def set_tempo(job_id: str, tempo: Tempo) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE jobs SET tempo = %s::jsonb, updated_at = now() WHERE job_id = %s", (json.dumps(_json(tempo)), job_id))

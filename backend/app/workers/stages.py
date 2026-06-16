@@ -36,8 +36,43 @@ def set_stage(
     current.logExcerpt = log_excerpt
     if artifact_ids is not None:
         current.artifactIds = artifact_ids
+    if status != StageStatus.pending:
+        current.actionRequired = False
+        current.settingsForm = None
     job.processing[key] = current
     repository.update_processing(job_id, job.processing)
+
+
+def require_stage_settings(
+    job_id: str,
+    stage: str,
+    substep: str,
+    message: str,
+    worker_role: str,
+    settings_form: str,
+    settings_summary: dict | None = None,
+) -> None:
+    job = repository.get_job(job_id)
+    if not job:
+        return
+    key = stage_key(stage, substep)
+    current = job.processing.get(
+        key,
+        StageSnapshot(stage=stage, substep=substep, status=StageStatus.pending, message=message, workerRole=worker_role),
+    )
+    current.status = StageStatus.pending
+    current.startedAt = None
+    current.finishedAt = None
+    current.progressMode = ProgressMode.indeterminate
+    current.progressPercent = None
+    current.etaSec = None
+    current.logExcerpt = None
+    current.actionRequired = True
+    current.settingsForm = settings_form
+    current.settingsSummary = settings_summary or {}
+    job.processing[key] = current
+    repository.update_processing(job_id, job.processing)
+    repository.update_job_status(job_id, JobStatus(stage))
 
 
 def fail_stage(job_id: str, stage: str, substep: str, message: str, log_excerpt: str, worker_role: str) -> None:

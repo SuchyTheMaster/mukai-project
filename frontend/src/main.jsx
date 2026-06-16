@@ -22,6 +22,7 @@ import {
   Trash2,
   Undo2,
   UploadCloud,
+  Workflow,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -237,7 +238,7 @@ const STAGE_LABELS = {
   "detecting_bpm.essentia": "Rozpoznawanie BPM",
   "separating_vocals.demucs": "Separacja wokalu",
   "transcribing.whisperx": "Transkrypcja",
-  "detecting_pitch.pitch_detection": "Detekcja pitch",
+  "detecting_pitch.pitch_detection": "Detekcja tonów",
   "aligning.draft": "Wstępne dopasowanie",
 };
 
@@ -286,6 +287,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   useEffect(() => {
     if (!job || ["failed", "awaiting_review", "cancelled"].includes(job.status)) return undefined;
@@ -297,7 +299,7 @@ function App() {
   }, [job?.jobId, job?.status]);
 
   useEffect(() => {
-    if (job?.status !== "awaiting_review") return;
+    if (job?.status !== "awaiting_review" || !reviewOpen) return;
     let ignore = false;
     apiJson(`/api/jobs/${job.jobId}/arrangement`)
       .then((next) => {
@@ -309,11 +311,11 @@ function App() {
     return () => {
       ignore = true;
     };
-  }, [job?.jobId, job?.status]);
+  }, [job?.jobId, job?.status, reviewOpen]);
 
   const activeStage = useMemo(() => currentStage(job), [job]);
   const coverPreview = coverFile ? URL.createObjectURL(coverFile) : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
-  const isReview = job?.status === "awaiting_review";
+  const isReview = job?.status === "awaiting_review" && reviewOpen;
   const jobCreated = Boolean(job);
 
   useEffect(() => {
@@ -344,6 +346,7 @@ function App() {
       setCoverFile(null);
       setJob(null);
       setArrangement(null);
+      setReviewOpen(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -371,6 +374,7 @@ function App() {
       if (coverFile) form.append("cover", coverFile);
       const created = await apiForm("/api/jobs/uploads", form);
       setJob(created);
+      setReviewOpen(false);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -388,9 +392,30 @@ function App() {
         headers: { "Content-Type": "application/json" },
       });
       setArrangement(null);
+      setReviewOpen(false);
       setJob(await apiJson(`/api/jobs/${job.jobId}`));
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function saveStageSettings(stage, payload) {
+    if (!job) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const result = await apiJson(`/api/jobs/${job.jobId}/stages/${stage}/settings`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+        headers: { "Content-Type": "application/json" },
+      });
+      setArrangement(null);
+      setReviewOpen(false);
+      setJob(result.job ?? result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -529,18 +554,11 @@ function App() {
             <UploadWorkspace
               metadata={metadata}
               setMetadata={setMetadata}
-              profiles={profiles}
-              setProfiles={setProfiles}
-              transcriptionSettings={transcriptionSettings}
-              setTranscriptionSettings={setTranscriptionSettings}
-              pitchSettings={pitchSettings}
-              setPitchSettings={setPitchSettings}
-              syllabificationSettings={syllabificationSettings}
-              setSyllabificationSettings={setSyllabificationSettings}
-              setSyllabificationTouched={setSyllabificationTouched}
               inspection={inspection}
               job={job}
               createJob={createJob}
+              onStageSettings={saveStageSettings}
+              onOpenReview={() => setReviewOpen(true)}
               busy={busy}
             />
           </>
@@ -566,19 +584,20 @@ function App() {
   );
 }
 
-function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcriptionSettings, setTranscriptionSettings, pitchSettings, setPitchSettings, syllabificationSettings, setSyllabificationSettings, setSyllabificationTouched, inspection, job, createJob, busy }) {
-  const positioningDisabled = syllabificationSettings.method === "none";
-  const positioningValue = positioningDisabled ? "words_only" : transcriptionSettings.positioning ?? defaultTranscription.positioning;
+function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onOpenReview, busy }) {
+  const sourceReady = Boolean(inspection && (metadata.title ?? "").trim() && (metadata.artist ?? "").trim());
 
   return (
     <section className="workspace-panel">
       <div className="workspace-header">
         <div>
-          <h1>Import i przygotowanie audio</h1>
+          <h1>Źródło i processing audio</h1>
         </div>
       </div>
-      {job ? (
-        <StatusPanel job={job} />
+      {job?.status === "awaiting_review" ? (
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onOpenReview={onOpenReview} />
+      ) : job ? (
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} />
       ) : (
         <>
           <div className="form-grid">
@@ -590,36 +609,190 @@ function UploadWorkspace({ metadata, setMetadata, profiles, setProfiles, transcr
             <LanguageSelect label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={WHISPER_LANGUAGE_OPTIONS} />
           </div>
 
-          <div className="controls-row">
-            <Select label="Separacja" tooltip={MODEL_TOOLTIPS.separation} value={profiles.separationModel} onChange={(value) => setProfiles({ ...profiles, separationModel: value })} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
-            <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={transcriptionSettings.vadMethod} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, vadMethod: value })} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
-            <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={profiles.transcriptionModel} onChange={(value) => setProfiles({ ...profiles, transcriptionModel: value })} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
-            <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabificationSettings.method} onChange={(value) => { setSyllabificationTouched(true); setSyllabificationSettings({ method: value }); if (value === "none") setTranscriptionSettings({ ...transcriptionSettings, positioning: "words_only" }); }} options={SYLLABIFICATION_OPTIONS} />
-          </div>
-
-          <details className="advanced">
-            <summary>Zaawansowane ustawienia transkrypcji</summary>
-            <div className="form-grid compact transcription-settings-grid">
-              <Select label="Pozycjonowanie" helper="return_char_alignments" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} onChange={(value) => setTranscriptionSettings({ ...transcriptionSettings, positioning: value })} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
-              {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
-                <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} placeholder={field.placeholder} value={transcriptionSettings[key] ?? ""} onChange={(next) => setTranscriptionSettings({ ...transcriptionSettings, [key]: field.nullable && next === "" ? "" : Number(next) })} />
-              ))}
-            </div>
-          </details>
-
-          <details className="advanced">
-            <summary>Zaawansowane ustawienia pitch</summary>
-            <div className="form-grid compact pitch-settings-grid">
-              {PITCH_SETTING_FIELDS.map(([key, field]) => (
-                <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={pitchSettings[key]} onChange={(next) => setPitchSettings({ ...pitchSettings, [key]: Number(next) })} />
-              ))}
-            </div>
-          </details>
-
-          <button className="button primary import-submit" disabled={!inspection || busy} onClick={createJob}>
+          <button className="button primary import-submit" disabled={!sourceReady || busy} onClick={createJob}>
             <Play size={16} /> {busy ? "Przetwarzanie..." : "Przetwarzaj audio"}
           </button>
         </>
+      )}
+    </section>
+  );
+}
+
+const TRANSCRIPTION_STAGE_FIELDS = TRANSCRIPTION_SETTING_FIELDS.filter(([key]) => key !== "sentenceGapMs");
+const PITCH_DETECTION_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => !["minNoteLengthMs", "mergeGapMs"].includes(key));
+const ALIGNMENT_PITCH_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => ["minNoteLengthMs", "mergeGapMs"].includes(key));
+
+function StageSettingsPanel({ job, stage, busy, onSubmit, embedded = false }) {
+  const targetStage = stage ?? sortedStages(job.processing).find((item) => item.actionRequired);
+  if (!targetStage) return null;
+  const form = targetStage.settingsForm ?? settingsFormForStage(targetStage.stage);
+  if (form === "separation") return <SeparationStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
+  if (form === "transcription") return <TranscriptionStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
+  if (form === "pitch") return <PitchStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
+  if (form === "alignment") return <AlignmentStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
+  return null;
+}
+
+function settingsFormForStage(stage) {
+  return {
+    separating_vocals: "separation",
+    transcribing: "transcription",
+    detecting_pitch: "pitch",
+    aligning: "alignment",
+  }[stage] ?? null;
+}
+
+function StageFormShell({ title, embedded, children }) {
+  const Tag = embedded ? "div" : "section";
+  return <Tag className={embedded ? "stage-settings-inline" : "stage-settings-card"}>{!embedded && <h2>{title}</h2>}{children}</Tag>;
+}
+
+function SeparationStageForm({ job, busy, onSubmit, embedded = false }) {
+  const [separationModel, setSeparationModel] = useState(job.profiles?.separationModel ?? "htdemucs_ft");
+  return (
+    <StageFormShell title="Separacja wokalu" embedded={embedded}>
+      <div className="controls-row">
+        <Select label="Mechanizm separacji" tooltip={MODEL_TOOLTIPS.separation} value={separationModel} onChange={setSeparationModel} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
+      </div>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("separating_vocals", { profiles: { ...job.profiles, separationModel } })}>
+        <Play size={16} /> Uruchom separację
+      </button>
+    </StageFormShell>
+  );
+}
+
+function TranscriptionStageForm({ job, busy, onSubmit, embedded = false }) {
+  const [transcriptionModel, setTranscriptionModel] = useState(job.profiles?.transcriptionModel ?? "large-v3");
+  const [settings, setSettings] = useState({ ...defaultTranscription, ...(job.transcriptionSettings ?? {}) });
+  const [syllabification, setSyllabification] = useState({ ...defaultSyllabification, ...(job.syllabificationSettings ?? {}) });
+  const positioningDisabled = syllabification.method === "none";
+  const positioningValue = positioningDisabled ? "words_only" : settings.positioning ?? defaultTranscription.positioning;
+
+  function changeSyllabification(method) {
+    setSyllabification({ method });
+    if (method === "none") setSettings((current) => ({ ...current, positioning: "words_only" }));
+  }
+
+  return (
+    <StageFormShell title="Transkrypcja" embedded={embedded}>
+      <div className="controls-row">
+        <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={settings.vadMethod} onChange={(value) => setSettings({ ...settings, vadMethod: value })} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
+        <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={transcriptionModel} onChange={setTranscriptionModel} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
+        <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabification.method} onChange={changeSyllabification} options={SYLLABIFICATION_OPTIONS} />
+      </div>
+      <div className="advanced">
+        <div className="form-grid compact transcription-settings-grid">
+          <Select label="Pozycjonowanie" helper="return_char_alignments" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} onChange={(value) => setSettings({ ...settings, positioning: value })} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
+          {TRANSCRIPTION_STAGE_FIELDS.map(([key, field]) => (
+            <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key] ?? ""} onChange={(next) => setSettings({ ...settings, [key]: Number(next) })} />
+          ))}
+        </div>
+      </div>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("transcribing", { profiles: { ...job.profiles, transcriptionModel }, transcriptionSettings: serializeTranscriptionSettings(settings, syllabification), syllabificationSettings: syllabification })}>
+        <Play size={16} /> Uruchom transkrypcję
+      </button>
+    </StageFormShell>
+  );
+}
+
+function PitchStageForm({ job, busy, onSubmit, embedded = false }) {
+  const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}) });
+  return (
+    <StageFormShell title="Detekcja tonów" embedded={embedded}>
+      <div className="advanced">
+        <div className="form-grid compact pitch-settings-grid">
+          {PITCH_DETECTION_FIELDS.map(([key, field]) => (
+            <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key]} onChange={(next) => setSettings({ ...settings, [key]: Number(next) })} />
+          ))}
+        </div>
+      </div>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("detecting_pitch", { profiles: job.profiles, pitchSettings: settings })}>
+        <Play size={16} /> Uruchom detekcję tonów
+      </button>
+    </StageFormShell>
+  );
+}
+
+function AlignmentStageForm({ job, busy, onSubmit, embedded = false }) {
+  const [sentenceGapMs, setSentenceGapMs] = useState(job.transcriptionSettings?.sentenceGapMs ?? "");
+  const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}) });
+  return (
+    <StageFormShell title="Wstępne dopasowanie" embedded={embedded}>
+      <div className="form-grid compact pitch-settings-grid">
+        <TextField label="Ms między sentencjami" helper="sentenceGapMs" tooltip="Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Puste pole oznacza tryb auto." type="number" step="1" placeholder="auto" value={sentenceGapMs} onChange={setSentenceGapMs} />
+        {ALIGNMENT_PITCH_FIELDS.map(([key, field]) => (
+          <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key]} onChange={(next) => setSettings({ ...settings, [key]: Number(next) })} />
+        ))}
+      </div>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("aligning", { transcriptionSettings: { ...job.transcriptionSettings, sentenceGapMs: nullableNumber(sentenceGapMs) }, pitchSettings: settings })}>
+        <Play size={16} /> Wykonaj dopasowanie
+      </button>
+    </StageFormShell>
+  );
+}
+
+function ProcessingSummary({ job, busy, onSubmit, onOpenReview }) {
+  const artifactsById = Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.assetId, asset]));
+  const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
+  const stageRefs = useRef({});
+  const previousStatuses = useRef({});
+  const [editingStage, setEditingStage] = useState(null);
+
+  useEffect(() => {
+    const previous = previousStatuses.current;
+    const completed = sortedStages(job.processing).find((stage) => previous[stageDomKey(stage)] && previous[stageDomKey(stage)] !== "completed" && stage.status === "completed");
+    previousStatuses.current = Object.fromEntries(sortedStages(job.processing).map((stage) => [stageDomKey(stage), stage.status]));
+    if (!completed) return;
+    const allStages = sortedStages(job.processing);
+    const nextStage = allStages[stageIndex(completed) + 1];
+    const targetKey = nextStage ? stageDomKey(nextStage) : stageDomKey(completed);
+    window.requestAnimationFrame(() => {
+      stageRefs.current[targetKey]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [job.processing]);
+
+  function changeStage(stage) {
+    setEditingStage(stage.stage);
+  }
+
+  function cancelChange() {
+    setEditingStage(null);
+  }
+
+  return (
+    <section className="processing-summary">
+      <div className="summary-stage-list">
+        {stages.map((stage) => {
+          const artifactIds = displayArtifactIdsForStage(stage, job, artifactsById);
+          const isEditing = editingStage === stage.stage && stage.status === "completed";
+          return (
+            <article key={stageDomKey(stage)} ref={(node) => { if (node) stageRefs.current[stageDomKey(stage)] = node; }} className="summary-stage">
+              <div className="summary-stage-header">
+                <div>
+                  <h2>{stageLabel(stage)}</h2>
+                  <small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.status} · {stageDuration(stage)}</small>
+                </div>
+                {isConfigurableStage(stage) && stage.status === "completed" && (
+                  <button className="button ghost" type="button" onClick={() => (isEditing ? cancelChange() : changeStage(stage))}>{isEditing ? "Anuluj" : "Zmień"}</button>
+                )}
+              </div>
+              <dl className="summary">{stageSettingsSummary(job, stage).map(([label, value]) => <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>)}</dl>
+              <div className="artifact-links">
+                {artifactIds.map((assetId) => {
+                  const asset = artifactsById[assetId];
+                  const filename = artifactFilename(asset, assetId);
+                  return <a key={assetId} href={`${API_BASE}/api/jobs/${job.jobId}/artifacts/${assetId}`} download>{filename}</a>;
+                })}
+              </div>
+              {(stage.actionRequired || isEditing) && <StageSettingsPanel job={job} stage={stage} busy={busy} onSubmit={onSubmit} embedded />}
+            </article>
+          );
+        })}
+      </div>
+      {job.status === "awaiting_review" && (
+        <button className="button primary summary-editor-button" type="button" onClick={onOpenReview}>
+          <Music2 size={16} /> Edytor dopasowania
+        </button>
       )}
     </section>
   );
@@ -645,7 +818,6 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const [loopPlayback, setLoopPlayback] = useState(false);
   const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [sentenceGapInput, setSentenceGapInput] = useState("");
   const [editorNotice, setEditorNotice] = useState(null);
   const [validationModal, setValidationModal] = useState(null);
   const [past, setPast] = useState([]);
@@ -680,11 +852,6 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   useEffect(() => {
     if (!selected.id && arrangement?.lines[0]) setSelected({ type: "line", id: arrangement.lines[0].lineId });
   }, [arrangement?.arrangementId, selected.id]);
-
-  useEffect(() => {
-    const requested = arrangement?.lines?.[0]?.requestedSentenceGapMs;
-    setSentenceGapInput(Number.isFinite(requested) ? String(requested) : "");
-  }, [arrangement?.arrangementId, arrangement?.revision]);
 
   useEffect(() => {
     function onKeyDown(event) {
@@ -1075,18 +1242,13 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         <div className="editor-actions">
           <button className="icon-button" type="button" title="Undo" aria-label="Undo" disabled={!past.length} onClick={undo}><Undo2 size={16} /></button>
           <button className="icon-button" type="button" title="Redo" aria-label="Redo" disabled={!future.length} onClick={redo}><Redo2 size={16} /></button>
-          <button className="button secondary" type="button" onClick={() => onResetStage("aligning")}><RefreshCcw size={16} /> Reset szkicu</button>
+          <button className="button secondary" type="button" onClick={() => onResetStage("aligning")}><Workflow size={16} /> Wróć do audio</button>
           <SaveExportMenu job={job} saving={saving} onSave={onSave} onJobRefresh={onJobRefresh} onValidationError={setValidationModal} />
         </div>
       </div>
 
       <div className="quality-strip">
         <SyllabificationBadge info={arrangement.syllabification} />
-        <label className="sentence-gap-control">
-          <span>Ms między sentencjami</span>
-          <input type="number" min="0" step="1" placeholder="auto" value={sentenceGapInput} onChange={(event) => setSentenceGapInput(event.target.value)} />
-          <button className="button secondary" type="button" disabled={saving} onClick={() => onResegment(sentenceGapInput)}>Przelicz</button>
-        </label>
         {qualityBadges(arrangement).map(([flag, count]) => (
           <span key={flag} className={`quality-badge ${count ? "warning" : "ok"}`}>{FLAG_LABELS[flag] ?? flag}: {count}</span>
         ))}
@@ -1913,13 +2075,13 @@ function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSetti
 
 function StageRail({ job }) {
   const stages = job?.processing ? sortedStages(job.processing) : defaultStages();
-  return <div className="stage-list">{stages.map((stage) => <div key={`${stage.stage}.${stage.substep}`} className={`stage ${stage.status}`}><span /> <div><strong>{stageLabel(stage)}</strong><small>{stage.status}</small></div></div>)}</div>;
+  return <div className="stage-list">{stages.map((stage) => <div key={`${stage.stage}.${stage.substep}`} className={`stage ${stage.status} ${stage.actionRequired ? "action-required" : ""}`}><span /> <div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.status}</small><Progress stage={stage} /></div></div>)}</div>;
 }
 
-function StatusPanel({ job }) {
+function StatusPanel({ job, onResetStage }) {
   const rowRefs = useRef({});
   const artifactsById = Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.assetId, asset]));
-  const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending");
+  const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
   const runningKey = stageDomKey(stages.find((stage) => stage.status === "running"));
 
   useEffect(() => {
@@ -1930,12 +2092,16 @@ function StatusPanel({ job }) {
   return <div className="status-panel">{stages.map((stage) => {
     const key = stageDomKey(stage);
     const artifactIds = displayArtifactIdsForStage(stage, job, artifactsById);
-    return <article key={key} ref={(node) => { if (node) rowRefs.current[key] = node; }} className={`status-row ${stage.status}`}><div><strong>{stageLabel(stage)}</strong><small>{stage.workerRole}</small>{stage.logExcerpt && <pre>{stage.logExcerpt}</pre>}</div><div className="status-actions"><Progress stage={stage} /><div className="artifact-buttons">{artifactIds.map((assetId) => {
+    return <article key={key} ref={(node) => { if (node) rowRefs.current[key] = node; }} className={`status-row ${stage.status}`}><div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.workerRole}</small>{stage.logExcerpt && <pre>{stage.logExcerpt}</pre>}</div><div className="status-actions"><Progress stage={stage} /><div className="artifact-buttons">{isConfigurableStage(stage) && stage.status === "completed" && <button className="button ghost" type="button" onClick={() => onResetStage?.(stage.stage)}>Zmień</button>}{artifactIds.map((assetId) => {
       const asset = artifactsById[assetId];
       const filename = artifactFilename(asset, assetId);
       return <a className="icon-button" key={assetId} href={`${API_BASE}/api/jobs/${job.jobId}/artifacts/${assetId}`} title={filename} aria-label={filename} download><Download size={16} /></a>;
     })}</div></div></article>;
   })}</div>;
+}
+
+function isConfigurableStage(stage) {
+  return ["separating_vocals", "transcribing", "detecting_pitch", "aligning"].includes(stage?.stage);
 }
 
 function formatSettingValue(value) {
@@ -1948,12 +2114,32 @@ function formatTranscriptionSettingValue(key, value) {
   return formatSettingValue(value);
 }
 
+function stageDuration(stage) {
+  if (!stage.startedAt || !stage.finishedAt) return "czas niedostępny";
+  const start = new Date(stage.startedAt).getTime();
+  const end = new Date(stage.finishedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "czas niedostępny";
+  return `${((end - start) / 1000).toFixed(1)} s`;
+}
+
+function stageSettingsSummary(job, stage) {
+  const transcription = { ...defaultTranscription, ...(job.transcriptionSettings ?? {}) };
+  const pitch = { ...defaultPitch, ...(job.pitchSettings ?? {}) };
+  const syllabification = { ...defaultSyllabification, ...(job.syllabificationSettings ?? {}) };
+  if (stage.stage === "uploaded") return [["Tytuł", job.metadata?.title || "-"], ["Artysta", job.metadata?.artist || "-"], ["Język", job.metadata?.language || "auto"]];
+  if (stage.stage === "separating_vocals") return [["Model", job.profiles?.separationModel ?? "-"]];
+  if (stage.stage === "transcribing") return [["Model", job.profiles?.transcriptionModel ?? "-"], ["VAD", transcription.vadMethod], ["Pozycjonowanie", TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning], ["Sylabizacja", SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method]];
+  if (stage.stage === "detecting_pitch") return [["Silnik", job.profiles?.pitch ?? "default"], ["Czułość dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["Krok ramek", `${pitch.frameStepMs} ms`]];
+  if (stage.stage === "aligning") return [["Ms między sentencjami", transcription.sentenceGapMs == null ? "auto" : `${transcription.sentenceGapMs} ms`], ["Najkrótsza nuta", `${pitch.minNoteLengthMs} ms`], ["Scalanie przerw", `${pitch.mergeGapMs} ms`]];
+  return [["Ustawienia", "-"]];
+}
+
 function normalizeSearchText(value) {
   return String(value ?? "").normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 }
 
 function Progress({ stage }) {
-  const width = stage.progressPercent ?? (stage.status === "completed" ? 100 : 35);
+  const width = stage.progressPercent ?? (stage.status === "completed" ? 100 : stage.status === "pending" ? 0 : 35);
   return <div className={`progress ${stage.progressMode} ${stage.status}`}><span style={{ width: `${width}%` }} /></div>;
 }
 
@@ -3235,7 +3421,7 @@ function defaultStages() {
     ["detecting_bpm", "essentia", "Rozpoznawanie BPM"],
     ["separating_vocals", "demucs", "Separacja wokalu"],
     ["transcribing", "whisperx", "Transkrypcja"],
-    ["detecting_pitch", "pitch_detection", "Detekcja pitch"],
+    ["detecting_pitch", "pitch_detection", "Detekcja tonów"],
     ["aligning", "draft", "Wstępne dopasowanie"],
   ].map(([stage, substep, message], index) => ({ stage, substep, message, status: index === 0 ? "running" : "pending" }));
 }

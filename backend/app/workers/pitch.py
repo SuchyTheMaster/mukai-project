@@ -33,7 +33,8 @@ from app.domain.contracts import (
 from app.services.ids import new_id
 from app.services.queue import redis_client
 from app.services.storage import read_json, relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import fail_stage, set_stage
+from app.workers.stages import fail_stage, require_stage_settings, set_stage
+from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
 
 
 PITCH_SAMPLE_RATE = 16000
@@ -145,24 +146,34 @@ def process_job(job_id: str, start_stage: str = "detecting_pitch") -> None:
         try:
             run_draft_alignment(job_id)
         except Exception as exc:  # pragma: no cover - worker guard
-            fail_stage(job_id, "aligning", "draft", "Szkic arrangement nie powiodl sie.", sanitize_log(str(exc)), "worker-aligner")
+            fail_stage(job_id, "aligning", "draft", "Wstepne dopasowanie nie powiodlo sie.", sanitize_log(str(exc)), "worker-aligner")
         return
     try:
         run_pitch_detection(job_id)
     except Exception as exc:  # pragma: no cover - worker guard
-        fail_stage(job_id, "detecting_pitch", "pitch_detection", "Detekcja pitch nie powiodla sie.", sanitize_log(str(exc)), "worker-pitch")
+        fail_stage(job_id, "detecting_pitch", "pitch_detection", "Detekcja tonow nie powiodla sie.", sanitize_log(str(exc)), "worker-pitch")
         return
-    try:
-        run_draft_alignment(job_id)
-    except Exception as exc:  # pragma: no cover - worker guard
-        fail_stage(job_id, "aligning", "draft", "Szkic arrangement nie powiodl sie.", sanitize_log(str(exc)), "worker-aligner")
+    job = repository.get_job(job_id)
+    require_stage_settings(
+        job_id,
+        "aligning",
+        "draft",
+        "Wybierz ustawienia wstępnego dopasowania",
+        "worker-aligner",
+        "alignment",
+        {
+            "sentenceGapMs": job.transcriptionSettings.sentenceGapMs if job else None,
+            "minNoteLengthMs": job.pitchSettings.minNoteLengthMs if job else 120,
+            "mergeGapMs": job.pitchSettings.mergeGapMs if job else 90,
+        },
+    )
 
 
 def run_pitch_detection(job_id: str) -> None:
     job = repository.get_job(job_id)
     if not job:
         raise RuntimeError("job not found")
-    if any(asset.type == "pitch_notes" for asset in job.artifacts):
+    if any(asset.type == "pitch_frames" for asset in job.artifacts):
         return
 
     torchcrepe_input = next((asset for asset in job.artifacts if asset.type == "torchcrepe_input"), None)
@@ -176,7 +187,7 @@ def run_pitch_detection(job_id: str) -> None:
     input_path = resolve_inside(torchcrepe_input.path)
     diagnostics = runtime_diagnostics()
     if diagnostics["device"] == "cpu" and not settings.allow_cpu_pitch:
-        raise RuntimeError("GPU nie jest dostepne, a tryb CPU dla pitch detection jest wylaczony.")
+        raise RuntimeError("GPU nie jest dostepne, a tryb CPU dla detekcji tonow jest wylaczony.")
 
     started = time.monotonic()
     audio, sample_rate = read_wav_mono(input_path)
@@ -187,9 +198,6 @@ def run_pitch_detection(job_id: str) -> None:
     frequencies, periodicities = predict_pitch(audio, sample_rate, diagnostics["device"], settings.pitch_batch_size, job.pitchSettings.frameStepMs)
     frames = build_pitch_frames(audio, sample_rate, frequencies, periodicities, job.pitchSettings)
 
-    set_stage(job_id, "detecting_pitch", "pitch_detection", StageStatus.running, "Segmentacja nut", "worker-pitch", ProgressMode.estimated, 75)
-    notes = segment_notes(frames, job.pitchSettings)
-
     diagnostics |= {
         "torchcrepeVersion": package_version("torchcrepe"),
         "torchVersion": package_version("torch"),
@@ -199,17 +207,13 @@ def run_pitch_detection(job_id: str) -> None:
         "frameStepMs": job.pitchSettings.frameStepMs,
         "silenceThresholdDb": job.pitchSettings.silenceThresholdDb,
         "periodicityThreshold": job.pitchSettings.periodicityThreshold,
-        "minNoteLengthMs": job.pitchSettings.minNoteLengthMs,
-        "mergeGapMs": job.pitchSettings.mergeGapMs,
         "inputSha256": sha256_file(input_path),
         "frameCount": len(frames),
-        "noteCount": len(notes),
         "processingSec": round(time.monotonic() - started, 3),
     }
 
     artifacts_dir = resolve_inside(f"jobs/{job_id}/artifacts")
     frames_path = artifacts_dir / "pitch.frames.json"
-    notes_path = artifacts_dir / "pitch.notes.json"
     write_json(
         frames_path,
         {
@@ -219,17 +223,6 @@ def run_pitch_detection(job_id: str) -> None:
             "substep": "pitch_detection",
             "diagnostics": diagnostics,
             "frames": [frame.model_dump() for frame in frames],
-        },
-    )
-    write_json(
-        notes_path,
-        {
-            "schemaVersion": "1.0.0",
-            "jobId": job_id,
-            "stage": "detecting_pitch",
-            "substep": "pitch_detection",
-            "diagnostics": diagnostics,
-            "noteEvents": [note.model_dump() for note in notes],
         },
     )
 
@@ -244,22 +237,11 @@ def run_pitch_detection(job_id: str) -> None:
             producedByStage="detecting_pitch",
             producedBySubstep="pitch_detection",
             metadata={"model": "torchcrepe", "frameCount": len(frames)},
-        ),
-        AudioAsset(
-            assetId=new_id("asset"),
-            type="pitch_notes",
-            path=relative_to_root(notes_path),
-            mimeType="application/json",
-            sha256=sha256_file(notes_path),
-            sizeBytes=notes_path.stat().st_size,
-            producedByStage="detecting_pitch",
-            producedBySubstep="pitch_detection",
-            metadata={"model": "torchcrepe", "noteCount": len(notes)},
-        ),
+        )
     ]
     for asset in assets:
         repository.create_artifact(job_id, asset)
-    set_stage(job_id, "detecting_pitch", "pitch_detection", StageStatus.completed, "Detekcja pitch", "worker-pitch", ProgressMode.determinate, 100, artifact_ids=[asset.assetId for asset in assets])
+    set_stage(job_id, "detecting_pitch", "pitch_detection", StageStatus.completed, "Detekcja tonów", "worker-pitch", ProgressMode.determinate, 100, artifact_ids=[asset.assetId for asset in assets])
     cleanup_memory()
 
 
@@ -272,21 +254,29 @@ def run_draft_alignment(job_id: str) -> None:
         return
 
     transcript_asset = next((asset for asset in job.artifacts if asset.type == "transcript_aligned"), None)
-    notes_asset = next((asset for asset in job.artifacts if asset.type == "pitch_notes"), None)
+    frames_asset = next((asset for asset in job.artifacts if asset.type == "pitch_frames"), None)
     if not transcript_asset:
         raise RuntimeError("Brak transcript.aligned.json z etapu transkrypcji.")
-    if not notes_asset:
-        raise RuntimeError("Brak pitch.notes.json z etapu pitch detection.")
+    if not frames_asset:
+        raise RuntimeError("Brak pitch.frames.json z etapu detekcji tonow.")
 
     repository.update_job_status(job_id, JobStatus.aligning)
-    set_stage(job_id, "aligning", "draft", StageStatus.running, "Laczenie tekstu z nutami", "worker-aligner", ProgressMode.estimated, 20)
+    set_stage(job_id, "aligning", "draft", StageStatus.running, "Budowanie sentencji i nut karaoke", "worker-aligner", ProgressMode.estimated, 20)
 
     transcript_payload = read_json(resolve_inside(transcript_asset.path))
-    notes_payload = read_json(resolve_inside(notes_asset.path))
-    segments = [TranscriptSegment.model_validate(segment) for segment in transcript_payload.get("segments", [])]
-    notes = [NoteEvent.model_validate(note) for note in notes_payload.get("noteEvents", [])]
+    frames_payload = read_json(resolve_inside(frames_asset.path))
+    aligned_segments = [TranscriptSegment.model_validate(segment) for segment in transcript_payload.get("segments", [])]
+    frames = [PitchFrame.model_validate(frame) for frame in frames_payload.get("frames", [])]
+    detected_sentence_gap_ms = estimate_auto_sentence_gap(aligned_segments, job.tempo.detectedSongBpm if job.tempo else None)
+    effective_sentence_gap_ms = job.transcriptionSettings.sentenceGapMs if job.transcriptionSettings.sentenceGapMs is not None else detected_sentence_gap_ms
+    segments = build_sentence_segments(
+        aligned_segments,
+        job.transcriptionSettings,
+        get_settings().transcription_low_confidence_threshold,
+        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
+    )
+    notes = segment_notes(frames, job.pitchSettings)
     syllabification_language, syllabification_language_source = resolve_syllabification_language(job, transcript_payload)
-    transcript_diagnostics = transcript_payload.get("diagnostics") or {}
     arrangement = build_arrangement(
         job_id,
         segments,
@@ -295,12 +285,34 @@ def run_draft_alignment(job_id: str) -> None:
         language=syllabification_language,
         language_source=syllabification_language_source,
         prefer_char_timings=job.transcriptionSettings.positioning == "words_and_syllables",
-        requested_sentence_gap_ms=transcript_diagnostics.get("requestedSentenceGapMs"),
-        detected_sentence_gap_ms=transcript_diagnostics.get("detectedSentenceGapMs"),
-        effective_sentence_gap_ms=transcript_diagnostics.get("effectiveSentenceGapMs"),
+        requested_sentence_gap_ms=job.transcriptionSettings.sentenceGapMs,
+        detected_sentence_gap_ms=detected_sentence_gap_ms,
+        effective_sentence_gap_ms=effective_sentence_gap_ms,
     )
 
-    draft_path = resolve_inside(f"jobs/{job_id}/artifacts/draft.arrangement.json")
+    artifacts_dir = resolve_inside(f"jobs/{job_id}/artifacts")
+    notes_path = artifacts_dir / "pitch.notes.json"
+    draft_path = artifacts_dir / "draft.arrangement.json"
+    note_diagnostics = {
+        "sourcePitchFramesAssetId": frames_asset.assetId,
+        "frameStepMs": job.pitchSettings.frameStepMs,
+        "minNoteLengthMs": job.pitchSettings.minNoteLengthMs,
+        "mergeGapMs": job.pitchSettings.mergeGapMs,
+        "periodicityThreshold": job.pitchSettings.periodicityThreshold,
+        "noteCount": len(notes),
+        "frameCount": len(frames),
+    }
+    write_json(
+        notes_path,
+        {
+            "schemaVersion": "1.0.0",
+            "jobId": job_id,
+            "stage": "aligning",
+            "substep": "draft",
+            "diagnostics": note_diagnostics,
+            "noteEvents": [note.model_dump() for note in notes],
+        },
+    )
     write_json(
         draft_path,
         {
@@ -310,14 +322,28 @@ def run_draft_alignment(job_id: str) -> None:
             "substep": "draft",
             "sourceArtifacts": {
                 "transcriptAlignedAssetId": transcript_asset.assetId,
-                "pitchNotesAssetId": notes_asset.assetId,
+                "pitchFramesAssetId": frames_asset.assetId,
             },
+            "requestedSentenceGapMs": job.transcriptionSettings.sentenceGapMs,
+            "detectedSentenceGapMs": detected_sentence_gap_ms,
+            "effectiveSentenceGapMs": effective_sentence_gap_ms,
             "syllabification": arrangement.syllabification.model_dump(mode="json") if arrangement.syllabification else None,
             "arrangement": arrangement.model_dump(mode="json"),
         },
     )
 
     saved = repository.save_arrangement(job_id, arrangement)
+    notes_asset = AudioAsset(
+        assetId=new_id("asset"),
+        type="pitch_notes",
+        path=relative_to_root(notes_path),
+        mimeType="application/json",
+        sha256=sha256_file(notes_path),
+        sizeBytes=notes_path.stat().st_size,
+        producedByStage="aligning",
+        producedBySubstep="draft",
+        metadata={"source": "pitch_frames", "noteCount": len(notes)},
+    )
     draft_asset = AudioAsset(
         assetId=new_id("asset"),
         type="draft_arrangement",
@@ -329,8 +355,9 @@ def run_draft_alignment(job_id: str) -> None:
         producedBySubstep="draft",
         metadata={"arrangementId": saved.arrangementId, "revision": saved.revision, "qualitySummary": saved.qualitySummary},
     )
+    repository.create_artifact(job_id, notes_asset)
     repository.create_artifact(job_id, draft_asset)
-    set_stage(job_id, "aligning", "draft", StageStatus.completed, "Szkic arrangement", "worker-aligner", ProgressMode.determinate, 100, artifact_ids=[draft_asset.assetId])
+    set_stage(job_id, "aligning", "draft", StageStatus.completed, "Wstępne dopasowanie", "worker-aligner", ProgressMode.determinate, 100, artifact_ids=[notes_asset.assetId, draft_asset.assetId])
     repository.update_job_status(job_id, JobStatus.awaiting_review)
 
 

@@ -14,9 +14,9 @@ from app.db import repository
 from app.domain.contracts import AudioAsset, JobStatus, ProgressMode, StageStatus, TranscriptChar, TranscriptSegment, TranscriptWord, TranscriptionSettings
 from app.services.audio_probe import ffprobe
 from app.services.ids import new_id
-from app.services.queue import enqueue_pitch, redis_client
+from app.services.queue import redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import fail_stage, set_stage
+from app.workers.stages import fail_stage, require_stage_settings, set_stage
 
 
 WHISPER_AUDIO_SAMPLE_RATE = 16000
@@ -111,13 +111,7 @@ def run_transcription(job_id: str) -> None:
 
     aligned_asr_segments = normalize_segments(aligned.get("segments", []), settings.transcription_low_confidence_threshold)
     detected_sentence_gap_ms = estimate_auto_sentence_gap(aligned_asr_segments, job.tempo.detectedSongBpm if job.tempo else None)
-    effective_sentence_gap_ms = transcription_settings.sentenceGapMs if transcription_settings.sentenceGapMs is not None else detected_sentence_gap_ms
-    segments = build_sentence_segments(
-        aligned_asr_segments,
-        transcription_settings,
-        settings.transcription_low_confidence_threshold,
-        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
-    )
+    segments = renumber_segments(aligned_asr_segments, settings.transcription_low_confidence_threshold)
     raw_segments = jsonable(result.get("segments", []))
     max_raw_end_sec = max_segment_end(raw_segments)
     max_aligned_end_sec = max((segment.endSec for segment in segments), default=None)
@@ -148,14 +142,14 @@ def run_transcription(job_id: str) -> None:
         "vadCompatibilityNote": asr_vad_diagnostics["compatibilityNote"],
         "positioning": transcription_settings.positioning,
         "returnCharAlignments": return_char_alignments,
-        "requestedSentenceGapMs": transcription_settings.sentenceGapMs,
+        "requestedSentenceGapMs": None,
         "detectedSentenceGapMs": detected_sentence_gap_ms,
-        "effectiveSentenceGapMs": effective_sentence_gap_ms,
+        "effectiveSentenceGapMs": None,
         "sentencePaddingMs": transcription_settings.sentencePaddingMs,
         "whisperContextWindowSec": WHISPER_CONTEXT_WINDOW_SEC,
         "expectedWindowCount": expected_window_count,
         "rawAsrSegmentCount": len(raw_segments),
-        "sentenceSegmentCount": len(segments),
+        "alignedWordSegmentCount": len(segments),
         "asrSegmentCount": len(raw_segments),
         "alignedSegmentCount": len(segments),
         "maxRawSegmentEndSec": max_raw_end_sec,
@@ -218,7 +212,20 @@ def run_transcription(job_id: str) -> None:
     for asset in assets:
         repository.create_artifact(job_id, asset)
     set_stage(job_id, "transcribing", "whisperx", StageStatus.completed, "Transkrypcja", "worker-transcribe", ProgressMode.determinate, 100, artifact_ids=[asset.assetId for asset in assets])
-    enqueue_pitch(job_id)
+    require_stage_settings(
+        job_id,
+        "detecting_pitch",
+        "pitch_detection",
+        "Wybierz ustawienia detekcji tonów",
+        "worker-pitch",
+        "pitch",
+        {
+            "pitch": job.profiles.pitch,
+            "silenceThresholdDb": job.pitchSettings.silenceThresholdDb,
+            "periodicityThreshold": job.pitchSettings.periodicityThreshold,
+            "frameStepMs": job.pitchSettings.frameStepMs,
+        },
+    )
 
 
 def forced_language(job) -> str | None:

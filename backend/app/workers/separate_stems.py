@@ -10,10 +10,10 @@ from app.core.errors import sanitize_log
 from app.db import repository
 from app.domain.contracts import AudioAsset, JobStatus, ProgressMode, StageStatus
 from app.services.ids import new_id
-from app.services.queue import enqueue_transcription, redis_client
+from app.services.queue import redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
 from app.workers.audio_tools import ffmpeg_convert
-from app.workers.stages import fail_stage, set_stage
+from app.workers.stages import fail_stage, require_stage_settings, set_stage
 
 
 # First run intentionally omits --segment, so Demucs uses the model default.
@@ -114,7 +114,19 @@ def run_separation(job_id: str) -> None:
     for asset in assets:
         repository.create_artifact(job_id, asset)
     set_stage(job_id, "separating_vocals", "demucs", StageStatus.completed, "Separacja wokalu", "worker-separate-stems", ProgressMode.determinate, 100, artifact_ids=[asset.assetId for asset in assets])
-    enqueue_transcription(job_id)
+    require_stage_settings(
+        job_id,
+        "transcribing",
+        "whisperx",
+        "Wybierz ustawienia transkrypcji",
+        "worker-transcribe",
+        "transcription",
+        {
+            "transcriptionModel": job.profiles.transcriptionModel,
+            "vadMethod": job.transcriptionSettings.vadMethod,
+            "syllabification": job.syllabificationSettings.method,
+        },
+    )
 
 
 class DemucsOutOfMemory(RuntimeError):

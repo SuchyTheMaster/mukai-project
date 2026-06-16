@@ -21,6 +21,7 @@ from app.domain.contracts import (
     ResetStageResponse,
     ResegmentArrangementRequest,
     SaveArrangementRequest,
+    StageSettingsRequest,
     StageStatus,
     TranscriptSegment,
     UploadInspection,
@@ -31,7 +32,7 @@ from app.domain.contracts import (
 )
 from app.services import audio_probe
 from app.services.ids import new_id
-from app.services.queue import enqueue_job, redis_client
+from app.services.queue import enqueue_job, enqueue_pitch, enqueue_separation, enqueue_transcription, redis_client
 from app.services.storage import (
     read_json,
     relative_to_root,
@@ -48,6 +49,7 @@ from app.services.ultrastar_export import (
     write_validation_report_artifact,
 )
 from app.workers.pitch import build_arrangement, resolve_syllabification_language
+from app.workers.stages import require_stage_settings
 from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
 
 router = APIRouter(prefix="/api")
@@ -237,6 +239,24 @@ def get_job(job_id: str):
     return job
 
 
+@router.post("/jobs/{job_id}/stages/{stage}/settings")
+def save_stage_settings(job_id: str, stage: str, request: StageSettingsRequest):
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    if any(snapshot.status == StageStatus.running for snapshot in job.processing.values()):
+        raise api_error(409, "job_running", "Nie mozna zmienic ustawien podczas aktywnego przetwarzania.")
+
+    _apply_stage_settings(job, stage, request)
+    if stage == "uploaded":
+        return repository.get_job(job_id)
+
+    invalidated = _invalidate_for_stage(job_id, stage)
+    _enqueue_stage(job_id, stage)
+    refreshed = repository.get_job(job_id)
+    return {"job": refreshed, "invalidatedStages": invalidated, "queued": True}
+
+
 @router.get("/jobs/{job_id}/arrangement", response_model=Arrangement)
 def get_arrangement(job_id: str) -> Arrangement:
     arrangement = repository.get_arrangement(job_id)
@@ -372,19 +392,68 @@ def download_artifact(job_id: str, asset_id: str):
     return FileResponse(path, media_type=asset.mimeType or "application/octet-stream", filename=asset.originalFilename or path.name)
 
 
-@router.post("/jobs/{job_id}/stages/{stage}/reset", response_model=ResetStageResponse)
-def reset_stage(job_id: str, stage: str, request: ResetStageRequest):
+STAGE_NAMES = ["preprocessing", "detecting_bpm", "separating_vocals", "transcribing", "detecting_pitch", "aligning"]
+
+
+def _apply_stage_settings(job, stage: str, request: StageSettingsRequest) -> None:
+    if stage == "uploaded":
+        metadata = request.metadata
+        if metadata is None:
+            raise api_error(400, "missing_settings", "Brakuje metadanych zrodla.")
+        if not (metadata.title or "").strip() or not (metadata.artist or "").strip():
+            raise api_error(422, "metadata_required", "Tytul i artysta sa wymagane.")
+        repository.update_job_config(job.jobId, metadata=metadata)
+        return
+
+    if stage == "separating_vocals":
+        profiles = job.profiles.model_copy(update={"separationModel": (request.profiles or job.profiles).separationModel})
+        repository.update_job_config(job.jobId, profiles=profiles)
+        return
+
+    if stage == "transcribing":
+        transcription_settings = final_transcription_settings(request.transcriptionSettings or job.transcriptionSettings, request.syllabificationSettings or job.syllabificationSettings)
+        profiles = job.profiles.model_copy(update={"transcriptionModel": (request.profiles or job.profiles).transcriptionModel})
+        repository.update_job_config(
+            job.jobId,
+            profiles=profiles,
+            transcription_settings=transcription_settings,
+            syllabification_settings=request.syllabificationSettings or job.syllabificationSettings,
+        )
+        return
+
+    if stage == "detecting_pitch":
+        requested = request.pitchSettings or job.pitchSettings
+        pitch_settings = job.pitchSettings.model_copy(
+            update={
+                "silenceThresholdDb": requested.silenceThresholdDb,
+                "periodicityThreshold": requested.periodicityThreshold,
+                "frameStepMs": requested.frameStepMs,
+            }
+        )
+        profiles = job.profiles.model_copy(update={"pitch": (request.profiles or job.profiles).pitch})
+        repository.update_job_config(job.jobId, profiles=profiles, pitch_settings=pitch_settings)
+        return
+
+    if stage == "aligning":
+        requested_transcription = request.transcriptionSettings or job.transcriptionSettings
+        requested_pitch = request.pitchSettings or job.pitchSettings
+        transcription_settings = job.transcriptionSettings.model_copy(update={"sentenceGapMs": requested_transcription.sentenceGapMs})
+        pitch_settings = job.pitchSettings.model_copy(update={"minNoteLengthMs": requested_pitch.minNoteLengthMs, "mergeGapMs": requested_pitch.mergeGapMs})
+        repository.update_job_config(job.jobId, transcription_settings=transcription_settings, pitch_settings=pitch_settings)
+        return
+
+    raise api_error(400, "invalid_stage", "Ten etap nie ma formularza ustawien.")
+
+
+def _invalidate_for_stage(job_id: str, stage: str) -> list[str]:
+    if stage not in STAGE_NAMES:
+        raise api_error(400, "invalid_stage", "Nieprawidlowy etap resetu.")
+    invalidated = STAGE_NAMES[STAGE_NAMES.index(stage) :]
+    repository.invalidate_from_stage(job_id, invalidated)
     job = repository.get_job(job_id)
     if not job:
-        raise api_error(404, "job_not_found", "Job nie istnieje.")
-    if any(snapshot.status == StageStatus.running for snapshot in job.processing.values()):
-        raise api_error(409, "job_running", "Reset jest niedostepny podczas aktywnego przetwarzania.")
-    stage_names = ["preprocessing", "detecting_bpm", "separating_vocals", "transcribing", "detecting_pitch", "aligning"]
-    if stage not in stage_names:
-        raise api_error(400, "invalid_stage", "Nieprawidlowy etap resetu.")
-    invalidated = stage_names[stage_names.index(stage) :]
-    repository.invalidate_from_stage(job_id, invalidated)
-    for key, snapshot in job.processing.items():
+        return invalidated
+    for snapshot in job.processing.values():
         if snapshot.stage in invalidated:
             snapshot.status = StageStatus.pending
             snapshot.startedAt = None
@@ -394,7 +463,50 @@ def reset_stage(job_id: str, stage: str, request: ResetStageRequest):
             snapshot.etaSec = None
             snapshot.logExcerpt = None
             snapshot.artifactIds = []
+            snapshot.actionRequired = False
+            snapshot.settingsForm = None
+            snapshot.settingsSummary = {}
     repository.update_processing(job_id, job.processing)
     repository.update_job_status(job_id, JobStatus(stage))
-    enqueue_job(job_id, start_stage=stage)
+    return invalidated
+
+
+def _enqueue_stage(job_id: str, stage: str) -> None:
+    if stage in {"preprocessing", "detecting_bpm"}:
+        enqueue_job(job_id, start_stage=stage)
+    elif stage == "separating_vocals":
+        enqueue_separation(job_id)
+    elif stage == "transcribing":
+        enqueue_transcription(job_id)
+    elif stage == "detecting_pitch":
+        enqueue_pitch(job_id)
+    elif stage == "aligning":
+        enqueue_pitch(job_id, start_stage="aligning")
+    else:
+        raise api_error(400, "invalid_stage", "Nieprawidlowy etap kolejki.")
+
+
+@router.post("/jobs/{job_id}/stages/{stage}/reset", response_model=ResetStageResponse)
+def reset_stage(job_id: str, stage: str, request: ResetStageRequest):
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    if any(snapshot.status == StageStatus.running for snapshot in job.processing.values()):
+        raise api_error(409, "job_running", "Reset jest niedostepny podczas aktywnego przetwarzania.")
+    if stage not in STAGE_NAMES:
+        raise api_error(400, "invalid_stage", "Nieprawidlowy etap resetu.")
+    invalidated = _invalidate_for_stage(job_id, stage)
+    if stage in {"separating_vocals", "transcribing", "detecting_pitch", "aligning"}:
+        form = {"separating_vocals": "separation", "transcribing": "transcription", "detecting_pitch": "pitch", "aligning": "alignment"}[stage]
+        substep = {"separating_vocals": "demucs", "transcribing": "whisperx", "detecting_pitch": "pitch_detection", "aligning": "draft"}[stage]
+        worker = {"separating_vocals": "worker-separate-stems", "transcribing": "worker-transcribe", "detecting_pitch": "worker-pitch", "aligning": "worker-aligner"}[stage]
+        message = {
+            "separating_vocals": "Wybierz ustawienia separacji wokalu",
+            "transcribing": "Wybierz ustawienia transkrypcji",
+            "detecting_pitch": "Wybierz ustawienia detekcji tonów",
+            "aligning": "Wybierz ustawienia wstępnego dopasowania",
+        }[stage]
+        require_stage_settings(job_id, stage, substep, message, worker, form)
+        return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=False)
+    _enqueue_stage(job_id, stage)
     return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=True)

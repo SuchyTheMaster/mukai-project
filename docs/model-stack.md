@@ -137,7 +137,7 @@ Aktualna decyzja implementacyjna dla etapu 07:
 
 - `worker-pitch` używa osobnego obrazu `backend/Pitch.Dockerfile` opartego o `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime`, żeby zachować ten sam kontrolowany wariant PyTorch/CUDA co workery AI.
 - `backend/requirements-pitch.txt` pinuje `torchcrepe==0.0.24`, `kokosznicka==0.2.5` i `pyphen==0.17.2`; PyTorch pochodzi z obrazu bazowego, a nie z domyślnego resolvera PyPI.
-- Worker czyta `worker_inputs/torchcrepe.wav`, zapisuje surowe ramki `pitch.frames.json`, filtruje je progami pitch zaakceptowanymi w `Job.pitchSettings` i dopiero po filtracji zapisuje nuty `pitch.notes.json`.
+- Worker czyta `worker_inputs/torchcrepe.wav` i zapisuje surowe ramki `pitch.frames.json`. Segmentacja ramek do nut `pitch.notes.json` odbywa się później w kroku `Wstępne dopasowanie`, zgodnie z ustawieniami tego kroku.
 - Podział słów na sylaby używa `Job.syllabificationSettings`: `kokosznicka` tylko dla polskiego `pl`, `pyphen` dla języków z dostępnym słownikiem hyphenation, `heuristic` jako dotychczasowa heurystyka oraz `none` jako brak podziału na sylaby.
 - Przy pozycjonowaniu `words_and_syllables` worker szkicu używa czasów znaków do początkowych czasów sylab; brak kompletnych znaków powoduje fallback do równego podziału czasu słowa z flagą recenzji sylab.
 - Jeśli `kokosznicka` albo `pyphen` nie obsłużą języka lub zwrócą niepoprawny wynik, worker używa heurystyki i zapisuje powód w `Arrangement.syllabification.fallbackReason`.

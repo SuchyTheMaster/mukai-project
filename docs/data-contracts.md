@@ -51,7 +51,10 @@
       "etaSec": 180,
       "message": "Separacja wokalu",
       "artifactIds": [],
-      "workerRole": "worker-separate-stems"
+      "workerRole": "worker-separate-stems",
+      "actionRequired": false,
+      "settingsForm": null,
+      "settingsSummary": {}
     }
   },
   "retention": {
@@ -181,7 +184,10 @@ Klucz mapy powinien być nazwą etapu, a jeśli etap ma kilka widocznych podetap
   "message": "Separacja wokalu",
   "logExcerpt": null,
   "artifactIds": [],
-  "workerRole": "worker-separate-stems"
+  "workerRole": "worker-separate-stems",
+  "actionRequired": false,
+  "settingsForm": null,
+  "settingsSummary": {}
 }
 ```
 
@@ -207,6 +213,9 @@ Zasady:
 - `logExcerpt` zawiera kompaktowy fragment diagnostyczny bez sekretów, tokenów i prywatnych ścieżek.
 - `artifactIds` wskazuje artefakty gotowe do pobrania przy danym etapie lub podetapie.
 - `workerRole` opisuje docelową rolę workera, np. `orchestrator`, `worker-separate-stems`, `worker-transcribe`, `worker-pitch`, `worker-aligner`, `worker-export`.
+- `actionRequired=true` przy statusie `pending` oznacza, że UI ma pokazać formularz ustawień przed uruchomieniem etapu.
+- `settingsForm` wskazuje wariant formularza UI, np. `separation`, `transcription`, `pitch` albo `alignment`.
+- `settingsSummary` przechowuje krótki podgląd aktualnych ustawień etapu dla UI.
 
 ## AudioAsset
 
@@ -719,7 +728,7 @@ Minimalny komplet artefaktów wymagany do importu ZIP-a projektu i wznowienia pr
 | `separating_vocals` | artefakty statusu `preprocessing`, asset `tempo` |
 | `transcribing` | artefakty statusu `separating_vocals`, assety `demucs_input`, `vocals`, `instrumental`, `separation_manifest`, `whisperx_input`, `torchcrepe_input` |
 | `detecting_pitch` | artefakty statusu `transcribing`, assety `transcript_raw`, `transcript_aligned` |
-| `aligning` | artefakty statusu `detecting_pitch`, assety `pitch_frames`, `pitch_notes` |
+| `aligning` | artefakty statusu `detecting_pitch`, assety `pitch_frames` |
 | `awaiting_review` | artefakty statusu `aligning`, aktualny `Arrangement` w Postgresie |
 | `exporting` | artefakty statusu `awaiting_review`, aktualny zatwierdzony `Arrangement` |
 | `exporting_project` | artefakty wymagane dla bieżącego statusu `Job` oraz manifest eksportu projektu |

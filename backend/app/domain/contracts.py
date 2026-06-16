@@ -115,6 +115,9 @@ class StageSnapshot(BaseModel):
     logExcerpt: str | None = None
     artifactIds: list[str] = Field(default_factory=list)
     workerRole: str
+    actionRequired: bool = False
+    settingsForm: str | None = None
+    settingsSummary: dict = Field(default_factory=dict)
 
     @field_validator("progressPercent")
     @classmethod
@@ -373,6 +376,22 @@ class CreateJobUpload(BaseModel):
     syllabificationSettings: SyllabificationSettings = Field(default_factory=SyllabificationSettings)
     useEmbeddedCover: bool = True
 
+    @model_validator(mode="after")
+    def require_title_and_artist(self):
+        if not (self.metadata.title or "").strip():
+            raise ValueError("metadata.title is required")
+        if not (self.metadata.artist or "").strip():
+            raise ValueError("metadata.artist is required")
+        return self
+
+
+class StageSettingsRequest(BaseModel):
+    metadata: SourceMetadata | None = None
+    profiles: ModelProfiles | None = None
+    transcriptionSettings: TranscriptionSettings | None = None
+    pitchSettings: PitchSettings | None = None
+    syllabificationSettings: SyllabificationSettings | None = None
+
 
 class SaveArrangementRequest(BaseModel):
     revision: int = Field(ge=1)
@@ -456,8 +475,8 @@ STAGE_ORDER = [
     ("detecting_bpm", "essentia", "Rozpoznawanie BPM", "orchestrator"),
     ("separating_vocals", "demucs", "Separacja wokalu", "worker-separate-stems"),
     ("transcribing", "whisperx", "Transkrypcja", "worker-transcribe"),
-    ("detecting_pitch", "pitch_detection", "Detekcja pitch", "worker-pitch"),
-    ("aligning", "draft", "Szkic arrangement", "worker-aligner"),
+    ("detecting_pitch", "pitch_detection", "Detekcja tonów", "worker-pitch"),
+    ("aligning", "draft", "Wstępne dopasowanie", "worker-aligner"),
 ]
 
 

@@ -13,7 +13,7 @@ from app.services.ids import new_id
 from app.services.queue import enqueue_pitch, enqueue_separation, redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
 from app.workers.audio_tools import ffmpeg_convert
-from app.workers.stages import fail_stage, set_stage
+from app.workers.stages import fail_stage, require_stage_settings, set_stage
 
 
 def main() -> None:
@@ -41,7 +41,16 @@ def process_job(job_id: str, start_stage: str) -> None:
     if start_stage in {"preprocessing", "detecting_bpm"}:
         if not run_stage(job_id, "detecting_bpm", "essentia", run_bpm):
             return
-        enqueue_separation(job_id)
+        job = repository.get_job(job_id)
+        require_stage_settings(
+            job_id,
+            "separating_vocals",
+            "demucs",
+            "Wybierz ustawienia separacji wokalu",
+            "worker-separate-stems",
+            "separation",
+            {"separationModel": job.profiles.separationModel if job else "htdemucs_ft"},
+        )
 
 
 def run_stage(job_id: str, stage: str, substep: str, handler) -> bool:

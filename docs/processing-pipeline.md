@@ -27,7 +27,8 @@ Preflight uploadu:
 
 Utworzenie zadania:
 
-- Po akceptacji formularza frontend wysyła `POST /api/jobs/uploads` z `uploadDraftId`, finalnymi metadanymi, profilami modeli, ustawieniami transkrypcji, pitch, sylabizacji i opcjonalnym ręcznym coverem.
+- Po akceptacji formularza kroku `Źródło` frontend wysyła `POST /api/jobs/uploads` z `uploadDraftId`, finalnymi metadanymi i opcjonalnym ręcznym coverem. Pola `artist` i `title` są wymagane.
+- Profile modeli oraz ustawienia separacji, transkrypcji, detekcji tonów i wstępnego dopasowania są zbierane dopiero wtedy, gdy pipeline dojdzie do powiązanego z nimi kroku.
 - Jeśli użytkownik nie wskaże ręcznie covera, a preflight wykrył osadzony cover, finalny `Job` używa covera z tagów jako covera importu.
 - Jeśli użytkownik wskaże ręczny cover, ręczny plik zastępuje cover z tagów.
 - Utworzenie `Job` zapisuje oryginalny plik jako artefakt niemodyfikowany i ustawia status `uploaded`.
@@ -45,7 +46,9 @@ Walidacja:
 ## Orkiestracja, statusy i postęp
 
 - UI pokazuje od razu wszystkie oczekiwane etapy pipeline'u, także te, które jeszcze nie wystartowały.
-- Etap przetwarzania audio jest w UI rozbity na podetapy: preprocessing/FFmpeg, BPM, Demucs, WhisperX, pitch detection i alignment/draft.
+- Etap przetwarzania audio jest w UI rozbity na podetapy: preprocessing/FFmpeg, BPM, Demucs, WhisperX, detekcja tonów i wstępne dopasowanie.
+- Jeśli etap wymaga ustawień użytkownika przed startem, jego `StageSnapshot` pozostaje w statusie `pending`, ale ma `actionRequired=true` i `settingsForm` wskazujące formularz UI.
+- Zatwierdzenie formularza etapu zapisuje ustawienia przez `POST /api/jobs/{jobId}/stages/{stage}/settings`, unieważnia artefakty tego etapu i etapów zależnych, a następnie kontynuuje pipeline od tego miejsca.
 - Każdy podetap zapisuje `StageSnapshot` w `Job.processing`, jeśli ma postęp, wynik, błąd albo artefakty widoczne dla użytkownika.
 - Długie operacje zapisują `progressMode`, `progressPercent` i `etaSec`, jeśli worker potrafi je wiarygodnie określić. Jeśli nie, status pozostaje `indeterminate`, a UI pokazuje czas trwania.
 - Błędy etapów muszą zawierać krótki komunikat dla użytkownika i kompaktowy log diagnostyczny bez sekretów, tokenów i prywatnych ścieżek.
@@ -150,7 +153,7 @@ Wejście:
 Wyjście:
 
 - `transcript.raw.json`: segmenty modelu ASR; asset typu `transcript_raw`.
-- `transcript.aligned.json`: finalne frazy karaoke, słowa, czasy start/end, opcjonalne czasy znaków, confidence; asset typu `transcript_aligned`.
+- `transcript.aligned.json`: aligned words i segmenty ASR z czasami start/end, opcjonalnymi czasami znaków i confidence; asset typu `transcript_aligned`. Finalne frazy karaoke powstają dopiero we wstępnym dopasowaniu.
 
 Wymagania:
 
@@ -163,14 +166,14 @@ Wymagania:
 - Jeśli wersja WhisperX w obrazie nie obsługuje jawnego `vad_method`, worker nie przerywa transkrypcji i zapisuje w diagnostyce, czy metoda VAD została wymuszona, wstrzyknięta przez `vad_model`, czy użyto domyślnego VAD tej wersji.
 - `TranscriptionSettings.positioning` steruje `return_char_alignments`: `words_and_syllables` zapisuje czasy znaków przy słowach, a `words_only` zostawia tylko czasy słów.
 - `transcript.raw.json` zachowuje surowe segmenty ASR bez przepisywania ich na frazy karaoke.
-- Po forced alignment worker buduje finalne `TranscriptSegment` z aligned words: dłuższe przerwy między słowami rozdzielają sentencje/frazy, a krótkie pauzy pozostają w obrębie jednej frazy.
+- Po forced alignment worker zapisuje aligned words bez finalnego grupowania w sentencje karaoke.
 - Artefakty transkrypcji zapisują czas trwania wejścia, rozmiar okna, oczekiwaną liczbę okien i maksymalny czas końca segmentów, żeby dało się diagnostycznie wykryć wynik ucięty do pierwszych 30 sekund.
 - Artefakty transkrypcji zapisują metodę VAD, opcje VAD, próg pauzy dla fraz i padding fraz.
 - Zachować segmenty o niskiej pewności, ale oznaczyć je do ręcznej korekty.
 - Dla piosenek dopuszczać powtórzenia, wydłużone sylaby i fragmenty bez słów.
 - Zapisać wersje WhisperX, modelu ASR, modelu alignacji, PyTorch/CUDA i parametry batch w artefaktach transkrypcji.
 
-## 6. Detekcja pitch
+## 6. Detekcja tonów
 
 Model:
 
@@ -183,16 +186,15 @@ Wejście:
 Wyjście:
 
 - `pitch.frames.json`: ramki `time`, `frequency_hz`, `periodicity`, `confidence`; asset typu `pitch_frames`.
-- `pitch.notes.json`: zsegmentowane nuty po filtracji; asset typu `pitch_notes`.
+- `pitch.notes.json`: zsegmentowane nuty karaoke tworzone dopiero w kroku `Wstępne dopasowanie`; asset typu `pitch_notes`.
 
 Wymagania:
 
 - Docelowo wykonywać pitch detection w osobnym workerze Docker `worker-pitch`.
 - Przechowywać ramki F0 niezależnie od nut, żeby edytor mógł pokazać surowy kontur.
-- Domyślnie użyć progu ciszy `-42 dBFS`, progu periodicity `0.55`, kroku ramek `10 ms`, minimalnej długości nuty `120 ms` i scalania przerw do `90 ms`; te wartości są praktycznym punktem startowym dla typowych piosenek i szkicu karaoke.
-- Powyższe parametry filtracji pitch muszą być dostępne w zaawansowanych ustawieniach i możliwe do samodzielnej zmiany przed uruchomieniem albo ponownym przeliczeniem pitch detection.
-- Konwertować częstotliwość do MIDI i do pitch UltraStar dopiero po filtracji.
-- Zapisać wersję torchcrepe, PyTorch/CUDA, progi i parametry filtracji w `pitch.notes.json`.
+- W ustawieniach detekcji tonów dostępne są parametry analizy F0: próg ciszy `-42 dBFS`, próg periodicity `0.55` i krok ramek `10 ms`.
+- Minimalna długość nuty karaoke `120 ms` i scalanie przerw do `90 ms` należą do kroku `Wstępne dopasowanie`, bo sterują segmentacją ramek F0 do nut karaoke.
+- Zapisać wersję torchcrepe, PyTorch/CUDA, progi i parametry analizy w `pitch.frames.json`.
 
 ## 7. Łączenie tekstu z nutami
 
@@ -200,6 +202,7 @@ Cel:
 
 - Połączyć rozpoznane słowa/frazy z nutami w edytowalny szkic karaoke.
 - Przygotować edycję na poziomie słów i sylab.
+- Utworzyć sentencje karaoke z aligned words oraz nuty karaoke z ramek F0 zgodnie z ustawieniami `Ms między sentencjami`, `Najkrótsza nuta karaoke (ms)` i `Scalanie krótkich przerw (ms)`.
 
 Reguły startowe:
 

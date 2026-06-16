@@ -415,6 +415,34 @@ h1 {
   color: var(--secondary);
 }
 
+.stage-settings-card,
+.stage-settings-inline,
+.processing-summary {
+  display: grid;
+  gap: 18px;
+}
+
+.stage-settings-card {
+  margin-bottom: 20px;
+  padding: 18px;
+  background: rgba(6, 6, 32, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.stage-settings-card h2,
+.summary-stage h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.stage-settings-inline {
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
 .button {
   display: inline-flex;
   align-items: center;
@@ -558,6 +586,15 @@ summary:focus-visible {
   font-size: 13px;
 }
 
+.stage.action-required {
+  border-color: var(--warning);
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.18);
+}
+
+.stage.action-required > span {
+  background: var(--warning);
+}
+
 .status-panel {
   display: grid;
   gap: 12px;
@@ -633,12 +670,70 @@ summary:focus-visible {
   background-color: var(--error);
 }
 
+.progress.pending span {
+  min-width: 0;
+}
+
 .artifact-buttons {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
   gap: 8px;
   min-height: 36px;
+}
+
+.summary-stage-list {
+  display: grid;
+  gap: 14px;
+}
+
+.summary-stage {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(6, 6, 32, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.summary-stage-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.summary-stage-header .button {
+  min-height: 34px;
+  padding: 8px 12px;
+}
+
+.summary-editor-button {
+  justify-self: start;
+  margin-top: 4px;
+}
+
+.artifact-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.artifact-links a {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  padding: 6px 10px;
+  color: var(--blue);
+  text-decoration: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(58, 134, 255, 0.08);
+}
+
+.artifact-links a:hover {
+  color: var(--text);
+  border-color: var(--blue);
 }
 
 .icon-button {
