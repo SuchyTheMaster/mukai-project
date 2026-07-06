@@ -2,6 +2,10 @@ from app.db import repository
 from app.domain.contracts import JobStatus, ProgressMode, StageSnapshot, StageStatus, stage_key, utc_now
 
 
+def is_stage_confirmed(job, stage: str) -> bool:
+    return any(snapshot.stage == stage and snapshot.settingsConfirmedAt is not None for snapshot in job.processing.values())
+
+
 def set_stage(
     job_id: str,
     stage: str,

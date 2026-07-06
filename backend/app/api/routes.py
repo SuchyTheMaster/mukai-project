@@ -24,6 +24,7 @@ from app.domain.contracts import (
     StageSettingsRequest,
     StageStatus,
     TranscriptSegment,
+    UpdateJobSourceRequest,
     UploadInspection,
     final_transcription_settings,
     initial_processing,
@@ -162,6 +163,15 @@ async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | N
     processing[upload_key].finishedAt = utc_now()
     processing[upload_key].progressMode = "determinate"
     processing[upload_key].progressPercent = 100
+    processing[upload_key].settingsConfirmedAt = utc_now()
+    processing[upload_key].settingsSummary = _settings_summary_for_config(
+        "uploaded",
+        request.metadata,
+        request.profiles,
+        transcription_settings,
+        request.pitchSettings,
+        request.syllabificationSettings,
+    )
 
     repository.create_job(
         job_id=job_id,
@@ -231,6 +241,97 @@ def _save_cover_asset(job_id: str, path: Path, filename: str, mime_type: str | N
     return asset_id
 
 
+@router.post("/jobs/{job_id}/source")
+async def update_job_source(job_id: str, payload: str = Form(...), cover: UploadFile | None = File(default=None)):
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    _ensure_not_running(job)
+
+    request = UpdateJobSourceRequest.model_validate_json(payload)
+    changed_stages: list[str] = []
+    if _metadata_language(job.metadata) != _metadata_language(request.metadata):
+        changed_stages = _merge_stages(changed_stages, ["transcribing", "aligning"])
+
+    draft = None
+    if request.uploadDraftId:
+        draft_path = resolve_inside(f"drafts/{request.uploadDraftId}/draft.json")
+        if not draft_path.exists():
+            raise api_error(404, "draft_not_found", "Nie znaleziono zaakceptowanego draftu uploadu.")
+        draft = read_json(draft_path)
+        changed_stages = _merge_stages(changed_stages, _stages_from("preprocessing"))
+
+    repository.update_job_config(job_id, metadata=request.metadata)
+
+    upload_key = stage_key("uploaded", "source")
+    processing = job.processing
+    source_artifact_ids = []
+    if draft:
+        job_dir = resolve_inside(f"jobs/{job_id}")
+        source_src = resolve_inside(draft["sourcePath"])
+        source_dst = job_dir / "source" / safe_filename(draft["originalFilename"])
+        source_dst.parent.mkdir(parents=True, exist_ok=True)
+        source_src.replace(source_dst)
+        repository.delete_artifacts_by_type(job_id, ["source_audio"])
+        source_asset = AudioAsset(
+            assetId=new_id("asset"),
+            type="source_audio",
+            path=relative_to_root(source_dst),
+            originalFilename=draft["originalFilename"],
+            durationSec=draft["audio"].get("durationSec"),
+            sampleRate=draft["audio"].get("sampleRate"),
+            channels=draft["audio"].get("channels"),
+            sha256=sha256_file(source_dst),
+            mimeType=None,
+            sizeBytes=source_dst.stat().st_size,
+            producedByStage="uploaded",
+            producedBySubstep="source",
+            metadata={"immutable": True},
+        )
+        repository.create_artifact(job_id, source_asset)
+        repository.update_job_config(job_id, audio=draft["audio"])
+        source_artifact_ids.append(source_asset.assetId)
+    else:
+        source_artifact_ids.extend(asset.assetId for asset in job.artifacts if asset.type == "source_audio")
+
+    replace_cover = cover is not None or bool(draft)
+    if replace_cover:
+        repository.delete_artifacts_by_type(job_id, ["cover"])
+        if cover:
+            cover_name = safe_filename(cover.filename, "cover")
+            cover_path = resolve_inside(f"jobs/{job_id}/assets/{cover_name}")
+            size = await save_upload(cover, cover_path, 25 * 1024 * 1024)
+            source_artifact_ids.append(_save_cover_asset(job_id, cover_path, cover_name, cover.content_type, size, "manual_upload"))
+        elif draft and request.useEmbeddedCover and draft.get("embeddedCover"):
+            cover_src = resolve_inside(draft["embeddedCover"]["path"])
+            cover_dst = resolve_inside(f"jobs/{job_id}/assets/{Path(cover_src).name}")
+            cover_dst.parent.mkdir(parents=True, exist_ok=True)
+            cover_src.replace(cover_dst)
+            source_artifact_ids.append(_save_cover_asset(job_id, cover_dst, Path(cover_dst).name, draft["embeddedCover"]["mimeType"], cover_dst.stat().st_size, "audio_tags"))
+    else:
+        source_artifact_ids.extend(asset.assetId for asset in job.artifacts if asset.type == "cover")
+
+    processing[upload_key].artifactIds = source_artifact_ids
+    processing[upload_key].settingsConfirmedAt = utc_now()
+    processing[upload_key].settingsSummary = _settings_summary_for_config(
+        "uploaded",
+        request.metadata,
+        job.profiles,
+        job.transcriptionSettings,
+        job.pitchSettings,
+        job.syllabificationSettings,
+    )
+    repository.update_processing(job_id, processing)
+
+    should_queue = bool(draft) or _should_queue_invalidated(job, changed_stages)
+    invalidated = _invalidate_stages(job_id, changed_stages)
+    queued = bool(invalidated) and should_queue
+    if queued:
+        _enqueue_stage(job_id, invalidated[0])
+    refreshed = repository.get_job(job_id)
+    return {"job": refreshed, "invalidatedStages": invalidated, "queued": queued}
+
+
 @router.get("/jobs/{job_id}")
 def get_job(job_id: str):
     job = repository.get_job(job_id)
@@ -244,17 +345,24 @@ def save_stage_settings(job_id: str, stage: str, request: StageSettingsRequest):
     job = repository.get_job(job_id)
     if not job:
         raise api_error(404, "job_not_found", "Job nie istnieje.")
-    if any(snapshot.status == StageStatus.running for snapshot in job.processing.values()):
-        raise api_error(409, "job_running", "Nie mozna zmienic ustawien podczas aktywnego przetwarzania.")
+    _ensure_not_running(job)
 
+    invalidated = _changed_stages_for_settings(job, stage, request)
+    must_queue = _stage_requires_action(job, stage) or _should_queue_invalidated(job, invalidated)
     _apply_stage_settings(job, stage, request)
+    _confirm_stage_settings(job_id, stage)
     if stage == "uploaded":
-        return repository.get_job(job_id)
+        invalidated = _invalidate_stages(job_id, invalidated)
+        queued = bool(invalidated)
+        if queued:
+            _enqueue_stage(job_id, invalidated[0])
+        return {"job": repository.get_job(job_id), "invalidatedStages": invalidated, "queued": queued}
 
-    invalidated = _invalidate_for_stage(job_id, stage)
-    _enqueue_stage(job_id, stage)
+    invalidated = _invalidate_stages(job_id, invalidated)
+    if must_queue:
+        _enqueue_stage(job_id, invalidated[0] if invalidated else stage)
     refreshed = repository.get_job(job_id)
-    return {"job": refreshed, "invalidatedStages": invalidated, "queued": True}
+    return {"job": refreshed, "invalidatedStages": invalidated, "queued": must_queue}
 
 
 @router.get("/jobs/{job_id}/arrangement", response_model=Arrangement)
@@ -393,6 +501,163 @@ def download_artifact(job_id: str, asset_id: str):
 
 
 STAGE_NAMES = ["preprocessing", "detecting_bpm", "separating_vocals", "transcribing", "detecting_pitch", "aligning"]
+STAGE_FORMS = {
+    "uploaded": "source",
+    "separating_vocals": "separation",
+    "transcribing": "transcription",
+    "detecting_pitch": "pitch",
+    "aligning": "alignment",
+}
+STAGE_SUBSTEPS = {
+    "uploaded": "source",
+    "separating_vocals": "demucs",
+    "transcribing": "whisperx",
+    "detecting_pitch": "pitch_detection",
+    "aligning": "draft",
+}
+STAGE_WORKERS = {
+    "uploaded": "api",
+    "separating_vocals": "worker-separate-stems",
+    "transcribing": "worker-transcribe",
+    "detecting_pitch": "worker-pitch",
+    "aligning": "worker-aligner",
+}
+STAGE_MESSAGES = {
+    "separating_vocals": "Wybierz ustawienia separacji wokalu",
+    "transcribing": "Wybierz ustawienia transkrypcji",
+    "detecting_pitch": "Wybierz ustawienia detekcji tonów",
+    "aligning": "Wybierz ustawienia wstępnego dopasowania",
+}
+
+
+def _metadata_language(metadata) -> str:
+    return (metadata.language or "").strip()
+
+
+def _merge_stages(current: list[str], incoming: list[str]) -> list[str]:
+    merged = list(current)
+    for stage in incoming:
+        if stage not in merged:
+            merged.append(stage)
+    return sorted(merged, key=lambda item: STAGE_NAMES.index(item) if item in STAGE_NAMES else len(STAGE_NAMES))
+
+
+def _stages_from(stage: str) -> list[str]:
+    if stage not in STAGE_NAMES:
+        raise api_error(400, "invalid_stage", "Nieprawidlowy etap resetu.")
+    return STAGE_NAMES[STAGE_NAMES.index(stage) :]
+
+
+def _stage_snapshot(job, stage: str):
+    return next((snapshot for snapshot in job.processing.values() if snapshot.stage == stage), None)
+
+
+def _stage_requires_action(job, stage: str) -> bool:
+    snapshot = _stage_snapshot(job, stage)
+    return bool(snapshot and snapshot.actionRequired)
+
+
+def _should_queue_invalidated(job, stages: list[str]) -> bool:
+    if not stages:
+        return False
+    first = stages[0]
+    snapshot = _stage_snapshot(job, first)
+    if snapshot and snapshot.status != StageStatus.pending:
+        return True
+    return any(asset.producedByStage == first for asset in job.artifacts)
+
+
+def _settings_summary_for_config(stage: str, metadata, profiles, transcription_settings, pitch_settings, syllabification_settings) -> dict:
+    if stage == "uploaded":
+        return {"title": metadata.title, "artist": metadata.artist, "language": metadata.language or "auto"}
+    if stage == "separating_vocals":
+        return {"separationModel": profiles.separationModel}
+    if stage == "transcribing":
+        return {
+            "transcriptionModel": profiles.transcriptionModel,
+            "vadMethod": transcription_settings.vadMethod,
+            "positioning": transcription_settings.positioning,
+            "syllabification": syllabification_settings.method,
+        }
+    if stage == "detecting_pitch":
+        return {
+            "pitch": profiles.pitch,
+            "silenceThresholdDb": pitch_settings.silenceThresholdDb,
+            "periodicityThreshold": pitch_settings.periodicityThreshold,
+            "frameStepMs": pitch_settings.frameStepMs,
+        }
+    if stage == "aligning":
+        return {
+            "sentenceGapMs": transcription_settings.sentenceGapMs,
+            "minNoteLengthMs": pitch_settings.minNoteLengthMs,
+            "mergeGapMs": pitch_settings.mergeGapMs,
+        }
+    return {}
+
+
+def _settings_summary_for_job(job, stage: str) -> dict:
+    return _settings_summary_for_config(stage, job.metadata, job.profiles, job.transcriptionSettings, job.pitchSettings, job.syllabificationSettings)
+
+
+def _confirm_stage_settings(job_id: str, stage: str) -> None:
+    job = repository.get_job(job_id)
+    if not job:
+        return
+    snapshot = _stage_snapshot(job, stage)
+    if not snapshot:
+        return
+    snapshot.settingsConfirmedAt = utc_now()
+    snapshot.settingsSummary = _settings_summary_for_job(job, stage)
+    snapshot.actionRequired = False
+    snapshot.settingsForm = None
+    repository.update_processing(job_id, job.processing)
+
+
+def _ensure_not_running(job) -> None:
+    if any(snapshot.status == StageStatus.running for snapshot in job.processing.values()):
+        raise api_error(409, "job_running", "Nie mozna zmienic ustawien podczas aktywnego przetwarzania.")
+
+
+def _changed_stages_for_settings(job, stage: str, request: StageSettingsRequest) -> list[str]:
+    if stage == "uploaded":
+        if request.metadata and _metadata_language(job.metadata) != _metadata_language(request.metadata):
+            return ["transcribing", "aligning"]
+        return []
+    if stage == "separating_vocals":
+        requested = request.profiles or job.profiles
+        return _stages_from("separating_vocals") if requested.separationModel != job.profiles.separationModel else []
+    if stage == "transcribing":
+        requested_profiles = request.profiles or job.profiles
+        requested_syllabification = request.syllabificationSettings or job.syllabificationSettings
+        requested_transcription = final_transcription_settings(request.transcriptionSettings or job.transcriptionSettings, requested_syllabification)
+        changed: list[str] = []
+        asr_fields = ["vadMethod", "vadOnset", "vadOffset", "vadChunkSizeSec", "sentencePaddingMs", "positioning"]
+        asr_changed = requested_profiles.transcriptionModel != job.profiles.transcriptionModel or any(
+            getattr(requested_transcription, field) != getattr(job.transcriptionSettings, field) for field in asr_fields
+        )
+        if asr_changed or (requested_syllabification.method == "none") != (job.syllabificationSettings.method == "none"):
+            changed = _merge_stages(changed, ["transcribing", "aligning"])
+        elif requested_syllabification.method != job.syllabificationSettings.method:
+            changed = _merge_stages(changed, ["aligning"])
+        return changed
+    if stage == "detecting_pitch":
+        requested_profiles = request.profiles or job.profiles
+        requested_pitch = request.pitchSettings or job.pitchSettings
+        pitch_changed = requested_profiles.pitch != job.profiles.pitch or any(
+            getattr(requested_pitch, field) != getattr(job.pitchSettings, field)
+            for field in ["silenceThresholdDb", "periodicityThreshold", "frameStepMs"]
+        )
+        return ["detecting_pitch", "aligning"] if pitch_changed else []
+    if stage == "aligning":
+        requested_transcription = request.transcriptionSettings or job.transcriptionSettings
+        requested_pitch = request.pitchSettings or job.pitchSettings
+        alignment_changed = (
+            requested_transcription.sentenceGapMs != job.transcriptionSettings.sentenceGapMs
+            or requested_pitch.minNoteLengthMs != job.pitchSettings.minNoteLengthMs
+            or requested_pitch.mergeGapMs != job.pitchSettings.mergeGapMs
+        )
+        return ["aligning"] if alignment_changed else []
+    return []
 
 
 def _apply_stage_settings(job, stage: str, request: StageSettingsRequest) -> None:
@@ -446,13 +711,21 @@ def _apply_stage_settings(job, stage: str, request: StageSettingsRequest) -> Non
 
 
 def _invalidate_for_stage(job_id: str, stage: str) -> list[str]:
-    if stage not in STAGE_NAMES:
-        raise api_error(400, "invalid_stage", "Nieprawidlowy etap resetu.")
-    invalidated = STAGE_NAMES[STAGE_NAMES.index(stage) :]
+    invalidated = _stages_from(stage)
+    return _invalidate_stages(job_id, invalidated, clear_confirmed_stages=[stage])
+
+
+def _invalidate_stages(job_id: str, stages: list[str], clear_confirmed_stages: list[str] | None = None) -> list[str]:
+    invalidated = _merge_stages([], [stage for stage in stages if stage in STAGE_NAMES])
+    if not invalidated:
+        return []
     repository.invalidate_from_stage(job_id, invalidated)
+    if "detecting_bpm" in invalidated:
+        repository.clear_tempo(job_id)
     job = repository.get_job(job_id)
     if not job:
         return invalidated
+    clear_confirmed = set(clear_confirmed_stages or [])
     for snapshot in job.processing.values():
         if snapshot.stage in invalidated:
             snapshot.status = StageStatus.pending
@@ -465,9 +738,11 @@ def _invalidate_for_stage(job_id: str, stage: str) -> list[str]:
             snapshot.artifactIds = []
             snapshot.actionRequired = False
             snapshot.settingsForm = None
-            snapshot.settingsSummary = {}
+            if snapshot.stage in clear_confirmed:
+                snapshot.settingsConfirmedAt = None
+                snapshot.settingsSummary = {}
     repository.update_processing(job_id, job.processing)
-    repository.update_job_status(job_id, JobStatus(stage))
+    repository.update_job_status(job_id, JobStatus(invalidated[0]))
     return invalidated
 
 
@@ -491,21 +766,15 @@ def reset_stage(job_id: str, stage: str, request: ResetStageRequest):
     job = repository.get_job(job_id)
     if not job:
         raise api_error(404, "job_not_found", "Job nie istnieje.")
-    if any(snapshot.status == StageStatus.running for snapshot in job.processing.values()):
-        raise api_error(409, "job_running", "Reset jest niedostepny podczas aktywnego przetwarzania.")
+    _ensure_not_running(job)
     if stage not in STAGE_NAMES:
         raise api_error(400, "invalid_stage", "Nieprawidlowy etap resetu.")
     invalidated = _invalidate_for_stage(job_id, stage)
     if stage in {"separating_vocals", "transcribing", "detecting_pitch", "aligning"}:
-        form = {"separating_vocals": "separation", "transcribing": "transcription", "detecting_pitch": "pitch", "aligning": "alignment"}[stage]
-        substep = {"separating_vocals": "demucs", "transcribing": "whisperx", "detecting_pitch": "pitch_detection", "aligning": "draft"}[stage]
-        worker = {"separating_vocals": "worker-separate-stems", "transcribing": "worker-transcribe", "detecting_pitch": "worker-pitch", "aligning": "worker-aligner"}[stage]
-        message = {
-            "separating_vocals": "Wybierz ustawienia separacji wokalu",
-            "transcribing": "Wybierz ustawienia transkrypcji",
-            "detecting_pitch": "Wybierz ustawienia detekcji tonów",
-            "aligning": "Wybierz ustawienia wstępnego dopasowania",
-        }[stage]
+        form = STAGE_FORMS[stage]
+        substep = STAGE_SUBSTEPS[stage]
+        worker = STAGE_WORKERS[stage]
+        message = STAGE_MESSAGES[stage]
         require_stage_settings(job_id, stage, substep, message, worker, form)
         return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=False)
     _enqueue_stage(job_id, stage)

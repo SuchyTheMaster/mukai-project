@@ -48,7 +48,9 @@ Walidacja:
 - UI pokazuje od razu wszystkie oczekiwane etapy pipeline'u, także te, które jeszcze nie wystartowały.
 - Etap przetwarzania audio jest w UI rozbity na podetapy: preprocessing/FFmpeg, BPM, Demucs, WhisperX, detekcja tonów i wstępne dopasowanie.
 - Jeśli etap wymaga ustawień użytkownika przed startem, jego `StageSnapshot` pozostaje w statusie `pending`, ale ma `actionRequired=true` i `settingsForm` wskazujące formularz UI.
-- Zatwierdzenie formularza etapu zapisuje ustawienia przez `POST /api/jobs/{jobId}/stages/{stage}/settings`, unieważnia artefakty tego etapu i etapów zależnych, a następnie kontynuuje pipeline od tego miejsca.
+- Zatwierdzenie formularza etapu zapisuje ustawienia przez `POST /api/jobs/{jobId}/stages/{stage}/settings`, porównuje stare i nowe wartości po polach, unieważnia tylko artefakty etapów zależnych od faktycznie zmienionych danych, a następnie kontynuuje pipeline od pierwszego wymaganego miejsca.
+- Zmiana metadanych źródła poza `language`, np. tytułu, artysty, albumu, roku albo gatunku, nie unieważnia żadnego etapu audio ani AI. Zmiana `language` unieważnia `transcribing` i `aligning`, a podmiana pliku audio unieważnia wszystkie etapy od `preprocessing` do `aligning`.
+- Jeśli etap zależny traci artefakty, ale jego własne ustawienia były już zatwierdzone i nie uległy zmianie, pipeline może przeliczyć go automatycznie bez ponownego pokazywania formularza.
 - Każdy podetap zapisuje `StageSnapshot` w `Job.processing`, jeśli ma postęp, wynik, błąd albo artefakty widoczne dla użytkownika.
 - Długie operacje zapisują `progressMode`, `progressPercent` i `etaSec`, jeśli worker potrafi je wiarygodnie określić. Jeśli nie, status pozostaje `indeterminate`, a UI pokazuje czas trwania.
 - Błędy etapów muszą zawierać krótki komunikat dla użytkownika i kompaktowy log diagnostyczny bez sekretów, tokenów i prywatnych ścieżek.

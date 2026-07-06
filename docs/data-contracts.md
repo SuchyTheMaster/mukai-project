@@ -187,7 +187,8 @@ Klucz mapy powinien być nazwą etapu, a jeśli etap ma kilka widocznych podetap
   "workerRole": "worker-separate-stems",
   "actionRequired": false,
   "settingsForm": null,
-  "settingsSummary": {}
+  "settingsSummary": {},
+  "settingsConfirmedAt": "2026-05-28T00:02:00Z"
 }
 ```
 
@@ -216,6 +217,7 @@ Zasady:
 - `actionRequired=true` przy statusie `pending` oznacza, że UI ma pokazać formularz ustawień przed uruchomieniem etapu.
 - `settingsForm` wskazuje wariant formularza UI, np. `separation`, `transcription`, `pitch` albo `alignment`.
 - `settingsSummary` przechowuje krótki podgląd aktualnych ustawień etapu dla UI.
+- `settingsConfirmedAt` oznacza moment ostatniego zatwierdzenia ustawień danego etapu. UI używa go do pokazania tylko zaakceptowanych grup w lewej kolumnie `Ustawienia zadania`; dla starszych jobów bez tego pola może użyć ukończonego statusu etapu jako fallbacku.
 
 ## AudioAsset
 

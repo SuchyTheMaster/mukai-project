@@ -33,7 +33,7 @@ from app.domain.contracts import (
 from app.services.ids import new_id
 from app.services.queue import redis_client
 from app.services.storage import read_json, relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import fail_stage, require_stage_settings, set_stage
+from app.workers.stages import fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
 
 
@@ -154,19 +154,25 @@ def process_job(job_id: str, start_stage: str = "detecting_pitch") -> None:
         fail_stage(job_id, "detecting_pitch", "pitch_detection", "Detekcja tonow nie powiodla sie.", sanitize_log(str(exc)), "worker-pitch")
         return
     job = repository.get_job(job_id)
-    require_stage_settings(
-        job_id,
-        "aligning",
-        "draft",
-        "Wybierz ustawienia wstępnego dopasowania",
-        "worker-aligner",
-        "alignment",
-        {
-            "sentenceGapMs": job.transcriptionSettings.sentenceGapMs if job else None,
-            "minNoteLengthMs": job.pitchSettings.minNoteLengthMs if job else 120,
-            "mergeGapMs": job.pitchSettings.mergeGapMs if job else 90,
-        },
-    )
+    if job and is_stage_confirmed(job, "aligning"):
+        try:
+            run_draft_alignment(job_id)
+        except Exception as exc:  # pragma: no cover - worker guard
+            fail_stage(job_id, "aligning", "draft", "Wstepne dopasowanie nie powiodlo sie.", sanitize_log(str(exc)), "worker-aligner")
+    else:
+        require_stage_settings(
+            job_id,
+            "aligning",
+            "draft",
+            "Wybierz ustawienia wstępnego dopasowania",
+            "worker-aligner",
+            "alignment",
+            {
+                "sentenceGapMs": job.transcriptionSettings.sentenceGapMs if job else None,
+                "minNoteLengthMs": job.pitchSettings.minNoteLengthMs if job else 120,
+                "mergeGapMs": job.pitchSettings.mergeGapMs if job else 90,
+            },
+        )
 
 
 def run_pitch_detection(job_id: str) -> None:

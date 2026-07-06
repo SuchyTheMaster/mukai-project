@@ -129,6 +129,7 @@ def update_job_config(
     transcription_settings: TranscriptionSettings | None = None,
     pitch_settings: PitchSettings | None = None,
     syllabification_settings: SyllabificationSettings | None = None,
+    audio: AudioInfo | None = None,
 ) -> None:
     assignments = []
     values = []
@@ -147,6 +148,9 @@ def update_job_config(
     if syllabification_settings is not None:
         assignments.append("syllabification_settings = %s::jsonb")
         values.append(json.dumps(_json(syllabification_settings)))
+    if audio is not None:
+        assignments.append("audio = %s::jsonb")
+        values.append(json.dumps(_json(audio)))
     if not assignments:
         return
     values.append(job_id)
@@ -161,6 +165,12 @@ def update_job_config(
 def set_tempo(job_id: str, tempo: Tempo) -> None:
     with get_conn() as conn:
         conn.execute("UPDATE jobs SET tempo = %s::jsonb, updated_at = now() WHERE job_id = %s", (json.dumps(_json(tempo)), job_id))
+        conn.commit()
+
+
+def clear_tempo(job_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("UPDATE jobs SET tempo = NULL, updated_at = now() WHERE job_id = %s", (job_id,))
         conn.commit()
 
 
@@ -310,4 +320,10 @@ def invalidate_from_stage(job_id: str, stages: list[str]) -> None:
         conn.execute("DELETE FROM artifacts WHERE job_id = %s AND produced_by_stage = ANY(%s)", (job_id, stages))
         if "aligning" in stages:
             conn.execute("DELETE FROM arrangements WHERE job_id = %s", (job_id,))
+        conn.commit()
+
+
+def delete_artifacts_by_type(job_id: str, types: list[str]) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM artifacts WHERE job_id = %s AND type = ANY(%s)", (job_id, types))
         conn.commit()

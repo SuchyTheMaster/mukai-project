@@ -118,6 +118,7 @@ class StageSnapshot(BaseModel):
     actionRequired: bool = False
     settingsForm: str | None = None
     settingsSummary: dict = Field(default_factory=dict)
+    settingsConfirmedAt: datetime | None = None
 
     @field_validator("progressPercent")
     @classmethod
@@ -391,6 +392,20 @@ class StageSettingsRequest(BaseModel):
     transcriptionSettings: TranscriptionSettings | None = None
     pitchSettings: PitchSettings | None = None
     syllabificationSettings: SyllabificationSettings | None = None
+
+
+class UpdateJobSourceRequest(BaseModel):
+    uploadDraftId: str | None = None
+    metadata: SourceMetadata
+    useEmbeddedCover: bool = True
+
+    @model_validator(mode="after")
+    def require_title_and_artist(self):
+        if not (self.metadata.title or "").strip():
+            raise ValueError("metadata.title is required")
+        if not (self.metadata.artist or "").strip():
+            raise ValueError("metadata.artist is required")
+        return self
 
 
 class SaveArrangementRequest(BaseModel):

@@ -443,6 +443,41 @@ h1 {
   border-top: 1px solid var(--border);
 }
 
+.source-change-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.source-cover-preview {
+  width: 120px;
+  height: 120px;
+}
+
+.settings-summary-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-summary-group {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-summary-group > strong {
+  color: var(--text);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.empty-summary {
+  margin: 0;
+  color: var(--tertiary);
+  font-size: 13px;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

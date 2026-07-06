@@ -314,9 +314,12 @@ function App() {
   }, [job?.jobId, job?.status, reviewOpen]);
 
   const activeStage = useMemo(() => currentStage(job), [job]);
-  const coverPreview = coverFile ? URL.createObjectURL(coverFile) : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
-  const isReview = job?.status === "awaiting_review" && reviewOpen;
   const jobCreated = Boolean(job);
+  const jobCoverAsset = job?.artifacts?.find((asset) => asset.type === "cover");
+  const coverPreview = jobCreated
+    ? jobCoverAsset ? `${API_BASE}/api/jobs/${job.jobId}/artifacts/${jobCoverAsset.assetId}` : null
+    : coverFile ? URL.createObjectURL(coverFile) : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
+  const isReview = job?.status === "awaiting_review" && reviewOpen;
 
   useEffect(() => {
     if (syllabificationTouched) return;
@@ -400,7 +403,7 @@ function App() {
   }
 
   async function saveStageSettings(stage, payload) {
-    if (!job) return;
+    if (!job) return false;
     setError(null);
     setBusy(true);
     try {
@@ -412,8 +415,28 @@ function App() {
       setArrangement(null);
       setReviewOpen(false);
       setJob(result.job ?? result);
+      return true;
     } catch (err) {
       setError(err.message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveSourceSettings(form) {
+    if (!job) return false;
+    setError(null);
+    setBusy(true);
+    try {
+      const result = await apiForm(`/api/jobs/${job.jobId}/source`, form);
+      setArrangement(null);
+      setReviewOpen(false);
+      setJob(result.job ?? result);
+      return true;
+    } catch (err) {
+      setError(err.message);
+      return false;
     } finally {
       setBusy(false);
     }
@@ -532,7 +555,7 @@ function App() {
 
         {job?.metadata && <section>
           <div className="section-title">Ustawienia zadania</div>
-          {job?.metadata && <MetadataSummary metadata={job.metadata} profiles={job.profiles} transcriptionSettings={job.transcriptionSettings} pitchSettings={job.pitchSettings} syllabificationSettings={job.syllabificationSettings} />}
+          {job?.metadata && <MetadataSummary job={job} />}
         </section>}
       </aside>
 
@@ -558,6 +581,7 @@ function App() {
               job={job}
               createJob={createJob}
               onStageSettings={saveStageSettings}
+              onSourceSettings={saveSourceSettings}
               onOpenReview={() => setReviewOpen(true)}
               busy={busy}
             />
@@ -584,7 +608,7 @@ function App() {
   );
 }
 
-function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onOpenReview, busy }) {
+function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onSourceSettings, onOpenReview, busy }) {
   const sourceReady = Boolean(inspection && (metadata.title ?? "").trim() && (metadata.artist ?? "").trim());
 
   return (
@@ -595,9 +619,9 @@ function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, on
         </div>
       </div>
       {job?.status === "awaiting_review" ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onOpenReview={onOpenReview} />
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onOpenReview={onOpenReview} />
       ) : job ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} />
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} />
       ) : (
         <>
           <div className="form-grid">
@@ -622,10 +646,11 @@ const TRANSCRIPTION_STAGE_FIELDS = TRANSCRIPTION_SETTING_FIELDS.filter(([key]) =
 const PITCH_DETECTION_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => !["minNoteLengthMs", "mergeGapMs"].includes(key));
 const ALIGNMENT_PITCH_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => ["minNoteLengthMs", "mergeGapMs"].includes(key));
 
-function StageSettingsPanel({ job, stage, busy, onSubmit, embedded = false }) {
+function StageSettingsPanel({ job, stage, busy, onSubmit, onSourceSubmit, embedded = false }) {
   const targetStage = stage ?? sortedStages(job.processing).find((item) => item.actionRequired);
   if (!targetStage) return null;
   const form = targetStage.settingsForm ?? settingsFormForStage(targetStage.stage);
+  if (form === "source") return <SourceStageForm job={job} busy={busy} onSubmit={onSourceSubmit} embedded={embedded} />;
   if (form === "separation") return <SeparationStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
   if (form === "transcription") return <TranscriptionStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
   if (form === "pitch") return <PitchStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
@@ -635,6 +660,7 @@ function StageSettingsPanel({ job, stage, busy, onSubmit, embedded = false }) {
 
 function settingsFormForStage(stage) {
   return {
+    uploaded: "source",
     separating_vocals: "separation",
     transcribing: "transcription",
     detecting_pitch: "pitch",
@@ -645,6 +671,111 @@ function settingsFormForStage(stage) {
 function StageFormShell({ title, embedded, children }) {
   const Tag = embedded ? "div" : "section";
   return <Tag className={embedded ? "stage-settings-inline" : "stage-settings-card"}>{!embedded && <h2>{title}</h2>}{children}</Tag>;
+}
+
+function SourceStageForm({ job, busy, onSubmit, embedded = false }) {
+  const [metadata, setMetadata] = useState({ ...emptyMetadata, ...(job.metadata ?? {}) });
+  const [sourceInspection, setSourceInspection] = useState(null);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [coverFile, setCoverFile] = useState(null);
+  const [useEmbeddedCover, setUseEmbeddedCover] = useState(true);
+  const [localError, setLocalError] = useState(null);
+  const sourceInputRef = useRef(null);
+  const coverInputRef = useRef(null);
+  const sourceReady = Boolean((metadata.title ?? "").trim() && (metadata.artist ?? "").trim());
+  const coverPreview = coverFile
+    ? URL.createObjectURL(coverFile)
+    : sourceInspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${sourceInspection.embeddedCover.previewUrl}` : null;
+
+  async function inspectSource(file) {
+    if (!file) return;
+    setLocalError(null);
+    setSourceBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const result = await apiForm("/api/uploads/inspect", form);
+      setSourceInspection(result);
+      setMetadata((current) => ({ ...current, ...result.metadata, language: current.language ?? "" }));
+      setCoverFile(null);
+      setUseEmbeddedCover(Boolean(result.embeddedCover));
+    } catch (err) {
+      setLocalError(err.message);
+    } finally {
+      setSourceBusy(false);
+    }
+  }
+
+  function chooseCover(file) {
+    if (!file) return;
+    setCoverFile(file);
+    setUseEmbeddedCover(false);
+  }
+
+  async function submitSource() {
+    const language = (metadata.language ?? "").trim();
+    const payload = {
+      uploadDraftId: sourceInspection?.uploadDraftId ?? null,
+      metadata: { ...metadata, language: language || null, languageMode: language ? "forced" : "auto" },
+      useEmbeddedCover: useEmbeddedCover && !coverFile,
+    };
+    const form = new FormData();
+    form.append("payload", JSON.stringify(payload));
+    if (coverFile) form.append("cover", coverFile);
+    return onSubmit(form);
+  }
+
+  return (
+    <StageFormShell title="Źródło" embedded={embedded}>
+      {localError && <div className="error-banner compact">{localError}</div>}
+      <div className="form-grid">
+        <TextField label="Tytuł" value={metadata.title ?? ""} onChange={(value) => setMetadata({ ...metadata, title: value })} />
+        <TextField label="Artysta" value={metadata.artist ?? ""} onChange={(value) => setMetadata({ ...metadata, artist: value })} />
+        <TextField label="Album" value={metadata.album ?? ""} onChange={(value) => setMetadata({ ...metadata, album: value })} />
+        <TextField label="Rok" value={metadata.year ?? ""} onChange={(value) => setMetadata({ ...metadata, year: value })} />
+        <TextField label="Gatunek" value={metadata.genre ?? ""} onChange={(value) => setMetadata({ ...metadata, genre: value })} />
+        <LanguageSelect label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={WHISPER_LANGUAGE_OPTIONS} />
+      </div>
+      <div className="source-change-actions">
+        <button className="button secondary" type="button" disabled={busy || sourceBusy} onClick={() => sourceInputRef.current?.click()}>
+          <UploadCloud size={16} /> {sourceInspection ? sourceInspection.originalFilename : "Zmień plik"}
+        </button>
+        <input
+          ref={sourceInputRef}
+          className="cover-input"
+          type="file"
+          accept=".wav,.mp3,.mp4,.m4a,.ogg,.flac,audio/*,video/mp4"
+          onChange={(event) => {
+            inspectSource(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+        <button className="button secondary" type="button" disabled={busy || sourceBusy} onClick={() => coverInputRef.current?.click()}>
+          <UploadCloud size={16} /> Zmień cover
+        </button>
+        <input
+          ref={coverInputRef}
+          className="cover-input"
+          type="file"
+          accept="image/png,image/jpeg"
+          onChange={(event) => {
+            chooseCover(event.target.files?.[0]);
+            event.target.value = "";
+          }}
+        />
+        {sourceInspection?.embeddedCover && (
+          <button className="button ghost" type="button" disabled={busy || sourceBusy} onClick={() => { setCoverFile(null); setUseEmbeddedCover(true); }}>
+            <RotateCcw size={16} /> Cover z tagów
+          </button>
+        )}
+      </div>
+      {sourceInspection && <AudioSummary audio={sourceInspection.audio} filename={sourceInspection.originalFilename} />}
+      {coverPreview && <div className="cover-box source-cover-preview" aria-label="Nowy podgląd okładki"><img src={coverPreview} alt="" /></div>}
+      <button className="button primary" type="button" disabled={busy || sourceBusy || !sourceReady} onClick={submitSource}>
+        <Save size={16} /> Zapisz źródło
+      </button>
+    </StageFormShell>
+  );
 }
 
 function SeparationStageForm({ job, busy, onSubmit, embedded = false }) {
@@ -731,9 +862,10 @@ function AlignmentStageForm({ job, busy, onSubmit, embedded = false }) {
   );
 }
 
-function ProcessingSummary({ job, busy, onSubmit, onOpenReview }) {
+function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onOpenReview }) {
   const artifactsById = Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.assetId, asset]));
   const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
+  const jobRunning = sortedStages(job.processing).some((stage) => stage.status === "running");
   const stageRefs = useRef({});
   const previousStatuses = useRef({});
   const [editingStage, setEditingStage] = useState(null);
@@ -751,12 +883,24 @@ function ProcessingSummary({ job, busy, onSubmit, onOpenReview }) {
     });
   }, [job.processing]);
 
+  useEffect(() => {
+    if (!editingStage) return;
+    const stage = sortedStages(job.processing).find((item) => item.stage === editingStage);
+    if (!stage || stage.status !== "completed") setEditingStage(null);
+  }, [editingStage, job.processing]);
+
   function changeStage(stage) {
     setEditingStage(stage.stage);
   }
 
   function cancelChange() {
     setEditingStage(null);
+  }
+
+  async function submitStageSettings(stage, payload) {
+    const saved = stage === "uploaded" ? await onSourceSubmit(payload) : await onSubmit(stage, payload);
+    if (saved) setEditingStage(null);
+    return saved;
   }
 
   return (
@@ -773,7 +917,7 @@ function ProcessingSummary({ job, busy, onSubmit, onOpenReview }) {
                   <small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.status} · {stageDuration(stage)}</small>
                 </div>
                 {isConfigurableStage(stage) && stage.status === "completed" && (
-                  <button className="button ghost" type="button" onClick={() => (isEditing ? cancelChange() : changeStage(stage))}>{isEditing ? "Anuluj" : "Zmień"}</button>
+                  <button className="button ghost" type="button" disabled={busy || jobRunning} onClick={() => (isEditing ? cancelChange() : changeStage(stage))}>{isEditing ? "Anuluj" : "Zmień"}</button>
                 )}
               </div>
               <dl className="summary">{stageSettingsSummary(job, stage).map(([label, value]) => <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>)}</dl>
@@ -784,7 +928,7 @@ function ProcessingSummary({ job, busy, onSubmit, onOpenReview }) {
                   return <a key={assetId} href={`${API_BASE}/api/jobs/${job.jobId}/artifacts/${assetId}`} download>{filename}</a>;
                 })}
               </div>
-              {(stage.actionRequired || isEditing) && <StageSettingsPanel job={job} stage={stage} busy={busy} onSubmit={onSubmit} embedded />}
+              {(stage.actionRequired || isEditing) && <StageSettingsPanel job={job} stage={stage} busy={busy} onSubmit={submitStageSettings} onSourceSubmit={(form) => submitStageSettings("uploaded", form)} embedded />}
             </article>
           );
         })}
@@ -2041,35 +2185,25 @@ function AudioSummary({ audio, filename }) {
   return <dl className="summary"><dt>Plik</dt><dd>{filename}</dd><dt>Format</dt><dd>{audio.container ?? "-"}</dd><dt>Kodek</dt><dd>{audio.codec ?? "-"}</dd><dt>Kanały</dt><dd>{audio.channels ?? "-"}</dd><dt>Hz</dt><dd>{audio.sampleRate ?? "-"}</dd><dt>Czas</dt><dd>{audio.durationSec ? `${audio.durationSec.toFixed(2)} s` : "-"}</dd></dl>;
 }
 
-function MetadataSummary({ metadata, profiles, transcriptionSettings, pitchSettings, syllabificationSettings }) {
-  const transcription = { ...defaultTranscription, ...(transcriptionSettings ?? {}) };
-  const pitch = { ...defaultPitch, ...(pitchSettings ?? {}) };
-  const syllabification = { ...defaultSyllabification, ...(syllabificationSettings ?? {}) };
+function MetadataSummary({ job }) {
+  const confirmedStages = sortedStages(job.processing).filter((stage) => isConfigurableStage(stage) && isSettingsConfirmed(stage));
+  if (!confirmedStages.length) return <p className="empty-summary">Brak zatwierdzonych ustawień.</p>;
 
   return (
-    <dl className="summary">
-      <dt>Tytuł</dt><dd>{metadata.title || "-"}</dd>
-      <dt>Artysta</dt><dd>{metadata.artist || "-"}</dd>
-      <dt>Album</dt><dd>{metadata.album || "-"}</dd>
-      <dt>Rok</dt><dd>{metadata.year || "-"}</dd>
-      <dt>Gatunek</dt><dd>{metadata.genre || "-"}</dd>
-      <dt className="summary-gap-after">Język</dt><dd className="summary-gap-after">{metadata.language || "auto"}</dd>
-      <dt>Separacja</dt><dd>{profiles?.separationModel ?? "-"}</dd>
-      <dt>Transkrypcja</dt><dd>{profiles?.transcriptionModel ?? "-"}</dd>
-      <dt>Wykrywanie mowy</dt><dd>{transcription.vadMethod}</dd>
-      <dt>Pozycjonowanie</dt><dd>{TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning}</dd>
-      <dt className="summary-gap-after">Sylabizacja</dt><dd className="summary-gap-after">{SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method}</dd>
-      {TRANSCRIPTION_SETTING_FIELDS.map(([key, field]) => (
-        <React.Fragment key={`transcription-${key}`}>
-          <dt>{field.label}</dt><dd>{formatTranscriptionSettingValue(key, transcription[key])}</dd>
-        </React.Fragment>
+    <div className="settings-summary-groups">
+      {confirmedStages.map((stage) => (
+        <div className="settings-summary-group" key={stageDomKey(stage)}>
+          <strong>{stageLabel(stage)}</strong>
+          <dl className="summary">
+            {stageSettingsSummary(job, stage).map(([label, value]) => (
+              <React.Fragment key={label}>
+                <dt>{label}</dt><dd>{value}</dd>
+              </React.Fragment>
+            ))}
+          </dl>
+        </div>
       ))}
-      {PITCH_SETTING_FIELDS.map(([key, field]) => (
-        <React.Fragment key={`pitch-${key}`}>
-          <dt>{field.label}</dt><dd>{formatSettingValue(pitch[key])}</dd>
-        </React.Fragment>
-      ))}
-    </dl>
+    </div>
   );
 }
 
@@ -2082,6 +2216,7 @@ function StatusPanel({ job, onResetStage }) {
   const rowRefs = useRef({});
   const artifactsById = Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.assetId, asset]));
   const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
+  const jobRunning = sortedStages(job.processing).some((stage) => stage.status === "running");
   const runningKey = stageDomKey(stages.find((stage) => stage.status === "running"));
 
   useEffect(() => {
@@ -2092,7 +2227,7 @@ function StatusPanel({ job, onResetStage }) {
   return <div className="status-panel">{stages.map((stage) => {
     const key = stageDomKey(stage);
     const artifactIds = displayArtifactIdsForStage(stage, job, artifactsById);
-    return <article key={key} ref={(node) => { if (node) rowRefs.current[key] = node; }} className={`status-row ${stage.status}`}><div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.workerRole}</small>{stage.logExcerpt && <pre>{stage.logExcerpt}</pre>}</div><div className="status-actions"><Progress stage={stage} /><div className="artifact-buttons">{isConfigurableStage(stage) && stage.status === "completed" && <button className="button ghost" type="button" onClick={() => onResetStage?.(stage.stage)}>Zmień</button>}{artifactIds.map((assetId) => {
+    return <article key={key} ref={(node) => { if (node) rowRefs.current[key] = node; }} className={`status-row ${stage.status}`}><div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.workerRole}</small>{stage.logExcerpt && <pre>{stage.logExcerpt}</pre>}</div><div className="status-actions"><Progress stage={stage} /><div className="artifact-buttons">{isConfigurableStage(stage) && stage.status === "completed" && <button className="button ghost" type="button" disabled={jobRunning} onClick={() => onResetStage?.(stage.stage)}>Zmień</button>}{artifactIds.map((assetId) => {
       const asset = artifactsById[assetId];
       const filename = artifactFilename(asset, assetId);
       return <a className="icon-button" key={assetId} href={`${API_BASE}/api/jobs/${job.jobId}/artifacts/${assetId}`} title={filename} aria-label={filename} download><Download size={16} /></a>;
@@ -2101,7 +2236,11 @@ function StatusPanel({ job, onResetStage }) {
 }
 
 function isConfigurableStage(stage) {
-  return ["separating_vocals", "transcribing", "detecting_pitch", "aligning"].includes(stage?.stage);
+  return ["uploaded", "separating_vocals", "transcribing", "detecting_pitch", "aligning"].includes(stage?.stage);
+}
+
+function isSettingsConfirmed(stage) {
+  return Boolean(stage?.settingsConfirmedAt || stage?.status === "completed");
 }
 
 function formatSettingValue(value) {
@@ -2126,7 +2265,7 @@ function stageSettingsSummary(job, stage) {
   const transcription = { ...defaultTranscription, ...(job.transcriptionSettings ?? {}) };
   const pitch = { ...defaultPitch, ...(job.pitchSettings ?? {}) };
   const syllabification = { ...defaultSyllabification, ...(job.syllabificationSettings ?? {}) };
-  if (stage.stage === "uploaded") return [["Tytuł", job.metadata?.title || "-"], ["Artysta", job.metadata?.artist || "-"], ["Język", job.metadata?.language || "auto"]];
+  if (stage.stage === "uploaded") return [["Tytuł", job.metadata?.title || "-"], ["Artysta", job.metadata?.artist || "-"], ["Album", job.metadata?.album || "-"], ["Rok", job.metadata?.year || "-"], ["Gatunek", job.metadata?.genre || "-"], ["Język", job.metadata?.language || "auto"]];
   if (stage.stage === "separating_vocals") return [["Model", job.profiles?.separationModel ?? "-"]];
   if (stage.stage === "transcribing") return [["Model", job.profiles?.transcriptionModel ?? "-"], ["VAD", transcription.vadMethod], ["Pozycjonowanie", TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning], ["Sylabizacja", SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method]];
   if (stage.stage === "detecting_pitch") return [["Silnik", job.profiles?.pitch ?? "default"], ["Czułość dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["Krok ramek", `${pitch.frameStepMs} ms`]];

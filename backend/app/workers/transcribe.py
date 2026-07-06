@@ -14,9 +14,9 @@ from app.db import repository
 from app.domain.contracts import AudioAsset, JobStatus, ProgressMode, StageStatus, TranscriptChar, TranscriptSegment, TranscriptWord, TranscriptionSettings
 from app.services.audio_probe import ffprobe
 from app.services.ids import new_id
-from app.services.queue import redis_client
+from app.services.queue import enqueue_pitch, redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import fail_stage, require_stage_settings, set_stage
+from app.workers.stages import fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 
 
 WHISPER_AUDIO_SAMPLE_RATE = 16000
@@ -212,20 +212,41 @@ def run_transcription(job_id: str) -> None:
     for asset in assets:
         repository.create_artifact(job_id, asset)
     set_stage(job_id, "transcribing", "whisperx", StageStatus.completed, "Transkrypcja", "worker-transcribe", ProgressMode.determinate, 100, artifact_ids=[asset.assetId for asset in assets])
-    require_stage_settings(
-        job_id,
-        "detecting_pitch",
-        "pitch_detection",
-        "Wybierz ustawienia detekcji tonów",
-        "worker-pitch",
-        "pitch",
-        {
-            "pitch": job.profiles.pitch,
-            "silenceThresholdDb": job.pitchSettings.silenceThresholdDb,
-            "periodicityThreshold": job.pitchSettings.periodicityThreshold,
-            "frameStepMs": job.pitchSettings.frameStepMs,
-        },
-    )
+    refreshed = repository.get_job(job_id)
+    if refreshed and any(asset.type == "pitch_frames" for asset in refreshed.artifacts):
+        if is_stage_confirmed(refreshed, "aligning"):
+            enqueue_pitch(job_id, start_stage="aligning")
+        else:
+            require_stage_settings(
+                job_id,
+                "aligning",
+                "draft",
+                "Wybierz ustawienia wstępnego dopasowania",
+                "worker-aligner",
+                "alignment",
+                {
+                    "sentenceGapMs": refreshed.transcriptionSettings.sentenceGapMs,
+                    "minNoteLengthMs": refreshed.pitchSettings.minNoteLengthMs,
+                    "mergeGapMs": refreshed.pitchSettings.mergeGapMs,
+                },
+            )
+    elif refreshed and is_stage_confirmed(refreshed, "detecting_pitch"):
+        enqueue_pitch(job_id)
+    else:
+        require_stage_settings(
+            job_id,
+            "detecting_pitch",
+            "pitch_detection",
+            "Wybierz ustawienia detekcji tonów",
+            "worker-pitch",
+            "pitch",
+            {
+                "pitch": job.profiles.pitch,
+                "silenceThresholdDb": job.pitchSettings.silenceThresholdDb,
+                "periodicityThreshold": job.pitchSettings.periodicityThreshold,
+                "frameStepMs": job.pitchSettings.frameStepMs,
+            },
+        )
 
 
 def forced_language(job) -> str | None:
