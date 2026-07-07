@@ -41,6 +41,11 @@ PITCH_SAMPLE_RATE = 16000
 MIN_VOCAL_MIDI = 36
 MAX_VOCAL_MIDI = 84
 MIN_ALIGNMENT_PART_SEC = 0.001
+PITCH_MODEL_BY_PROFILE = {
+    "fast": "tiny",
+    "default": "full",
+    "accurate": "full",
+}
 SYLLABIFICATION_PACKAGE_NAMES = ("kokosznicka", "pyphen")
 KOKOSZNICKA_FUNCTION_NAMES = ("syllabify", "syllabize", "split", "hyphenate", "sylabizuj", "podziel")
 KOKOSZNICKA_CLASS_NAMES = ("Syllabifier", "Sylabizator", "Kokosznicka")
@@ -201,8 +206,17 @@ def run_pitch_detection(job_id: str) -> None:
     if sample_rate != PITCH_SAMPLE_RATE:
         raise RuntimeError(f"worker_inputs/torchcrepe.wav ma sample rate {sample_rate}, oczekiwano {PITCH_SAMPLE_RATE}.")
 
-    set_stage(job_id, "detecting_pitch", "pitch_detection", StageStatus.running, "Analiza F0", "worker-pitch", ProgressMode.estimated, 35)
-    frequencies, periodicities = predict_pitch(audio, sample_rate, diagnostics["device"], settings.pitch_batch_size, job.pitchSettings.frameStepMs)
+    pitch_model = pitch_model_for_profile(job.profiles.pitch)
+    set_stage(job_id, "detecting_pitch", "pitch_detection", StageStatus.running, f"Analiza F0 ({pitch_model})", "worker-pitch", ProgressMode.estimated, 35)
+    frequencies, periodicities = predict_pitch(
+        audio,
+        sample_rate,
+        diagnostics["device"],
+        settings.pitch_batch_size,
+        job.pitchSettings.frameStepMs,
+        pitch_model,
+        job_id,
+    )
     frames = build_pitch_frames(audio, sample_rate, frequencies, periodicities, job.pitchSettings)
 
     diagnostics |= {
@@ -211,6 +225,9 @@ def run_pitch_detection(job_id: str) -> None:
         "cudaVariant": os.getenv("TORCH_CUDA_VARIANT", "unknown"),
         "environmentSource": os.getenv("TORCH_ENV_SOURCE", "unknown"),
         "sampleRate": sample_rate,
+        "pitchProfile": job.profiles.pitch,
+        "torchcrepeModel": pitch_model,
+        "pitchBatchSize": settings.pitch_batch_size,
         "frameStepMs": job.pitchSettings.frameStepMs,
         "silenceThresholdDb": job.pitchSettings.silenceThresholdDb,
         "periodicityThreshold": job.pitchSettings.periodicityThreshold,
@@ -243,7 +260,7 @@ def run_pitch_detection(job_id: str) -> None:
             sizeBytes=frames_path.stat().st_size,
             producedByStage="detecting_pitch",
             producedBySubstep="pitch_detection",
-            metadata={"model": "torchcrepe", "frameCount": len(frames)},
+            metadata={"model": "torchcrepe", "torchcrepeModel": pitch_model, "frameCount": len(frames)},
         )
     ]
     for asset in assets:
@@ -391,25 +408,76 @@ def read_wav_mono(path: Path) -> tuple[np.ndarray, int]:
     return values.astype(np.float32, copy=False), sample_rate
 
 
-def predict_pitch(audio: np.ndarray, sample_rate: int, device: str, batch_size: int, frame_step_ms: int) -> tuple[list[float], list[float]]:
+def pitch_model_for_profile(profile: str | None) -> str:
+    return PITCH_MODEL_BY_PROFILE.get(profile or "default", "full")
+
+
+def predict_pitch(
+    audio: np.ndarray,
+    sample_rate: int,
+    device: str,
+    batch_size: int,
+    frame_step_ms: int,
+    model: str,
+    job_id: str,
+) -> tuple[list[float], list[float]]:
     import torch
     import torchcrepe
 
     hop_length = int(sample_rate * frame_step_ms / 1000)
     tensor = torch.from_numpy(audio).unsqueeze(0).to(device)
+    total_frames = max(1, 1 + int(tensor.size(1) // hop_length))
+    processed_frames = 0
+    started = time.monotonic()
+    pitch_results = []
+    periodicity_results = []
+
     with torch.no_grad():
-        frequency, periodicity = torchcrepe.predict(
+        generator = torchcrepe.preprocess(
             tensor,
             sample_rate,
             hop_length,
-            fmin=midi_to_frequency(MIN_VOCAL_MIDI),
-            fmax=midi_to_frequency(MAX_VOCAL_MIDI),
-            model="full",
             batch_size=batch_size,
             device=device,
-            return_periodicity=True,
+            pad=True,
         )
-    return tensor_to_list(frequency), tensor_to_list(periodicity)
+        for frames in generator:
+            probabilities = torchcrepe.infer(frames, model, device, embed=False)
+            probabilities = probabilities.reshape(tensor.size(0), -1, torchcrepe.PITCH_BINS).transpose(1, 2)
+            frequency, periodicity = torchcrepe.postprocess(
+                probabilities,
+                midi_to_frequency(MIN_VOCAL_MIDI),
+                midi_to_frequency(MAX_VOCAL_MIDI),
+                torchcrepe.decode.viterbi,
+                False,
+                True,
+            )
+            frequency = frequency.to(tensor.device)
+            periodicity = periodicity.to(tensor.device)
+            pitch_results.append(frequency)
+            periodicity_results.append(periodicity)
+            processed_frames = min(total_frames, processed_frames + int(frequency.numel()))
+            set_pitch_progress(job_id, processed_frames, total_frames, started)
+
+    return tensor_to_list(torch.cat(pitch_results, 1)), tensor_to_list(torch.cat(periodicity_results, 1))
+
+
+def set_pitch_progress(job_id: str, processed_frames: int, total_frames: int, started: float) -> None:
+    fraction = min(max(processed_frames / max(total_frames, 1), 0.0), 1.0)
+    elapsed = max(time.monotonic() - started, 0.001)
+    eta_sec = int((elapsed / fraction) - elapsed) if fraction > 0 else None
+    progress_percent = min(95, 35 + int(fraction * 60))
+    set_stage(
+        job_id,
+        "detecting_pitch",
+        "pitch_detection",
+        StageStatus.running,
+        f"Analiza F0: {processed_frames}/{total_frames} ramek",
+        "worker-pitch",
+        ProgressMode.estimated,
+        progress_percent,
+        eta_sec=eta_sec,
+    )
 
 
 def build_pitch_frames(audio: np.ndarray, sample_rate: int, frequencies: list[float], periodicities: list[float], settings) -> list[PitchFrame]:

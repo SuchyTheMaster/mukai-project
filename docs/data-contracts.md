@@ -27,7 +27,7 @@
   "profiles": {
     "separationModel": "htdemucs_ft",
     "transcriptionModel": "large-v3",
-    "pitch": "default"
+    "pitch": "fast"
   },
   "transcriptionSettings": {
     "vadMethod": "silero",
@@ -84,6 +84,12 @@ Domyślne wartości w UI:
 
 - `separationModel`: `htdemucs_ft`.
 - `transcriptionModel`: `large-v3`.
+- `pitch`: `fast`.
+
+`pitch`:
+
+- `fast`: szybszy profil torchcrepe `tiny`, domyślny dla nowych zadań.
+- `default`: dokładniejszy profil torchcrepe `full`, wolniejszy na długich wokalach.
 
 ## TranscriptionSettings
 
@@ -302,7 +308,7 @@ Zasady:
   "profiles": {
     "separationModel": "htdemucs_ft",
     "transcriptionModel": "large-v3",
-    "pitch": "default"
+    "pitch": "fast"
   },
   "transcriptionSettings": {
     "vadMethod": "silero",

@@ -56,7 +56,7 @@ class SourceMetadata(BaseModel):
 class ModelProfiles(BaseModel):
     separationModel: Literal["htdemucs", "htdemucs_ft"] = "htdemucs_ft"
     transcriptionModel: Literal["large-v3", "large-v3-turbo"] = "large-v3"
-    pitch: str = "default"
+    pitch: str = "fast"
 
 
 SyllabificationMethod = Literal["kokosznicka", "pyphen", "heuristic", "none"]

@@ -101,6 +101,13 @@ const TRANSCRIPTION_POSITIONING_OPTIONS = [
 
 const TRANSCRIPTION_POSITIONING_LABELS = Object.fromEntries(TRANSCRIPTION_POSITIONING_OPTIONS);
 
+const PITCH_PROFILE_OPTIONS = [
+  ["fast", "Szybki"],
+  ["default", "Dokładny"],
+];
+
+const PITCH_PROFILE_LABELS = Object.fromEntries(PITCH_PROFILE_OPTIONS);
+
 const WHISPER_LANGUAGE_OPTIONS = [
   ["", "Auto"],
   ...[
@@ -274,7 +281,7 @@ const MODEL_TOOLTIPS = {
 const initialUiState = {
   inspection: null,
   metadata: emptyMetadata,
-  profiles: { separationModel: "htdemucs_ft", transcriptionModel: "large-v3", pitch: "default" },
+  profiles: { separationModel: "htdemucs_ft", transcriptionModel: "large-v3", pitch: "fast" },
   transcriptionSettings: defaultTranscription,
   pitchSettings: defaultPitch,
   syllabificationSettings: defaultSyllabification,
@@ -947,16 +954,18 @@ function TranscriptionStageForm({ job, busy, onSubmit, embedded = false }) {
 
 function PitchStageForm({ job, busy, onSubmit, embedded = false }) {
   const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}) });
+  const [pitchProfile, setPitchProfile] = useState(job.profiles?.pitch ?? "fast");
   return (
     <StageFormShell title="Detekcja tonów" embedded={embedded}>
       <div className="advanced">
         <div className="form-grid compact pitch-settings-grid">
+          <Select label="Profil analizy" helper="torchcrepe" value={pitchProfile} onChange={setPitchProfile} options={PITCH_PROFILE_OPTIONS} />
           {PITCH_DETECTION_FIELDS.map(([key, field]) => (
             <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key]} onChange={(next) => setSettings({ ...settings, [key]: Number(next) })} />
           ))}
         </div>
       </div>
-      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("detecting_pitch", { profiles: job.profiles, pitchSettings: settings })}>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("detecting_pitch", { profiles: { ...job.profiles, pitch: pitchProfile }, pitchSettings: settings })}>
         <Play size={16} /> Uruchom detekcję tonów
       </button>
     </StageFormShell>
@@ -2410,7 +2419,7 @@ function stageSettingsSummary(job, stage) {
   if (stage.stage === "uploaded") return [["Tytuł", job.metadata?.title || "-"], ["Artysta", job.metadata?.artist || "-"], ["Album", job.metadata?.album || "-"], ["Rok", job.metadata?.year || "-"], ["Gatunek", job.metadata?.genre || "-"], ["Język", job.metadata?.language || "auto"]];
   if (stage.stage === "separating_vocals") return [["Model", job.profiles?.separationModel ?? "-"]];
   if (stage.stage === "transcribing") return [["Model", job.profiles?.transcriptionModel ?? "-"], ["VAD", transcription.vadMethod], ["Pozycjonowanie", TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning], ["Sylabizacja", SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method]];
-  if (stage.stage === "detecting_pitch") return [["Silnik", job.profiles?.pitch ?? "default"], ["Czułość dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["Krok ramek", `${pitch.frameStepMs} ms`]];
+  if (stage.stage === "detecting_pitch") return [["Profil", PITCH_PROFILE_LABELS[job.profiles?.pitch] ?? job.profiles?.pitch ?? "Dokładny"], ["Czułość dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["Krok ramek", `${pitch.frameStepMs} ms`]];
   if (stage.stage === "aligning") return [["Ms między sentencjami", transcription.sentenceGapMs == null ? "auto" : `${transcription.sentenceGapMs} ms`], ["Najkrótsza nuta", `${pitch.minNoteLengthMs} ms`], ["Scalanie przerw", `${pitch.mergeGapMs} ms`]];
   return [["Ustawienia", "-"]];
 }

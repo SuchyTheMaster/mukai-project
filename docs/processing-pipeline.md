@@ -184,6 +184,7 @@ Wymagania:
 Model:
 
 - torchcrepe jako implementacja CREPE w PyTorch.
+- Profil domyślny `fast` używa modelu `torchcrepe tiny`, żeby skrócić czas analizy na typowych utworach. Profil `default` używa modelu `torchcrepe full` jako dokładniejszej, ale znacznie wolniejszej opcji.
 
 Wejście:
 
@@ -201,6 +202,7 @@ Wymagania:
 - W ustawieniach detekcji tonów dostępne są parametry analizy F0: próg ciszy `-42 dBFS`, próg periodicity `0.55` i krok ramek `10 ms`.
 - Minimalna długość nuty karaoke `120 ms` i scalanie przerw do `90 ms` należą do kroku `Wstępne dopasowanie`, bo sterują segmentacją ramek F0 do nut karaoke.
 - Zapisać wersję torchcrepe, PyTorch/CUDA, progi i parametry analizy w `pitch.frames.json`.
+- Worker zapisuje postęp detekcji F0 po batchach ramek, wraz z szacowanym `etaSec`; pasek UI nie może stać na stałej wartości przez cały czas działania `torchcrepe`.
 
 ## 7. Łączenie tekstu z nutami
 
