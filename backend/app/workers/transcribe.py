@@ -220,6 +220,8 @@ def run_transcription(job_id: str) -> None:
 
 def continue_after_transcription(job_id: str) -> None:
     refreshed = repository.get_job(job_id)
+    if not refreshed:
+        return
     if refreshed and any(asset.type == "pitch_frames" for asset in refreshed.artifacts):
         if is_stage_confirmed(refreshed, "aligning"):
             enqueue_pitch(job_id, start_stage="aligning")
@@ -248,10 +250,10 @@ def continue_after_transcription(job_id: str) -> None:
             "worker-pitch",
             "pitch",
             {
-                "pitch": job.profiles.pitch,
-                "silenceThresholdDb": job.pitchSettings.silenceThresholdDb,
-                "periodicityThreshold": job.pitchSettings.periodicityThreshold,
-                "frameStepMs": job.pitchSettings.frameStepMs,
+                "pitch": refreshed.profiles.pitch,
+                "silenceThresholdDb": refreshed.pitchSettings.silenceThresholdDb,
+                "periodicityThreshold": refreshed.pitchSettings.periodicityThreshold,
+                "frameStepMs": refreshed.pitchSettings.frameStepMs,
             },
         )
 
@@ -274,7 +276,8 @@ def load_asr_model(
 ):
     kwargs = {"compute_type": compute_type, "download_root": str(cache_root)}
     language_passed_to = None
-    load_model_params = inspect.signature(whisperx.load_model).parameters
+    load_model_params = load_model_signature_params(whisperx)
+    accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in load_model_params.values())
     vad_options = {
         "chunk_size": transcription_settings.vadChunkSizeSec,
         "vad_onset": transcription_settings.vadOnset,
@@ -283,9 +286,9 @@ def load_asr_model(
     vad_diagnostics = {
         "requestedMethod": transcription_settings.vadMethod,
         "methodApplied": "whisperx_default",
-        "methodSupported": "vad_method" in load_model_params,
+        "methodSupported": accepts_kwargs or "vad_method" in load_model_params,
         "options": vad_options,
-        "optionsApplied": "vad_options" in load_model_params,
+        "optionsApplied": accepts_kwargs or "vad_options" in load_model_params,
         "modelInjected": False,
         "compatibilityNote": None,
     }
@@ -294,7 +297,7 @@ def load_asr_model(
     if vad_diagnostics["methodSupported"]:
         kwargs["vad_method"] = transcription_settings.vadMethod
         vad_diagnostics["methodApplied"] = transcription_settings.vadMethod
-    elif "vad_model" in load_model_params:
+    elif accepts_kwargs or "vad_model" in load_model_params:
         vad_model, note = build_manual_vad_model(whisperx, transcription_settings.vadMethod, device, vad_options)
         if vad_model is not None:
             kwargs["vad_model"] = vad_model
@@ -304,10 +307,22 @@ def load_asr_model(
             vad_diagnostics["compatibilityNote"] = note
     else:
         vad_diagnostics["compatibilityNote"] = "WhisperX load_model nie obsluguje vad_method ani vad_model; uzyto domyslnego VAD tej wersji."
-    if language and "language" in load_model_params:
+    if language and (accepts_kwargs or "language" in load_model_params):
         kwargs["language"] = language
         language_passed_to = "load_model"
     return whisperx.load_model(model_name, device, **kwargs), language_passed_to, vad_diagnostics
+
+
+def load_model_signature_params(whisperx) -> dict:
+    params = inspect.signature(whisperx.load_model).parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values()):
+        try:
+            import whisperx.asr as asr
+
+            return inspect.signature(asr.load_model).parameters
+        except Exception:
+            return params
+    return params
 
 
 def build_manual_vad_model(whisperx, vad_method: str, device: str, vad_options: dict):

@@ -747,6 +747,19 @@ summary:focus-visible {
   padding: 8px 12px;
 }
 
+.stage-log {
+  max-height: 140px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--secondary);
+  font: 12px "IBM Plex Mono", monospace;
+  white-space: pre-wrap;
+}
+
 .summary-editor-button {
   justify-self: start;
   margin-top: 4px;

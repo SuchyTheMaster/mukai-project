@@ -519,7 +519,8 @@ def resume_stage(job_id: str, stage: str, request: ResetStageRequest):
     _ensure_not_running(job)
     if stage not in STAGE_NAMES:
         raise api_error(400, "invalid_stage", "Nieprawidlowy etap wznowienia.")
-    if _stage_has_complete_outputs(job, stage):
+    snapshot = _stage_snapshot(job, stage)
+    if snapshot and snapshot.status != StageStatus.failed and _stage_has_complete_outputs(job, stage):
         _enqueue_stage(job_id, stage)
         return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=[], queued=True)
     invalidated = _invalidate_stages(job_id, _stages_from(stage))

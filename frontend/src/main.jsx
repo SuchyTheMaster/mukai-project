@@ -1043,6 +1043,7 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
                 )}
               </div>
               <dl className="summary">{stageSettingsSummary(job, stage).map(([label, value]) => <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>)}</dl>
+              {stage.logExcerpt && <pre className="stage-log">{stage.logExcerpt}</pre>}
               <div className="artifact-links">
                 {artifactIds.map((assetId) => {
                   const asset = artifactsById[assetId];
