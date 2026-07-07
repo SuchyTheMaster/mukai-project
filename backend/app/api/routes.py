@@ -500,7 +500,46 @@ def download_artifact(job_id: str, asset_id: str):
     return FileResponse(path, media_type=asset.mimeType or "application/octet-stream", filename=asset.originalFilename or path.name)
 
 
+@router.post("/jobs/{job_id}/restart", response_model=ResetStageResponse)
+def restart_job(job_id: str, request: ResetStageRequest):
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    _ensure_not_running(job)
+    invalidated = _invalidate_stages(job_id, _stages_from("preprocessing"))
+    repository.update_job_status(job_id, JobStatus.uploaded)
+    return ResetStageResponse(jobId=job_id, status=JobStatus.uploaded, resetFromStage="preprocessing", invalidatedStages=invalidated, queued=False)
+
+
+@router.post("/jobs/{job_id}/stages/{stage}/resume", response_model=ResetStageResponse)
+def resume_stage(job_id: str, stage: str, request: ResetStageRequest):
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    _ensure_not_running(job)
+    if stage not in STAGE_NAMES:
+        raise api_error(400, "invalid_stage", "Nieprawidlowy etap wznowienia.")
+    if _stage_has_complete_outputs(job, stage):
+        _enqueue_stage(job_id, stage)
+        return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=[], queued=True)
+    invalidated = _invalidate_stages(job_id, _stages_from(stage))
+    refreshed = repository.get_job(job_id)
+    if stage in STAGE_FORMS and refreshed and not _stage_requires_action(refreshed, stage) and not any(snapshot.stage == stage and snapshot.settingsConfirmedAt for snapshot in refreshed.processing.values()):
+        require_stage_settings(job_id, stage, STAGE_SUBSTEPS[stage], STAGE_MESSAGES[stage], STAGE_WORKERS[stage], STAGE_FORMS[stage])
+        return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=False)
+    _enqueue_stage(job_id, stage)
+    return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=True)
+
+
 STAGE_NAMES = ["preprocessing", "detecting_bpm", "separating_vocals", "transcribing", "detecting_pitch", "aligning"]
+STAGE_OUTPUT_TYPES = {
+    "preprocessing": {"mix", "bpm_input", "audio_metadata"},
+    "detecting_bpm": {"tempo"},
+    "separating_vocals": {"vocals", "instrumental", "whisperx_input", "torchcrepe_input"},
+    "transcribing": {"transcript_raw", "transcript_aligned"},
+    "detecting_pitch": {"pitch_frames"},
+    "aligning": {"draft_arrangement"},
+}
 STAGE_FORMS = {
     "uploaded": "source",
     "separating_vocals": "separation",
@@ -555,6 +594,18 @@ def _stage_snapshot(job, stage: str):
 def _stage_requires_action(job, stage: str) -> bool:
     snapshot = _stage_snapshot(job, stage)
     return bool(snapshot and snapshot.actionRequired)
+
+
+def _stage_has_complete_outputs(job, stage: str) -> bool:
+    if stage == "detecting_bpm" and job.tempo:
+        return True
+    if stage == "aligning" and not repository.get_arrangement(job.jobId):
+        return False
+    required = STAGE_OUTPUT_TYPES.get(stage)
+    if not required:
+        return False
+    existing = {asset.type for asset in job.artifacts if asset.producedByStage == stage}
+    return required.issubset(existing)
 
 
 def _should_queue_invalidated(job, stages: list[str]) -> bool:

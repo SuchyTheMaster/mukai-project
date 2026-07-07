@@ -16,7 +16,7 @@ from app.services.audio_probe import ffprobe
 from app.services.ids import new_id
 from app.services.queue import enqueue_pitch, redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import fail_stage, is_stage_confirmed, require_stage_settings, set_stage
+from app.workers.stages import complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 
 
 WHISPER_AUDIO_SAMPLE_RATE = 16000
@@ -46,7 +46,10 @@ def run_transcription(job_id: str) -> None:
     job = repository.get_job(job_id)
     if not job:
         raise RuntimeError("job not found")
-    if any(asset.type == "transcript_aligned" for asset in job.artifacts):
+    existing_types = {asset.type for asset in job.artifacts}
+    if {"transcript_raw", "transcript_aligned"}.issubset(existing_types):
+        complete_stage_from_existing_artifacts(job_id, "transcribing", "whisperx", "Transkrypcja", "worker-transcribe")
+        continue_after_transcription(job_id)
         return
 
     whisperx_input = next((asset for asset in job.artifacts if asset.type == "whisperx_input"), None)
@@ -212,6 +215,10 @@ def run_transcription(job_id: str) -> None:
     for asset in assets:
         repository.create_artifact(job_id, asset)
     set_stage(job_id, "transcribing", "whisperx", StageStatus.completed, "Transkrypcja", "worker-transcribe", ProgressMode.determinate, 100, artifact_ids=[asset.assetId for asset in assets])
+    continue_after_transcription(job_id)
+
+
+def continue_after_transcription(job_id: str) -> None:
     refreshed = repository.get_job(job_id)
     if refreshed and any(asset.type == "pitch_frames" for asset in refreshed.artifacts):
         if is_stage_confirmed(refreshed, "aligning"):

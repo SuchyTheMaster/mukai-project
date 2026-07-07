@@ -29,6 +29,7 @@ import {
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+const APP_STORAGE_KEY = "mukai.processingState.v1";
 const EDITOR_WINDOW_SEC = 30;
 const MIN_EDITOR_WINDOW_SEC = 0.1;
 const MAX_EDITOR_WINDOW_SEC = 120;
@@ -270,24 +271,69 @@ const MODEL_TOOLTIPS = {
   syllabification: 'Dla polskich piosenek zalecany sylabizator to "Kokosznicka", ale czasami może lepiej sprawdzić się "Pyphen". Dla zagranicznych tylko "Pyphen". Jeżeli jakiś język nie jest obsługiwany przez wybraną metodę, to zostanie użyta metoda heurystyczna. Jeżeli całe słowa piosenki są śpiewane w jednym tonie, to lepiej sprawdzi się tryb bez podziału na sylaby.',
 };
 
+const initialUiState = {
+  inspection: null,
+  metadata: emptyMetadata,
+  profiles: { separationModel: "htdemucs_ft", transcriptionModel: "large-v3", pitch: "default" },
+  transcriptionSettings: defaultTranscription,
+  pitchSettings: defaultPitch,
+  syllabificationSettings: defaultSyllabification,
+  syllabificationTouched: false,
+  useEmbeddedCover: true,
+  job: null,
+  reviewOpen: false,
+};
+
 function App() {
+  const persisted = useMemo(readPersistedUiState, []);
   const [audioFile, setAudioFile] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const coverInputRef = useRef(null);
-  const [inspection, setInspection] = useState(null);
-  const [metadata, setMetadata] = useState(emptyMetadata);
-  const [profiles, setProfiles] = useState({ separationModel: "htdemucs_ft", transcriptionModel: "large-v3", pitch: "default" });
-  const [transcriptionSettings, setTranscriptionSettings] = useState(defaultTranscription);
-  const [pitchSettings, setPitchSettings] = useState(defaultPitch);
-  const [syllabificationSettings, setSyllabificationSettings] = useState(defaultSyllabification);
-  const [syllabificationTouched, setSyllabificationTouched] = useState(false);
-  const [useEmbeddedCover, setUseEmbeddedCover] = useState(true);
-  const [job, setJob] = useState(null);
+  const [inspection, setInspection] = useState(persisted.inspection);
+  const [metadata, setMetadata] = useState(persisted.metadata);
+  const [profiles, setProfiles] = useState(persisted.profiles);
+  const [transcriptionSettings, setTranscriptionSettings] = useState(persisted.transcriptionSettings);
+  const [pitchSettings, setPitchSettings] = useState(persisted.pitchSettings);
+  const [syllabificationSettings, setSyllabificationSettings] = useState(persisted.syllabificationSettings);
+  const [syllabificationTouched, setSyllabificationTouched] = useState(persisted.syllabificationTouched);
+  const [useEmbeddedCover, setUseEmbeddedCover] = useState(persisted.useEmbeddedCover);
+  const [job, setJob] = useState(persisted.job);
   const [arrangement, setArrangement] = useState(null);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(persisted.reviewOpen);
+  const [restartOpen, setRestartOpen] = useState(false);
+
+  useEffect(() => {
+    if (!job?.jobId) return undefined;
+    let ignore = false;
+    apiJson(`/api/jobs/${job.jobId}`)
+      .then((refreshed) => {
+        if (!ignore) setJob(refreshed);
+      })
+      .catch((err) => {
+        if (!ignore) setError(err.message);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    persistUiState({
+      inspection,
+      metadata,
+      profiles,
+      transcriptionSettings,
+      pitchSettings,
+      syllabificationSettings,
+      syllabificationTouched,
+      useEmbeddedCover,
+      job,
+      reviewOpen,
+    });
+  }, [inspection, metadata, profiles, transcriptionSettings, pitchSettings, syllabificationSettings, syllabificationTouched, useEmbeddedCover, job, reviewOpen]);
 
   useEffect(() => {
     if (!job || ["failed", "awaiting_review", "cancelled"].includes(job.status)) return undefined;
@@ -402,6 +448,26 @@ function App() {
     }
   }
 
+  async function resumeStage(stage) {
+    if (!job) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await apiJson(`/api/jobs/${job.jobId}/stages/${stage}/resume`, {
+        method: "POST",
+        body: JSON.stringify({ reason: "user_requested" }),
+        headers: { "Content-Type": "application/json" },
+      });
+      setArrangement(null);
+      setReviewOpen(false);
+      setJob(await apiJson(`/api/jobs/${job.jobId}`));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveStageSettings(stage, payload) {
     if (!job) return false;
     setError(null);
@@ -499,6 +565,43 @@ function App() {
     setUseEmbeddedCover(Boolean(inspection?.embeddedCover));
   }
 
+  function clearLocalProjectState() {
+    setAudioFile(null);
+    setCoverFile(null);
+    setInspection(null);
+    setMetadata(emptyMetadata);
+    setProfiles(initialUiState.profiles);
+    setTranscriptionSettings(defaultTranscription);
+    setPitchSettings(defaultPitch);
+    setSyllabificationSettings(defaultSyllabification);
+    setSyllabificationTouched(false);
+    setUseEmbeddedCover(true);
+    setJob(null);
+    setArrangement(null);
+    setReviewOpen(false);
+    window.localStorage.removeItem(APP_STORAGE_KEY);
+  }
+
+  async function restartProject() {
+    setError(null);
+    setBusy(true);
+    try {
+      if (job?.jobId) {
+        await apiJson(`/api/jobs/${job.jobId}/restart`, {
+          method: "POST",
+          body: JSON.stringify({ reason: "user_requested" }),
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      clearLocalProjectState();
+      setRestartOpen(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className={`app-shell ${isReview ? "review-expanded" : ""}`}>
       <aside className="left-rail panel">
@@ -582,6 +685,7 @@ function App() {
               createJob={createJob}
               onStageSettings={saveStageSettings}
               onSourceSettings={saveSourceSettings}
+              onResumeStage={resumeStage}
               onOpenReview={() => setReviewOpen(true)}
               busy={busy}
             />
@@ -591,6 +695,11 @@ function App() {
 
       {!isReview && (
         <aside className="right-rail panel">
+          <section className="restart-section">
+            <button className="button ghost danger full" type="button" disabled={busy} onClick={() => setRestartOpen(true)}>
+              <RotateCcw size={16} /> Od nowa
+            </button>
+          </section>
           <section>
             <div className="section-title">Aktualny etap</div>
             <div className="current-stage">
@@ -604,11 +713,21 @@ function App() {
           </section>
         </aside>
       )}
+      {restartOpen && (
+        <ConfirmDialog
+          title="Zacząć od nowa?"
+          message="Ta operacja wyczyści lokalny stan przeglądarki oraz artefakty bieżącego zadania i wróci do pierwszego kroku."
+          confirmLabel="Od nowa"
+          busy={busy}
+          onCancel={() => setRestartOpen(false)}
+          onConfirm={restartProject}
+        />
+      )}
     </div>
   );
 }
 
-function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onSourceSettings, onOpenReview, busy }) {
+function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onSourceSettings, onResumeStage, onOpenReview, busy }) {
   const sourceReady = Boolean(inspection && (metadata.title ?? "").trim() && (metadata.artist ?? "").trim());
 
   return (
@@ -619,9 +738,9 @@ function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, on
         </div>
       </div>
       {job?.status === "awaiting_review" ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onOpenReview={onOpenReview} />
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} onOpenReview={onOpenReview} />
       ) : job ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} />
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} />
       ) : (
         <>
           <div className="form-grid">
@@ -862,7 +981,7 @@ function AlignmentStageForm({ job, busy, onSubmit, embedded = false }) {
   );
 }
 
-function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onOpenReview }) {
+function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage, onOpenReview }) {
   const artifactsById = Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.assetId, asset]));
   const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
   const jobRunning = sortedStages(job.processing).some((stage) => stage.status === "running");
@@ -918,6 +1037,9 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onOpenReview }
                 </div>
                 {isConfigurableStage(stage) && stage.status === "completed" && (
                   <button className="button ghost" type="button" disabled={busy || jobRunning} onClick={() => (isEditing ? cancelChange() : changeStage(stage))}>{isEditing ? "Anuluj" : "Zmień"}</button>
+                )}
+                {stage.status === "failed" && (
+                  <button className="button secondary" type="button" disabled={busy || jobRunning} onClick={() => onResumeStage?.(stage.stage)}>Kontynuuj</button>
                 )}
               </div>
               <dl className="summary">{stageSettingsSummary(job, stage).map(([label, value]) => <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>)}</dl>
@@ -2178,6 +2300,25 @@ function InfoTooltip({ text }) {
       <Info size={14} />
       <span role="tooltip">{text}</span>
     </button>
+  );
+}
+
+function ConfirmDialog({ title, message, confirmLabel, busy, onCancel, onConfirm }) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+        <div className="modal-header">
+          <h2 id="confirm-title">{title}</h2>
+        </div>
+        <p>{message}</p>
+        <div className="modal-actions">
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Anuluj</button>
+          <button className="button ghost danger" type="button" disabled={busy} onClick={onConfirm}>
+            <Trash2 size={16} /> {confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -3551,6 +3692,57 @@ function currentStage(job) {
   if (!job?.processing) return null;
   const stages = sortedStages(job.processing);
   return stages.find((stage) => stage.status === "running") ?? stages.find((stage) => stage.status === "failed") ?? stages.find((stage) => stage.status === "pending") ?? stages.at(-1);
+}
+
+function readPersistedUiState() {
+  if (typeof window === "undefined") return initialUiState;
+  try {
+    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
+    if (!raw) return initialUiState;
+    const parsed = JSON.parse(raw);
+    return {
+      ...initialUiState,
+      ...parsed,
+      metadata: { ...emptyMetadata, ...(parsed.metadata ?? {}) },
+      profiles: { ...initialUiState.profiles, ...(parsed.profiles ?? {}) },
+      transcriptionSettings: { ...defaultTranscription, ...(parsed.transcriptionSettings ?? {}) },
+      pitchSettings: { ...defaultPitch, ...(parsed.pitchSettings ?? {}) },
+      syllabificationSettings: { ...defaultSyllabification, ...(parsed.syllabificationSettings ?? {}) },
+      syllabificationTouched: Boolean(parsed.syllabificationTouched),
+      useEmbeddedCover: parsed.useEmbeddedCover ?? true,
+      reviewOpen: Boolean(parsed.reviewOpen),
+    };
+  } catch {
+    window.localStorage.removeItem(APP_STORAGE_KEY);
+    return initialUiState;
+  }
+}
+
+function persistUiState(state) {
+  if (typeof window === "undefined") return;
+  try {
+    if (!state.inspection && !state.job) {
+      window.localStorage.removeItem(APP_STORAGE_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      APP_STORAGE_KEY,
+      JSON.stringify({
+        inspection: state.inspection,
+        metadata: state.metadata,
+        profiles: state.profiles,
+        transcriptionSettings: state.transcriptionSettings,
+        pitchSettings: state.pitchSettings,
+        syllabificationSettings: state.syllabificationSettings,
+        syllabificationTouched: state.syllabificationTouched,
+        useEmbeddedCover: state.useEmbeddedCover,
+        job: state.job,
+        reviewOpen: state.reviewOpen,
+      }),
+    );
+  } catch {
+    // Brak miejsca lub tryb prywatny nie powinien blokować pracy nad projektem.
+  }
 }
 
 function defaultStages() {

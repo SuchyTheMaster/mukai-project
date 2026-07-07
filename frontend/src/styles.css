@@ -545,6 +545,10 @@ h1 {
   margin-top: 14px;
 }
 
+.restart-section .button.full {
+  margin-top: 0;
+}
+
 .button:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -1173,6 +1177,17 @@ summary:hover {
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.52);
 }
 
+.confirmation-modal {
+  display: grid;
+  gap: 14px;
+  width: min(460px, 100%);
+  padding: 18px;
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.52);
+}
+
 .modal-header,
 .modal-actions {
   display: flex;
@@ -1181,7 +1196,8 @@ summary:hover {
   gap: 12px;
 }
 
-.validation-modal p {
+.validation-modal p,
+.confirmation-modal p {
   margin: 0;
   color: var(--secondary);
 }

@@ -47,6 +47,34 @@ def set_stage(
     repository.update_processing(job_id, job.processing)
 
 
+def complete_stage_from_existing_artifacts(
+    job_id: str,
+    stage: str,
+    substep: str,
+    message: str,
+    worker_role: str,
+) -> None:
+    job = repository.get_job(job_id)
+    if not job:
+        return
+    artifact_ids = [
+        asset.assetId
+        for asset in job.artifacts
+        if asset.producedByStage == stage and asset.producedBySubstep == substep
+    ]
+    set_stage(
+        job_id,
+        stage,
+        substep,
+        StageStatus.completed,
+        message,
+        worker_role,
+        ProgressMode.determinate,
+        100,
+        artifact_ids=artifact_ids,
+    )
+
+
 def require_stage_settings(
     job_id: str,
     stage: str,

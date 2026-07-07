@@ -56,6 +56,10 @@ Walidacja:
 - Błędy etapów muszą zawierać krótki komunikat dla użytkownika i kompaktowy log diagnostyczny bez sekretów, tokenów i prywatnych ścieżek.
 - Po zakończeniu podetapu artefakty są przypisywane do `producedByStage` i `producedBySubstep`, żeby UI mogło pokazać przycisk pobrania przy właściwym podetapie.
 - Reset etapu jest operacją planowaną przez `POST /api/jobs/{jobId}/stages/{stage}/reset`; reset unieważnia artefakty wskazanego etapu i dalszych etapów zależnych, zachowując oryginalne audio, metadane i cover.
+- Frontend zapisuje w `localStorage` ostatni snapshot `Job`, aktywny draft uploadu, ustawienia formularzy etapów i informację, czy otwarty był edytor. Po odświeżeniu strony UI pokazuje ostatni znany etap i odświeża `Job` z API, bez wymagania rozpoczynania pracy od nowa.
+- Akcja `Od nowa` wymaga potwierdzenia w dialogu. Po potwierdzeniu usuwa lokalny stan przeglądarki, unieważnia artefakty etapów od `preprocessing` do `aligning`, czyści wynikowe dane po stronie API i wraca do pierwszego kroku bez automatycznego kolejkowania pipeline'u.
+- Etapy preprocessingu audio przed edytorem są idempotentne: jeśli po błędzie, odświeżeniu strony albo imporcie projektu istnieją kompletne artefakty etapu, worker oznacza etap jako `completed` i kontynuuje od następnego wymaganego etapu albo formularza ustawień.
+- Wznowienie po błędzie używa `POST /api/jobs/{jobId}/stages/{stage}/resume`; zachowuje zatwierdzone ustawienia etapu, czyści tylko niekompletne artefakty od miejsca wznowienia i kolejkuje pipeline od tego etapu.
 
 ## 2. Normalizacja audio
 

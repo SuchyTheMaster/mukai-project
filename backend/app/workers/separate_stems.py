@@ -13,7 +13,7 @@ from app.services.ids import new_id
 from app.services.queue import enqueue_transcription, redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
 from app.workers.audio_tools import ffmpeg_convert
-from app.workers.stages import fail_stage, is_stage_confirmed, require_stage_settings, set_stage
+from app.workers.stages import complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 
 
 # First run intentionally omits --segment, so Demucs uses the model default.
@@ -44,7 +44,10 @@ def run_separation(job_id: str) -> None:
     job = repository.get_job(job_id)
     if not job:
         raise RuntimeError("job not found")
-    if any(asset.type == "vocals" for asset in job.artifacts):
+    existing_types = {asset.type for asset in job.artifacts}
+    if {"vocals", "instrumental", "whisperx_input", "torchcrepe_input"}.issubset(existing_types):
+        complete_stage_from_existing_artifacts(job_id, "separating_vocals", "demucs", "Separacja wokalu", "worker-separate-stems")
+        continue_after_separation(job_id)
         return
 
     repository.update_job_status(job_id, JobStatus.separating_vocals)
@@ -114,6 +117,13 @@ def run_separation(job_id: str) -> None:
     for asset in assets:
         repository.create_artifact(job_id, asset)
     set_stage(job_id, "separating_vocals", "demucs", StageStatus.completed, "Separacja wokalu", "worker-separate-stems", ProgressMode.determinate, 100, artifact_ids=[asset.assetId for asset in assets])
+    continue_after_separation(job_id)
+
+
+def continue_after_separation(job_id: str) -> None:
+    job = repository.get_job(job_id)
+    if not job:
+        return
     if is_stage_confirmed(job, "transcribing"):
         enqueue_transcription(job_id)
     else:

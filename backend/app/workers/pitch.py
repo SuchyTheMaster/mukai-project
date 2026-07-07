@@ -33,7 +33,7 @@ from app.domain.contracts import (
 from app.services.ids import new_id
 from app.services.queue import redis_client
 from app.services.storage import read_json, relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import fail_stage, is_stage_confirmed, require_stage_settings, set_stage
+from app.workers.stages import complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
 
 
@@ -180,6 +180,7 @@ def run_pitch_detection(job_id: str) -> None:
     if not job:
         raise RuntimeError("job not found")
     if any(asset.type == "pitch_frames" for asset in job.artifacts):
+        complete_stage_from_existing_artifacts(job_id, "detecting_pitch", "pitch_detection", "Detekcja tonów", "worker-pitch")
         return
 
     torchcrepe_input = next((asset for asset in job.artifacts if asset.type == "torchcrepe_input"), None)
@@ -256,6 +257,7 @@ def run_draft_alignment(job_id: str) -> None:
     if not job:
         raise RuntimeError("job not found")
     if repository.get_arrangement(job_id) and any(asset.type == "draft_arrangement" for asset in job.artifacts):
+        complete_stage_from_existing_artifacts(job_id, "aligning", "draft", "Wstępne dopasowanie", "worker-aligner")
         repository.update_job_status(job_id, JobStatus.awaiting_review)
         return
 
