@@ -523,16 +523,25 @@ def resume_stage(job_id: str, stage: str, request: ResetStageRequest):
     if snapshot and snapshot.status != StageStatus.failed and _stage_has_complete_outputs(job, stage):
         _enqueue_stage(job_id, stage)
         return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=[], queued=True)
-    invalidated = _invalidate_stages(job_id, _stages_from(stage))
+    start_stage = _resume_start_stage(job, stage)
+    invalidated = _invalidate_stages(job_id, _stages_from(start_stage))
     refreshed = repository.get_job(job_id)
-    if stage in STAGE_FORMS and refreshed and not _stage_requires_action(refreshed, stage) and not any(snapshot.stage == stage and snapshot.settingsConfirmedAt for snapshot in refreshed.processing.values()):
-        require_stage_settings(job_id, stage, STAGE_SUBSTEPS[stage], STAGE_MESSAGES[stage], STAGE_WORKERS[stage], STAGE_FORMS[stage])
-        return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=False)
-    _enqueue_stage(job_id, stage)
-    return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=True)
+    if start_stage in STAGE_FORMS and refreshed and not _stage_requires_action(refreshed, start_stage) and not any(snapshot.stage == start_stage and snapshot.settingsConfirmedAt for snapshot in refreshed.processing.values()):
+        require_stage_settings(job_id, start_stage, STAGE_SUBSTEPS[start_stage], STAGE_MESSAGES[start_stage], STAGE_WORKERS[start_stage], STAGE_FORMS[start_stage])
+        return ResetStageResponse(jobId=job_id, status=JobStatus(start_stage), resetFromStage=start_stage, invalidatedStages=invalidated, queued=False)
+    _enqueue_stage(job_id, start_stage)
+    return ResetStageResponse(jobId=job_id, status=JobStatus(start_stage), resetFromStage=start_stage, invalidatedStages=invalidated, queued=True)
 
 
 STAGE_NAMES = ["preprocessing", "detecting_bpm", "separating_vocals", "transcribing", "detecting_pitch", "aligning"]
+STAGE_DEFAULT_MESSAGES = {
+    "preprocessing": "Preprocessing audio",
+    "detecting_bpm": "Rozpoznawanie BPM",
+    "separating_vocals": "Separacja wokalu",
+    "transcribing": "Transkrypcja",
+    "detecting_pitch": "Detekcja tonów",
+    "aligning": "Wstępne dopasowanie",
+}
 STAGE_OUTPUT_TYPES = {
     "preprocessing": {"mix", "bpm_input", "audio_metadata"},
     "detecting_bpm": {"tempo"},
@@ -607,6 +616,14 @@ def _stage_has_complete_outputs(job, stage: str) -> bool:
         return False
     existing = {asset.type for asset in job.artifacts if asset.producedByStage == stage}
     return required.issubset(existing)
+
+
+def _resume_start_stage(job, requested_stage: str) -> str:
+    requested_index = STAGE_NAMES.index(requested_stage)
+    for prerequisite in STAGE_NAMES[:requested_index]:
+        if not _stage_has_complete_outputs(job, prerequisite):
+            return prerequisite
+    return requested_stage
 
 
 def _should_queue_invalidated(job, stages: list[str]) -> bool:
@@ -780,22 +797,27 @@ def _invalidate_stages(job_id: str, stages: list[str], clear_confirmed_stages: l
     clear_confirmed = set(clear_confirmed_stages or [])
     for snapshot in job.processing.values():
         if snapshot.stage in invalidated:
-            snapshot.status = StageStatus.pending
-            snapshot.startedAt = None
-            snapshot.finishedAt = None
-            snapshot.progressMode = "indeterminate"
-            snapshot.progressPercent = None
-            snapshot.etaSec = None
-            snapshot.logExcerpt = None
-            snapshot.artifactIds = []
-            snapshot.actionRequired = False
-            snapshot.settingsForm = None
-            if snapshot.stage in clear_confirmed:
-                snapshot.settingsConfirmedAt = None
-                snapshot.settingsSummary = {}
+            _reset_invalidated_snapshot(snapshot, snapshot.stage in clear_confirmed)
     repository.update_processing(job_id, job.processing)
     repository.update_job_status(job_id, JobStatus(invalidated[0]))
     return invalidated
+
+
+def _reset_invalidated_snapshot(snapshot, clear_confirmation: bool) -> None:
+    snapshot.status = StageStatus.pending
+    snapshot.startedAt = None
+    snapshot.finishedAt = None
+    snapshot.progressMode = "indeterminate"
+    snapshot.progressPercent = None
+    snapshot.etaSec = None
+    snapshot.message = STAGE_DEFAULT_MESSAGES.get(snapshot.stage, snapshot.message)
+    snapshot.logExcerpt = None
+    snapshot.artifactIds = []
+    snapshot.actionRequired = False
+    snapshot.settingsForm = None
+    if clear_confirmation:
+        snapshot.settingsConfirmedAt = None
+        snapshot.settingsSummary = {}
 
 
 def _enqueue_stage(job_id: str, stage: str) -> None:

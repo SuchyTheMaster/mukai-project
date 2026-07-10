@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from app.api import routes
 from app.domain.contracts import (
@@ -87,6 +88,36 @@ class StagedPipelineContractsTest(unittest.TestCase):
             routes._stages_from("preprocessing"),
             ["preprocessing", "detecting_bpm", "separating_vocals", "transcribing", "detecting_pitch", "aligning"],
         )
+
+    def test_resume_alignment_starts_from_missing_transcription(self):
+        job = self._job()
+        complete = {"preprocessing", "detecting_bpm", "separating_vocals"}
+
+        with patch.object(routes, "_stage_has_complete_outputs", side_effect=lambda _job, stage: stage in complete):
+            self.assertEqual(routes._resume_start_stage(job, "aligning"), "transcribing")
+
+    def test_resume_alignment_starts_from_missing_pitch_detection(self):
+        job = self._job()
+        complete = {"preprocessing", "detecting_bpm", "separating_vocals", "transcribing"}
+
+        with patch.object(routes, "_stage_has_complete_outputs", side_effect=lambda _job, stage: stage in complete):
+            self.assertEqual(routes._resume_start_stage(job, "aligning"), "detecting_pitch")
+
+    def test_invalidated_stage_does_not_keep_failure_message(self):
+        snapshot = StageSnapshot(
+            stage="aligning",
+            substep="draft",
+            status=StageStatus.failed,
+            message="Wstepne dopasowanie nie powiodlo sie.",
+            workerRole="worker-aligner",
+            logExcerpt="missing pitch frames",
+        )
+
+        routes._reset_invalidated_snapshot(snapshot, clear_confirmation=False)
+
+        self.assertEqual(snapshot.status, StageStatus.pending)
+        self.assertEqual(snapshot.message, "Wstępne dopasowanie")
+        self.assertIsNone(snapshot.logExcerpt)
 
     def test_alignment_note_segmentation_uses_min_length_and_merge_gap(self):
         frames = [

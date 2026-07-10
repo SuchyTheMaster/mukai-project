@@ -23,6 +23,7 @@ import {
   Undo2,
   UploadCloud,
   Workflow,
+  X,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -997,6 +998,7 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
   const stageRefs = useRef({});
   const previousStatuses = useRef({});
   const [editingStage, setEditingStage] = useState(null);
+  const [previewAsset, setPreviewAsset] = useState(null);
 
   useEffect(() => {
     const previous = previousStatuses.current;
@@ -1036,6 +1038,7 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
       <div className="summary-stage-list">
         {stages.map((stage) => {
           const artifactIds = displayArtifactIdsForStage(stage, job, artifactsById);
+          const transcriptAsset = transcriptPreviewAsset(stage, job);
           const isEditing = editingStage === stage.stage && stage.status === "completed";
           return (
             <article key={stageDomKey(stage)} ref={(node) => { if (node) stageRefs.current[stageDomKey(stage)] = node; }} className="summary-stage">
@@ -1051,13 +1054,15 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
                   <button className="button secondary" type="button" disabled={busy || jobRunning} onClick={() => onResumeStage?.(stage.stage)}>Kontynuuj</button>
                 )}
               </div>
-              <dl className="summary">{stageSettingsSummary(job, stage).map(([label, value]) => <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>)}</dl>
+              <div className={transcriptAsset ? "summary-with-preview" : undefined}>
+                <dl className="summary">{stageSettingsSummary(job, stage).map(([label, value]) => <React.Fragment key={label}><dt>{label}</dt><dd>{value}</dd></React.Fragment>)}</dl>
+                {transcriptAsset && <TranscriptionTextPreview jobId={job.jobId} asset={transcriptAsset} />}
+              </div>
               {stage.logExcerpt && <pre className="stage-log">{stage.logExcerpt}</pre>}
               <div className="artifact-links">
                 {artifactIds.map((assetId) => {
                   const asset = artifactsById[assetId];
-                  const filename = artifactFilename(asset, assetId);
-                  return <a key={assetId} href={`${API_BASE}/api/jobs/${job.jobId}/artifacts/${assetId}`} download>{filename}</a>;
+                  return <ArtifactPreviewButton key={assetId} asset={asset} fallback={assetId} onOpen={setPreviewAsset} />;
                 })}
               </div>
               {(stage.actionRequired || isEditing) && <StageSettingsPanel job={job} stage={stage} busy={busy} onSubmit={submitStageSettings} onSourceSubmit={(form) => submitStageSettings("uploaded", form)} embedded />}
@@ -1070,7 +1075,136 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
           <Music2 size={16} /> Edytor dopasowania
         </button>
       )}
+      {previewAsset && <ArtifactPreviewModal jobId={job.jobId} asset={previewAsset} onClose={() => setPreviewAsset(null)} />}
     </section>
+  );
+}
+
+function ArtifactPreviewButton({ asset, fallback, onOpen, iconOnly = false }) {
+  const filename = artifactFilename(asset, fallback);
+  if (!asset) return null;
+  if (iconOnly) {
+    return (
+      <button className="icon-button" type="button" title={`Podgląd: ${filename}`} aria-label={`Podgląd: ${filename}`} onClick={() => onOpen(asset)}>
+        <Download size={16} />
+      </button>
+    );
+  }
+  return <button className="artifact-link" type="button" onClick={() => onOpen(asset)}>{filename}</button>;
+}
+
+function TranscriptionTextPreview({ jobId, asset }) {
+  const artifactUrl = `${API_BASE}/api/jobs/${jobId}/artifacts/${asset.assetId}`;
+  const [preview, setPreview] = useState({ loading: true, error: null, segments: [] });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setPreview({ loading: true, error: null, segments: [] });
+    fetch(artifactUrl, { signal: controller.signal })
+      .then(async (response) => {
+        const raw = await response.text();
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = JSON.parse(raw);
+        if (!Array.isArray(payload?.segments)) throw new Error("invalid_transcript");
+        return transcriptPreviewSegments(payload.segments);
+      })
+      .then((segments) => setPreview({ loading: false, error: null, segments }))
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setPreview({ loading: false, error: "Nie udało się wczytać rozpoznanego tekstu.", segments: [] });
+        }
+      });
+    return () => controller.abort();
+  }, [artifactUrl]);
+
+  return (
+    <section className="transcription-preview" aria-label="Podgląd rozpoznanego tekstu">
+      <div className="transcription-preview-text">
+        {preview.loading && <span className="preview-state">Wczytywanie tekstu...</span>}
+        {preview.error && <span className="preview-state error">{preview.error}</span>}
+        {!preview.loading && !preview.error && preview.segments.length === 0 && <span className="preview-state">Brak rozpoznanego tekstu.</span>}
+        {!preview.loading && !preview.error && preview.segments.map((segment, segmentIndex) => (
+          <p key={segment.key ?? segmentIndex}>
+            {segment.words.map((word, wordIndex) => (
+              <span
+                className={`transcript-word ${confidenceClassName(word.confidence)}`}
+                key={`${segment.key ?? segmentIndex}-${wordIndex}`}
+                title={confidenceTitle(word.confidence)}
+              >
+                {word.text}
+              </span>
+            ))}
+          </p>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ArtifactPreviewModal({ jobId, asset, onClose }) {
+  const filename = artifactFilename(asset, asset.assetId);
+  const artifactUrl = `${API_BASE}/api/jobs/${jobId}/artifacts/${asset.assetId}`;
+  const previewKind = artifactPreviewKind(asset, filename);
+  const isJsonPreview = isJsonArtifact(asset, filename);
+  const [textPreview, setTextPreview] = useState({ loading: previewKind === "text", error: null, text: "", json: false });
+
+  useEffect(() => {
+    function closeOnEscape(event) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  useEffect(() => {
+    if (previewKind !== "text") return undefined;
+    const controller = new AbortController();
+    setTextPreview({ loading: true, error: null, text: "", json: false });
+    fetch(artifactUrl, { signal: controller.signal })
+      .then(async (response) => {
+        const raw = await response.text();
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!isJsonPreview) return { text: raw, json: false };
+        try {
+          return { text: JSON.stringify(JSON.parse(raw), null, 2), json: true };
+        } catch {
+          return { text: raw, json: false };
+        }
+      })
+      .then(({ text, json }) => setTextPreview({ loading: false, error: null, text, json }))
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setTextPreview({ loading: false, error: "Nie udało się wczytać podglądu tekstu.", text: "", json: false });
+        }
+      });
+    return () => controller.abort();
+  }, [artifactUrl, isJsonPreview, previewKind]);
+
+  return (
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="artifact-preview-modal" role="dialog" aria-modal="true" aria-labelledby="artifact-preview-title">
+        <div className="modal-header">
+          <strong id="artifact-preview-title">{filename}</strong>
+          <button className="icon-button" type="button" title="Zamknij" aria-label="Zamknij" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className={`artifact-preview-content ${previewKind}`}>
+          {previewKind === "image" && <img src={artifactUrl} alt={`Podgląd artefaktu ${filename}`} />}
+          {previewKind === "audio" && <audio src={artifactUrl} controls autoPlay />}
+          {previewKind === "text" && textPreview.loading && <p className="preview-state">Wczytywanie podglądu...</p>}
+          {previewKind === "text" && textPreview.error && <p className="preview-state error">{textPreview.error}</p>}
+          {previewKind === "text" && !textPreview.loading && !textPreview.error && (
+            <pre className={textPreview.json ? "json-preview" : "text-preview"}>
+              {textPreview.json ? renderJsonSyntax(textPreview.text) : textPreview.text}
+            </pre>
+          )}
+          {previewKind === "unsupported" && <p className="preview-state">Brak podglądu dla tego typu pliku.</p>}
+        </div>
+        <div className="modal-actions">
+          <button className="button ghost" type="button" onClick={onClose}>Zamknij</button>
+          <button className="button primary" type="button" onClick={() => triggerArtifactDownload(jobId, asset)}><Download size={16} /> Pobierz</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -2369,21 +2503,38 @@ function StatusPanel({ job, onResetStage }) {
   const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
   const jobRunning = sortedStages(job.processing).some((stage) => stage.status === "running");
   const runningKey = stageDomKey(stages.find((stage) => stage.status === "running"));
+  const [previewAsset, setPreviewAsset] = useState(null);
 
   useEffect(() => {
     if (!runningKey || !rowRefs.current[runningKey]) return;
     rowRefs.current[runningKey].scrollIntoView({ behavior: "smooth", block: "center" });
   }, [runningKey]);
 
-  return <div className="status-panel">{stages.map((stage) => {
-    const key = stageDomKey(stage);
-    const artifactIds = displayArtifactIdsForStage(stage, job, artifactsById);
-    return <article key={key} ref={(node) => { if (node) rowRefs.current[key] = node; }} className={`status-row ${stage.status}`}><div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.workerRole}</small>{stage.logExcerpt && <pre>{stage.logExcerpt}</pre>}</div><div className="status-actions"><Progress stage={stage} /><div className="artifact-buttons">{isConfigurableStage(stage) && stage.status === "completed" && <button className="button ghost" type="button" disabled={jobRunning} onClick={() => onResetStage?.(stage.stage)}>Zmień</button>}{artifactIds.map((assetId) => {
-      const asset = artifactsById[assetId];
-      const filename = artifactFilename(asset, assetId);
-      return <a className="icon-button" key={assetId} href={`${API_BASE}/api/jobs/${job.jobId}/artifacts/${assetId}`} title={filename} aria-label={filename} download><Download size={16} /></a>;
-    })}</div></div></article>;
-  })}</div>;
+  return (
+    <div className="status-panel">
+      {stages.map((stage) => {
+        const key = stageDomKey(stage);
+        const artifactIds = displayArtifactIdsForStage(stage, job, artifactsById);
+        return (
+          <article key={key} ref={(node) => { if (node) rowRefs.current[key] = node; }} className={`status-row ${stage.status}`}>
+            <div>
+              <strong>{stageLabel(stage)}</strong>
+              <small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.workerRole}</small>
+              {stage.logExcerpt && <pre>{stage.logExcerpt}</pre>}
+            </div>
+            <div className="status-actions">
+              <Progress stage={stage} />
+              <div className="artifact-buttons">
+                {isConfigurableStage(stage) && stage.status === "completed" && <button className="button ghost" type="button" disabled={jobRunning} onClick={() => onResetStage?.(stage.stage)}>Zmień</button>}
+                {artifactIds.map((assetId) => <ArtifactPreviewButton key={assetId} asset={artifactsById[assetId]} fallback={assetId} onOpen={setPreviewAsset} iconOnly />)}
+              </div>
+            </div>
+          </article>
+        );
+      })}
+      {previewAsset && <ArtifactPreviewModal jobId={job.jobId} asset={previewAsset} onClose={() => setPreviewAsset(null)} />}
+    </div>
+  );
 }
 
 function isConfigurableStage(stage) {
@@ -2417,6 +2568,7 @@ function stageSettingsSummary(job, stage) {
   const pitch = { ...defaultPitch, ...(job.pitchSettings ?? {}) };
   const syllabification = { ...defaultSyllabification, ...(job.syllabificationSettings ?? {}) };
   if (stage.stage === "uploaded") return [["Tytuł", job.metadata?.title || "-"], ["Artysta", job.metadata?.artist || "-"], ["Album", job.metadata?.album || "-"], ["Rok", job.metadata?.year || "-"], ["Gatunek", job.metadata?.genre || "-"], ["Język", job.metadata?.language || "auto"]];
+  if (stage.stage === "detecting_bpm") return [["Rozpoznane BPM", formatSettingValue(job.tempo?.detectedSongBpm)]];
   if (stage.stage === "separating_vocals") return [["Model", job.profiles?.separationModel ?? "-"]];
   if (stage.stage === "transcribing") return [["Model", job.profiles?.transcriptionModel ?? "-"], ["VAD", transcription.vadMethod], ["Pozycjonowanie", TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning], ["Sylabizacja", SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method]];
   if (stage.stage === "detecting_pitch") return [["Profil", PITCH_PROFILE_LABELS[job.profiles?.pitch] ?? job.profiles?.pitch ?? "Dokładny"], ["Czułość dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["Krok ramek", `${pitch.frameStepMs} ms`]];
@@ -3839,6 +3991,85 @@ function artifactFilename(asset, fallback) {
   if (asset.originalFilename) return asset.originalFilename;
   if (asset.path) return asset.path.split("/").at(-1);
   return asset.type ?? fallback;
+}
+
+function transcriptPreviewAsset(stage, job) {
+  if (stageDomKey(stage) !== "transcribing.whisperx") return null;
+  return (job.artifacts ?? []).find((asset) => asset.type === "transcript_aligned") ?? null;
+}
+
+function transcriptPreviewSegments(segments) {
+  return segments.map((segment, segmentIndex) => {
+    const segmentConfidence = finiteConfidence(segment.confidence);
+    const words = Array.isArray(segment.words)
+      ? segment.words
+        .map((word) => ({
+          text: String(word.word ?? word.text ?? "").trim(),
+          confidence: finiteConfidence(word.confidence) ?? segmentConfidence,
+        }))
+        .filter((word) => word.text)
+      : [];
+    if (words.length) return { key: segment.id ?? segmentIndex, words };
+    const fallbackText = String(segment.text ?? "").trim();
+    return fallbackText
+      ? { key: segment.id ?? segmentIndex, words: [{ text: fallbackText, confidence: segmentConfidence }] }
+      : null;
+  }).filter(Boolean);
+}
+
+function finiteConfidence(value) {
+  const confidence = Number(value);
+  return Number.isFinite(confidence) ? confidence : null;
+}
+
+function confidenceClassName(confidence) {
+  if (confidence == null || confidence < 0.55) return "confidence-low";
+  if (confidence < 0.8) return "confidence-medium";
+  return "confidence-high";
+}
+
+function confidenceTitle(confidence) {
+  return confidence == null ? "Pewność: brak" : `Pewność: ${confidence.toFixed(3)}`;
+}
+
+function artifactPreviewKind(asset, filename) {
+  const mimeType = String(asset?.mimeType ?? "").toLowerCase().split(";", 1)[0].trim();
+  const extension = artifactExtension(filename);
+  if (mimeType.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)) return "image";
+  if (mimeType.startsWith("audio/") || ["wav", "mp3", "flac", "m4a", "ogg", "aac"].includes(extension)) return "audio";
+  if (mimeType === "application/json" || mimeType.startsWith("text/") || ["json", "txt", "log", "csv", "md", "yaml", "yml", "xml"].includes(extension)) return "text";
+  return "unsupported";
+}
+
+function isJsonArtifact(asset, filename) {
+  const mimeType = String(asset?.mimeType ?? "").toLowerCase().split(";", 1)[0].trim();
+  return mimeType === "application/json" || artifactExtension(filename) === "json";
+}
+
+function artifactExtension(filename) {
+  const match = String(filename ?? "").toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match?.[1] ?? "";
+}
+
+function renderJsonSyntax(text) {
+  const tokenPattern = /"(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"(?=\s*:)|"(?:\\u[\da-fA-F]{4}|\\[^u]|[^\\"])*"|true|false|null|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+  const rendered = [];
+  let cursor = 0;
+  for (const match of text.matchAll(tokenPattern)) {
+    const index = match.index ?? 0;
+    if (index > cursor) rendered.push(text.slice(cursor, index));
+    const token = match[0];
+    const remainder = text.slice(index + token.length);
+    let tokenClass = "json-number";
+    if (token.startsWith("\"") && /^\s*:/.test(remainder)) tokenClass = "json-key";
+    else if (token.startsWith("\"")) tokenClass = "json-string";
+    else if (token === "true" || token === "false") tokenClass = "json-boolean";
+    else if (token === "null") tokenClass = "json-null";
+    rendered.push(<span className={tokenClass} key={`${index}-${token.length}`}>{token}</span>);
+    cursor = index + token.length;
+  }
+  if (cursor < text.length) rendered.push(text.slice(cursor));
+  return rendered;
 }
 
 function tokensForLine(arrangement, line) {
