@@ -21,6 +21,8 @@ from app.workers.stages import complete_stage_from_existing_artifacts, fail_stag
 
 WHISPER_AUDIO_SAMPLE_RATE = 16000
 WHISPER_CONTEXT_WINDOW_SEC = 30
+SILERO_VAD_REVISION = "7e30209a3e901f9842f81b225f3e93d8199902b1"  # v6.2.1
+SILERO_VAD_REPOSITORY = "snakers4/silero-vad:v6.2.1"
 
 
 def main() -> None:
@@ -89,6 +91,7 @@ def run_transcription(job_id: str) -> None:
         language=language,
         transcription_settings=transcription_settings,
     )
+    vad_segments, vad_capture_note = install_vad_segment_recorder(whisperx, model)
     set_stage(job_id, "transcribing", "whisperx", StageStatus.running, "Transkrypcja ASR calego wokalu", "worker-transcribe", ProgressMode.estimated, 25)
     result, transcribe_language_passed_to = transcribe_audio(
         model,
@@ -114,10 +117,17 @@ def run_transcription(job_id: str) -> None:
 
     aligned_asr_segments = normalize_segments(aligned.get("segments", []), settings.transcription_low_confidence_threshold)
     detected_sentence_gap_ms = estimate_auto_sentence_gap(aligned_asr_segments, job.tempo.detectedSongBpm if job.tempo else None)
-    segments = renumber_segments(aligned_asr_segments, settings.transcription_low_confidence_threshold)
+    effective_sentence_gap_ms = transcription_settings.sentenceGapMs if transcription_settings.sentenceGapMs is not None else detected_sentence_gap_ms
+    segments = build_sentence_segments(
+        aligned_asr_segments,
+        transcription_settings,
+        settings.transcription_low_confidence_threshold,
+        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
+    )
     raw_segments = jsonable(result.get("segments", []))
     max_raw_end_sec = max_segment_end(raw_segments)
     max_aligned_end_sec = max((segment.endSec for segment in segments), default=None)
+    vad_submitted_duration_sec = round(sum(max(0.0, item["endSec"] - item["startSec"]) for item in vad_segments), 3)
     transcript_diagnostics = diagnostics | {
         "whisperxVersion": package_version("whisperx"),
         "torchVersion": package_version("torch"),
@@ -142,12 +152,17 @@ def run_transcription(job_id: str) -> None:
         "vadOptions": asr_vad_diagnostics["options"],
         "vadOptionsApplied": asr_vad_diagnostics["optionsApplied"],
         "vadModelInjected": asr_vad_diagnostics["modelInjected"],
+        "vadModelRevision": asr_vad_diagnostics["modelRevision"],
         "vadCompatibilityNote": asr_vad_diagnostics["compatibilityNote"],
+        "vadCaptureNote": vad_capture_note,
+        "vadSegmentCount": len(vad_segments),
+        "vadSubmittedDurationSec": vad_submitted_duration_sec,
+        "vadSubmittedAudioRatio": round(vad_submitted_duration_sec / input_duration_sec, 4) if input_duration_sec else None,
         "positioning": transcription_settings.positioning,
         "returnCharAlignments": return_char_alignments,
-        "requestedSentenceGapMs": None,
+        "requestedSentenceGapMs": transcription_settings.sentenceGapMs,
         "detectedSentenceGapMs": detected_sentence_gap_ms,
-        "effectiveSentenceGapMs": None,
+        "effectiveSentenceGapMs": effective_sentence_gap_ms,
         "sentencePaddingMs": transcription_settings.sentencePaddingMs,
         "whisperContextWindowSec": WHISPER_CONTEXT_WINDOW_SEC,
         "expectedWindowCount": expected_window_count,
@@ -173,6 +188,7 @@ def run_transcription(job_id: str) -> None:
             "stage": "transcribing",
             "substep": "whisperx",
             "diagnostics": transcript_diagnostics,
+            "vadSegments": vad_segments,
             "segments": raw_segments,
         },
     )
@@ -278,31 +294,44 @@ def load_asr_model(
     language_passed_to = None
     load_model_params = load_model_signature_params(whisperx)
     accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in load_model_params.values())
-    vad_options = {
-        "chunk_size": transcription_settings.vadChunkSizeSec,
-        "vad_onset": transcription_settings.vadOnset,
-        "vad_offset": transcription_settings.vadOffset,
-    }
+    vad_options = active_vad_options(transcription_settings)
+    supports_vad_method = accepts_kwargs or "vad_method" in load_model_params
+    supports_vad_model = accepts_kwargs or "vad_model" in load_model_params
     vad_diagnostics = {
         "requestedMethod": transcription_settings.vadMethod,
         "methodApplied": "whisperx_default",
-        "methodSupported": accepts_kwargs or "vad_method" in load_model_params,
+        "methodSupported": supports_vad_method or supports_vad_model,
         "options": vad_options,
         "optionsApplied": accepts_kwargs or "vad_options" in load_model_params,
         "modelInjected": False,
+        "modelRevision": None,
         "compatibilityNote": None,
     }
     if vad_diagnostics["optionsApplied"]:
         kwargs["vad_options"] = vad_options
-    if vad_diagnostics["methodSupported"]:
+
+    if transcription_settings.vadMethod == "silero" and supports_vad_model:
+        vad_model, note = build_manual_vad_model(whisperx, "silero", device, vad_options)
+        if vad_model is not None:
+            kwargs["vad_model"] = vad_model
+            vad_diagnostics["methodApplied"] = "silero"
+            vad_diagnostics["modelInjected"] = True
+            vad_diagnostics["modelRevision"] = SILERO_VAD_REVISION
+            vad_diagnostics["optionsApplied"] = True
+        else:
+            raise RuntimeError(note or "Nie udalo sie zaladowac przypietego modelu Silero VAD.")
+    elif supports_vad_method:
         kwargs["vad_method"] = transcription_settings.vadMethod
         vad_diagnostics["methodApplied"] = transcription_settings.vadMethod
-    elif accepts_kwargs or "vad_model" in load_model_params:
+    elif supports_vad_model:
         vad_model, note = build_manual_vad_model(whisperx, transcription_settings.vadMethod, device, vad_options)
         if vad_model is not None:
             kwargs["vad_model"] = vad_model
             vad_diagnostics["methodApplied"] = transcription_settings.vadMethod
             vad_diagnostics["modelInjected"] = True
+            vad_diagnostics["optionsApplied"] = True
+            if transcription_settings.vadMethod == "silero":
+                vad_diagnostics["modelRevision"] = SILERO_VAD_REVISION
         else:
             vad_diagnostics["compatibilityNote"] = note
     else:
@@ -311,6 +340,25 @@ def load_asr_model(
         kwargs["language"] = language
         language_passed_to = "load_model"
     return whisperx.load_model(model_name, device, **kwargs), language_passed_to, vad_diagnostics
+
+
+def active_vad_options(transcription_settings: TranscriptionSettings) -> dict:
+    if transcription_settings.vadMethod == "silero":
+        return {
+            "chunk_size": transcription_settings.vadChunkSizeSec,
+            "vad_onset": transcription_settings.sileroThreshold,
+            "vad_offset": transcription_settings.sileroNegThreshold,
+            "threshold": transcription_settings.sileroThreshold,
+            "neg_threshold": transcription_settings.sileroNegThreshold,
+            "min_speech_duration_ms": transcription_settings.sileroMinSpeechDurationMs,
+            "min_silence_duration_ms": transcription_settings.sileroMinSilenceDurationMs,
+            "speech_pad_ms": transcription_settings.sileroSpeechPadMs,
+        }
+    return {
+        "chunk_size": transcription_settings.vadChunkSizeSec,
+        "vad_onset": transcription_settings.pyannoteVadOnset,
+        "vad_offset": transcription_settings.pyannoteVadOffset,
+    }
 
 
 def load_model_signature_params(whisperx) -> dict:
@@ -331,10 +379,7 @@ def build_manual_vad_model(whisperx, vad_method: str, device: str, vad_options: 
         return None, "WhisperX nie udostepnia modulu whisperx.vads do recznego utworzenia VAD."
     try:
         if vad_method == "silero":
-            silero_cls = getattr(vads, "Silero", None)
-            if silero_cls is None:
-                return None, "WhisperX nie udostepnia klasy vads.Silero; uzyto domyslnego VAD tej wersji."
-            return silero_cls(**vad_options), None
+            return build_pinned_silero_vad(vads, vad_options), None
         if vad_method == "pyannote":
             pyannote_cls = getattr(vads, "Pyannote", None)
             if pyannote_cls is None:
@@ -347,6 +392,63 @@ def build_manual_vad_model(whisperx, vad_method: str, device: str, vad_options: 
     return None, f"Nieznana metoda VAD: {vad_method}; uzyto domyslnego VAD tej wersji."
 
 
+def build_pinned_silero_vad(vads, vad_options: dict):
+    vad_base = getattr(vads, "Vad", None)
+    if vad_base is None:
+        raise RuntimeError("WhisperX nie udostepnia klasy bazowej vads.Vad.")
+
+    import torch
+
+    class PinnedSilero(vad_base):
+        def __init__(self):
+            super().__init__(vad_options["vad_onset"])
+            self.chunk_size = vad_options["chunk_size"]
+            self.vad_pipeline, vad_utils = torch.hub.load(
+                repo_or_dir=SILERO_VAD_REPOSITORY,
+                model="silero_vad",
+                force_reload=False,
+                onnx=False,
+                trust_repo=True,
+            )
+            self.get_speech_timestamps = vad_utils[0]
+
+        def __call__(self, audio, **kwargs):
+            sample_rate = audio["sample_rate"]
+            if sample_rate != WHISPER_AUDIO_SAMPLE_RATE:
+                raise ValueError("Silero VAD wymaga audio 16000 Hz.")
+            timestamps = self.get_speech_timestamps(
+                audio["waveform"],
+                model=self.vad_pipeline,
+                sampling_rate=sample_rate,
+                max_speech_duration_s=self.chunk_size,
+                threshold=vad_options["threshold"],
+                neg_threshold=vad_options["neg_threshold"],
+                min_speech_duration_ms=vad_options["min_speech_duration_ms"],
+                min_silence_duration_ms=vad_options["min_silence_duration_ms"],
+                speech_pad_ms=vad_options["speech_pad_ms"],
+            )
+            return [VadInterval(item["start"] / sample_rate, item["end"] / sample_rate) for item in timestamps]
+
+        @staticmethod
+        def preprocess_audio(audio):
+            return audio
+
+        @staticmethod
+        def merge_chunks(segments, chunk_size, onset: float = 0.5, offset: float | None = None):
+            if not segments:
+                return []
+            return vad_base.merge_chunks(segments, chunk_size, onset, offset)
+
+    return PinnedSilero()
+
+
+class VadInterval:
+    def __init__(self, start: float, end: float, speaker: str = "UNKNOWN"):
+        self.start = start
+        self.end = end
+        self.speaker = speaker
+
+
 def transcribe_audio(model, audio, batch_size: int, language: str | None, chunk_size_sec: int):
     kwargs = {"batch_size": batch_size}
     language_passed_to = None
@@ -357,6 +459,47 @@ def transcribe_audio(model, audio, batch_size: int, language: str | None, chunk_
         kwargs["language"] = language
         language_passed_to = "transcribe"
     return model.transcribe(audio, **kwargs), language_passed_to
+
+
+def install_vad_segment_recorder(whisperx, model) -> tuple[list[dict], str | None]:
+    vad_model = getattr(model, "vad_model", None)
+    vads = getattr(whisperx, "vads", None)
+    vad_base = getattr(vads, "Vad", None) if vads is not None else None
+    if vad_model is None or vad_base is None or not isinstance(vad_model, vad_base):
+        return [], "Nie mozna przechwycic segmentow VAD dla API tej wersji WhisperX."
+
+    captured: list[dict] = []
+
+    class RecordingVad(vad_base):
+        def __init__(self, delegate):
+            self.delegate = delegate
+
+        def __call__(self, audio, **kwargs):
+            return self.delegate(audio, **kwargs)
+
+        def preprocess_audio(self, audio):
+            return self.delegate.preprocess_audio(audio)
+
+        def merge_chunks(self, segments, chunk_size, onset: float = 0.5, offset: float | None = None):
+            merged = self.delegate.merge_chunks(segments, chunk_size, onset=onset, offset=offset)
+            captured.clear()
+            for index, item in enumerate(merged, start=1):
+                source_segments = [
+                    {"startSec": round(float(start), 6), "endSec": round(float(end), 6)}
+                    for start, end in item.get("segments", [])
+                ]
+                captured.append(
+                    {
+                        "vadSegmentId": f"vad_{index:04d}",
+                        "startSec": round(float(item["start"]), 6),
+                        "endSec": round(float(item["end"]), 6),
+                        "sourceSegments": source_segments,
+                    }
+                )
+            return merged
+
+    model.vad_model = RecordingVad(vad_model)
+    return captured, None
 
 
 def return_char_alignments_enabled(transcription_settings: TranscriptionSettings) -> bool:

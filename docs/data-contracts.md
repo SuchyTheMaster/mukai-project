@@ -31,8 +31,13 @@
   },
   "transcriptionSettings": {
     "vadMethod": "silero",
-    "vadOnset": 0.5,
-    "vadOffset": 0.363,
+    "sileroThreshold": 0.3,
+    "sileroNegThreshold": 0.15,
+    "sileroMinSpeechDurationMs": 80,
+    "sileroMinSilenceDurationMs": 100,
+    "sileroSpeechPadMs": 100,
+    "pyannoteVadOnset": 0.45,
+    "pyannoteVadOffset": 0.25,
     "vadChunkSizeSec": 30,
     "sentenceGapMs": null,
     "sentencePaddingMs": 80
@@ -98,8 +103,13 @@ Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w fr
 ```json
 {
   "vadMethod": "silero",
-  "vadOnset": 0.5,
-  "vadOffset": 0.363,
+  "sileroThreshold": 0.3,
+  "sileroNegThreshold": 0.15,
+  "sileroMinSpeechDurationMs": 80,
+  "sileroMinSilenceDurationMs": 100,
+  "sileroSpeechPadMs": 100,
+  "pyannoteVadOnset": 0.45,
+  "pyannoteVadOffset": 0.25,
   "vadChunkSizeSec": 30,
   "sentenceGapMs": null,
   "sentencePaddingMs": 80,
@@ -109,8 +119,22 @@ Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w fr
 
 `vadMethod`:
 
-- `silero`: domyślny VAD dla WhisperX.
-- `pyannote`: obsługiwany tryb alternatywny.
+- `silero`: domyślny VAD dla WhisperX; aktywne są wyłącznie pola `silero*` oraz wspólne `vadChunkSizeSec`.
+- `pyannote`: alternatywny VAD; aktywne są wyłącznie `pyannoteVadOnset`, `pyannoteVadOffset` oraz wspólne `vadChunkSizeSec`.
+
+Parametry Silero:
+
+- `sileroThreshold` (`threshold`): próg rozpoczęcia wokalu, domyślnie `0.30`.
+- `sileroNegThreshold` (`neg_threshold`): próg zakończenia wokalu, domyślnie `0.15`; musi być niższy od `sileroThreshold`.
+- `sileroMinSpeechDurationMs` (`min_speech_duration_ms`): najkrótszy zachowywany fragment wokalu, domyślnie `80 ms`.
+- `sileroMinSilenceDurationMs` (`min_silence_duration_ms`): cisza kończąca fragment, domyślnie `100 ms`.
+- `sileroSpeechPadMs` (`speech_pad_ms`): margines po obu stronach wykrytego wokalu, domyślnie `100 ms`.
+- Worker używa Silero VAD `v6.2.1` przypiętego do rewizji `7e30209a3e901f9842f81b225f3e93d8199902b1`.
+
+Parametry pyannote:
+
+- `pyannoteVadOnset` (`vad_onset`): próg rozpoczęcia wokalu, domyślnie `0.45`.
+- `pyannoteVadOffset` (`vad_offset`): próg zakończenia wokalu, domyślnie `0.25`; musi być niższy od `pyannoteVadOnset`.
 
 `positioning`:
 
@@ -120,10 +144,12 @@ Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w fr
 Zasady:
 
 - `vadChunkSizeSec` pozostaje domyślnie `30`, żeby pasował do okna kontekstowego Whispera.
+- Starsze payloady z `vadOnset` i `vadOffset` są migrowane do parametrów aktualnie wybranego VAD.
 - `sentenceGapMs` jest opcjonalnym progiem przerwy między słowami rozdzielającym finalne sentencje; `null` oznacza tryb auto.
 - `sentencePaddingMs` rozszerza start i koniec frazy, ale nie może powodować nachodzenia na sąsiednie frazy.
 - Jeśli `SyllabificationSettings.method` ma wartość `none`, backend wymusza finalne `positioning="words_only"`.
 - Artefakty transkrypcji zapisują wybraną metodę VAD, parametry VAD oraz parametry grupowania fraz.
+- `transcript.raw.json.vadSegments` zapisuje fragmenty po VAD/Cut & Merge faktycznie przekazane do ASR, wraz z ich składowymi interwałami źródłowymi.
 
 ## PitchSettings
 
@@ -312,8 +338,13 @@ Zasady:
   },
   "transcriptionSettings": {
     "vadMethod": "silero",
-    "vadOnset": 0.5,
-    "vadOffset": 0.363,
+    "sileroThreshold": 0.3,
+    "sileroNegThreshold": 0.15,
+    "sileroMinSpeechDurationMs": 80,
+    "sileroMinSilenceDurationMs": 100,
+    "sileroSpeechPadMs": 100,
+    "pyannoteVadOnset": 0.45,
+    "pyannoteVadOffset": 0.25,
     "vadChunkSizeSec": 30,
     "sentenceGapMs": null,
     "sentencePaddingMs": 80

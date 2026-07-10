@@ -700,7 +700,19 @@ def _changed_stages_for_settings(job, stage: str, request: StageSettingsRequest)
         requested_syllabification = request.syllabificationSettings or job.syllabificationSettings
         requested_transcription = final_transcription_settings(request.transcriptionSettings or job.transcriptionSettings, requested_syllabification)
         changed: list[str] = []
-        asr_fields = ["vadMethod", "vadOnset", "vadOffset", "vadChunkSizeSec", "sentencePaddingMs", "positioning"]
+        asr_fields = [
+            "vadMethod",
+            "sileroThreshold",
+            "sileroNegThreshold",
+            "sileroMinSpeechDurationMs",
+            "sileroMinSilenceDurationMs",
+            "sileroSpeechPadMs",
+            "pyannoteVadOnset",
+            "pyannoteVadOffset",
+            "vadChunkSizeSec",
+            "sentencePaddingMs",
+            "positioning",
+        ]
         asr_changed = requested_profiles.transcriptionModel != job.profiles.transcriptionModel or any(
             getattr(requested_transcription, field) != getattr(job.transcriptionSettings, field) for field in asr_fields
         )

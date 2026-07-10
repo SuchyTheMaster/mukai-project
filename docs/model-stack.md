@@ -126,12 +126,13 @@ Aktualna decyzja implementacyjna dla etapu 06:
 - Worker zapisuje `transcript.raw.json` z wynikiem ASR oraz `transcript.aligned.json` z finalnymi frazami `TranscriptSegment`, słowami, opcjonalnymi czasami znaków, confidence i `requiresReview`.
 - Język jest przekazywany do WhisperX tylko dla `languageMode=forced` i nie jest przekazywany, gdy użytkownik zostawił język pusty.
 - Worker ładuje cały plik `worker_inputs/whisperx.wav` przez `whisperx.load_audio` i przekazuje cały waveform do `model.transcribe`; nie wykonuje własnego obcięcia do pierwszych 30 sekund.
-- Worker jawnie ustawia WhisperX `vad_method="silero"` jako domyślny VAD. `pyannote` pozostaje obsługiwanym trybem alternatywnym przez `TranscriptionSettings.vadMethod`.
+- Worker domyślnie wstrzykuje Silero VAD `v6.2.1` przypięte do rewizji `7e30209a3e901f9842f81b225f3e93d8199902b1`. `pyannote` pozostaje obsługiwanym trybem alternatywnym przez `TranscriptionSettings.vadMethod`.
 - Jeśli uruchomiona wersja WhisperX nie udostępnia parametru `vad_method`, worker nie przerywa transkrypcji. Próbuje użyć `vad_model`, jeśli API go udostępnia, a w przeciwnym razie działa z domyślnym VAD tej wersji i zapisuje tę informację w diagnostyce.
-- Worker przekazuje `vad_options` z `chunk_size=30`, `vad_onset=0.5` i `vad_offset=0.363`, żeby dopasować wewnętrzny podział VAD/Cut & Merge do okna kontekstowego Whispera i zachować globalne czasy długiego wokalu.
+- Preset Silero używa `threshold=0.30`, `neg_threshold=0.15`, `min_speech_duration_ms=80`, `min_silence_duration_ms=100`, `speech_pad_ms=100` i `chunk_size=30`.
+- Preset pyannote używa `vad_onset=0.45`, `vad_offset=0.25` i `chunk_size=30`. Parametry nieaktywnego VAD nie są przekazywane do modelu.
 - Worker przekazuje do `whisperx.align` `return_char_alignments=True` tylko dla `TranscriptionSettings.positioning="words_and_syllables"`; przy `words_only` zapisuje wyłącznie czasy słów.
 - Po forced alignment worker buduje finalne sentencje karaoke z aligned words. Sentencje są rozdzielane przerwą większą niż efektywny `sentenceGapMs`; `null` oznacza automatyczne oszacowanie z BPM i odstępów między słowami.
-- `transcript.raw.json` zachowuje surowe segmenty ASR, a `transcript.aligned.json` zapisuje finalne `TranscriptSegment` jako frazy karaoke oraz wersje WhisperX/PyTorch, wariant CUDA, źródło środowiska, model ASR, język alignacji, `batchSize`, `computeType`, hash wejścia, próg niskiej pewności, czas trwania wejścia, oczekiwaną liczbę okien 30 s, maksymalne czasy końca segmentów ASR/alignacji, metodę VAD, opcje VAD i parametry budowania fraz.
+- `transcript.raw.json` zachowuje surowe segmenty ASR i `vadSegments` faktycznie przekazane do ASR, a `transcript.aligned.json` zapisuje finalne `TranscriptSegment` jako frazy karaoke oraz wersje WhisperX/PyTorch, wariant CUDA, źródło środowiska, model ASR, język alignacji, `batchSize`, `computeType`, hash wejścia, próg niskiej pewności, czas trwania wejścia, oczekiwaną liczbę okien 30 s, maksymalne czasy końca segmentów ASR/alignacji, metodę i rewizję VAD, opcje VAD i parametry budowania fraz.
 
 Aktualna decyzja implementacyjna dla etapu 07:
 

@@ -19,9 +19,10 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Przekazanie języka do WhisperX tylko wtedy, gdy użytkownik go podał.
 - Pozostawienie detekcji języka Whisperowi, gdy użytkownik zostawił język pusty.
 - Zachowanie globalnych czasów dla długich utworów mimo pracy modelu na oknach około 30 sekund.
-- Jawne użycie WhisperX `vad_method="silero"` jako domyślnego VAD, z `pyannote` jako obsługiwanym trybem alternatywnym.
-- Użycie ustawień transkrypcji `vadOnset`, `vadOffset`, `vadChunkSizeSec`, `sentenceGapMs` i `sentencePaddingMs` zaakceptowanych przy uploadzie albo ustawionych domyślnie.
+- Jawne użycie przypiętego Silero VAD jako domyślnego detektora, z `pyannote` jako obsługiwanym trybem alternatywnym.
+- Osobne ustawienia Silero (`threshold`, `neg_threshold`, minimalny czas wokalu/ciszy i padding detekcji) oraz pyannote (`vad_onset`, `vad_offset`), wraz ze wspólnymi `vadChunkSizeSec`, `sentenceGapMs` i `sentencePaddingMs`.
 - Zapis `transcript.raw.json` z segmentami ASR.
+- Zapis w `transcript.raw.json` interwałów VAD/Cut & Merge faktycznie przekazanych do ASR.
 - Zapis `transcript.aligned.json` z finalnymi frazami karaoke, słowami, start/end i confidence.
 - Budowanie finalnych fraz z aligned words przez podział po dłuższych pauzach między słowami.
 - Oznaczanie segmentów o niskiej pewności do ręcznej korekty bez automatycznego usuwania.
@@ -61,7 +62,7 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Test WhisperX na krótkim fragmencie wokalu z oczekiwanym językiem.
 - Test WhisperX bez wymuszonego języka.
 - Test dłuższego pliku z weryfikacją globalnych czasów segmentów.
-- Test przekazania `vad_method="silero"` i `vad_options` do WhisperX.
+- Test wstrzyknięcia przypiętego Silero i przekazania parametrów aktywnego VAD do WhisperX.
 - Test budowania finalnych fraz z aligned words dla pauz poniżej i powyżej progu.
 - Test serializacji `TranscriptSegment` i słów.
 - Test oznaczania niskiej pewności.

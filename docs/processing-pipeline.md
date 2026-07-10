@@ -159,7 +159,7 @@ Wejście:
 Wyjście:
 
 - `transcript.raw.json`: segmenty modelu ASR; asset typu `transcript_raw`.
-- `transcript.aligned.json`: aligned words i segmenty ASR z czasami start/end, opcjonalnymi czasami znaków i confidence; asset typu `transcript_aligned`. Finalne frazy karaoke powstają dopiero we wstępnym dopasowaniu.
+- `transcript.aligned.json`: finalne frazy karaoke zbudowane z aligned words, z czasami start/end, opcjonalnymi czasami znaków i confidence; asset typu `transcript_aligned`. Wstępne dopasowanie może je ponownie pogrupować po zmianie `sentenceGapMs`.
 
 Wymagania:
 
@@ -168,10 +168,13 @@ Wymagania:
 - Nie wymuszać języka dla utworów wielojęzycznych ani wtedy, gdy użytkownik zostawi pole języka puste.
 - Uwzględnić, że Whisper pracuje na oknach około 30 sekund; dla długich utworów pipeline musi poprawnie segmentować lub przekazywać audio do WhisperX tak, żeby zachować globalne czasy.
 - Worker nie może przekazywać do ASR tylko pierwszego okna 30 sekund. Do WhisperX trafia cały `worker_inputs/whisperx.wav`, a podział na okna 30 sekund jest realizowany przez VAD/Cut & Merge WhisperX z globalnymi czasami segmentów.
-- Domyślnie używać Silero VAD przez WhisperX `vad_method="silero"`, z `pyannote` jako trybem alternatywnym.
+- Domyślnie wstrzykiwać przypięty model Silero przez WhisperX `vad_model`, z `pyannote` przez `vad_method` jako trybem alternatywnym.
+- Silero przypiąć do wersji `v6.2.1`/rewizji `7e30209a3e901f9842f81b225f3e93d8199902b1`; nie pobierać zmiennego `master`.
+- Używać osobnych presetów: Silero `0.30/0.15`, `80 ms` minimalnego wokalu, `100 ms` minimalnej ciszy i `100 ms` paddingu detekcji; pyannote `0.45/0.25`.
 - Jeśli wersja WhisperX w obrazie nie obsługuje jawnego `vad_method`, worker nie przerywa transkrypcji i zapisuje w diagnostyce, czy metoda VAD została wymuszona, wstrzyknięta przez `vad_model`, czy użyto domyślnego VAD tej wersji.
 - `TranscriptionSettings.positioning` steruje `return_char_alignments`: `words_and_syllables` zapisuje czasy znaków przy słowach, a `words_only` zostawia tylko czasy słów.
 - `transcript.raw.json` zachowuje surowe segmenty ASR bez przepisywania ich na frazy karaoke.
+- `transcript.raw.json` zachowuje też interwały VAD/Cut & Merge faktycznie przekazane do ASR.
 - Po forced alignment worker zapisuje aligned words bez finalnego grupowania w sentencje karaoke.
 - Artefakty transkrypcji zapisują czas trwania wejścia, rozmiar okna, oczekiwaną liczbę okien i maksymalny czas końca segmentów, żeby dało się diagnostycznie wykryć wynik ucięty do pierwszych 30 sekund.
 - Artefakty transkrypcji zapisują metodę VAD, opcje VAD, próg pauzy dla fraz i padding fraz.

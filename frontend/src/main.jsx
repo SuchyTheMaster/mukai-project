@@ -68,8 +68,13 @@ const defaultPitch = {
 
 const defaultTranscription = {
   vadMethod: "silero",
-  vadOnset: 0.5,
-  vadOffset: 0.363,
+  sileroThreshold: 0.3,
+  sileroNegThreshold: 0.15,
+  sileroMinSpeechDurationMs: 80,
+  sileroMinSilenceDurationMs: 100,
+  sileroSpeechPadMs: 100,
+  pyannoteVadOnset: 0.45,
+  pyannoteVadOffset: 0.25,
   vadChunkSizeSec: 30,
   sentenceGapMs: "",
   sentencePaddingMs: 80,
@@ -216,11 +221,16 @@ const WHISPER_LANGUAGE_OPTIONS = [
 ];
 
 const TRANSCRIPTION_SETTING_FIELDS = [
-  ["vadOnset", { label: "Próg startu VAD", step: "0.001", tooltip: "Określa, jak pewny musi być detektor, że zaczyna się wokal. Większa wartość ogranicza fałszywe wejścia, ale może uciąć ciche początki fraz. Mniejsza wartość łapie cichszy wokal, ale częściej przepuszcza oddechy lub szum." }],
-  ["vadOffset", { label: "Próg końca VAD", step: "0.001", tooltip: "Określa, kiedy detektor uznaje, że wokal się skończył. Większa wartość szybciej zamyka fragment i może skracać końcówki słów. Mniejsza wartość dłużej trzyma frazę, ale może dodać ciszę po wokalu." }],
-  ["vadChunkSizeSec", { label: "Okno VAD/ASR (s)", step: "1", tooltip: "Długość fragmentów audio wysyłanych do wykrywania wokalu i transkrypcji. Większa wartość daje modelowi więcej kontekstu, ale zużywa więcej pamięci i może wolniej działać. Mniejsza wartość jest lżejsza, ale może pogorszyć rozpoznanie na granicach fragmentów." }],
+  ["sileroThreshold", { methods: ["silero"], helper: "threshold", label: "Czułość wykrywania Silero", step: "0.01", tooltip: "Próg rozpoczęcia wokalu w Silero. Niższa wartość lepiej zachowuje cichy, oddechowy i śpiewany wokal, ale może przepuścić więcej szumu lub przesłuchów instrumentów." }],
+  ["sileroNegThreshold", { methods: ["silero"], helper: "neg_threshold", label: "Próg zakończenia Silero", step: "0.01", tooltip: "Próg, poniżej którego Silero zaczyna uznawać fragment za ciszę. Powinien być niższy od progu rozpoczęcia. Niższa wartość lepiej zachowuje wybrzmienia końcówek słów." }],
+  ["sileroMinSpeechDurationMs", { methods: ["silero"], helper: "min_speech_duration_ms", label: "Najkrótszy fragment wokalu (ms)", step: "10", tooltip: "Fragmenty wykryte jako wokal, które są krótsze od tej wartości, zostaną odrzucone. Niska wartość pomaga zachować szybkie sylaby, ale może dodać krótkie zakłócenia." }],
+  ["sileroMinSilenceDurationMs", { methods: ["silero"], helper: "min_silence_duration_ms", label: "Cisza kończąca fragment (ms)", step: "10", tooltip: "Minimalny czas ciszy potrzebny Silero do zakończenia aktywnego fragmentu. Większa wartość scala wokal przez krótkie pauzy, a mniejsza częściej dzieli frazy." }],
+  ["sileroSpeechPadMs", { methods: ["silero"], helper: "speech_pad_ms", label: "Margines wokalu Silero (ms)", step: "10", tooltip: "Dodaje zapas audio przed i po każdym fragmencie wykrytym przez Silero. Chroni miękkie początki i wybrzmienia, ale zbyt duża wartość może dołączyć przesłuchy lub ciszę." }],
+  ["pyannoteVadOnset", { methods: ["pyannote"], helper: "vad_onset", label: "Próg startu pyannote", step: "0.01", tooltip: "Próg rozpoczęcia wokalu w pyannote. Niższa wartość zwiększa kompletność cichego śpiewu, ale może skierować do transkrypcji więcej zakłóceń." }],
+  ["pyannoteVadOffset", { methods: ["pyannote"], helper: "vad_offset", label: "Próg końca pyannote", step: "0.01", tooltip: "Próg zakończenia wokalu w pyannote. Powinien być niższy od progu startu. Niższa wartość dłużej utrzymuje aktywną frazę i lepiej zachowuje wybrzmienia." }],
+  ["vadChunkSizeSec", { helper: "chunk_size", label: "Okno VAD/ASR (s)", step: "1", tooltip: "Maksymalna długość fragmentu przekazywanego do Whispera po wykrywaniu i łączeniu wokalu. Wartość 30 s odpowiada oknu kontekstowemu modelu i jest zalecana dla obu VAD." }],
   ["sentenceGapMs", { label: "Ms między sentencjami", step: "1", nullable: true, placeholder: "auto", tooltip: "Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Większa wartość łączy więcej słów w dłuższe linie karaoke. Mniejsza wartość częściej rozdziela tekst na krótsze linie." }],
-  ["sentencePaddingMs", { label: "Padding frazy (ms)", step: "10", tooltip: "Dodatkowy margines czasu przed i po frazie. Większa wartość daje bezpieczniejszy zapas na wejścia i wybrzmienia, ale może powodować nakładanie sąsiednich fraz. Mniejsza wartość ciaśniej przycina frazy, ale łatwiej utnie początek lub koniec." }],
+  ["sentencePaddingMs", { helper: "sentencePaddingMs", label: "Padding frazy (ms)", step: "10", tooltip: "Dodatkowy margines czasu finalnej frazy karaoke, stosowany po alignacji słów. Nie wpływa na samą detekcję VAD; zabezpiecza granice frazy bez nakładania jej na sąsiadów." }],
 ];
 
 const PITCH_SETTING_FIELDS = [
@@ -921,7 +931,7 @@ function SeparationStageForm({ job, busy, onSubmit, embedded = false }) {
 
 function TranscriptionStageForm({ job, busy, onSubmit, embedded = false }) {
   const [transcriptionModel, setTranscriptionModel] = useState(job.profiles?.transcriptionModel ?? "large-v3");
-  const [settings, setSettings] = useState({ ...defaultTranscription, ...(job.transcriptionSettings ?? {}) });
+  const [settings, setSettings] = useState(normalizeTranscriptionSettings(job.transcriptionSettings));
   const [syllabification, setSyllabification] = useState({ ...defaultSyllabification, ...(job.syllabificationSettings ?? {}) });
   const positioningDisabled = syllabification.method === "none";
   const positioningValue = positioningDisabled ? "words_only" : settings.positioning ?? defaultTranscription.positioning;
@@ -934,15 +944,15 @@ function TranscriptionStageForm({ job, busy, onSubmit, embedded = false }) {
   return (
     <StageFormShell title="Transkrypcja" embedded={embedded}>
       <div className="controls-row">
-        <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={settings.vadMethod} onChange={(value) => setSettings({ ...settings, vadMethod: value })} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
+        <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={settings.vadMethod} onChange={(value) => setSettings((current) => ({ ...current, vadMethod: value }))} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
         <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={transcriptionModel} onChange={setTranscriptionModel} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
         <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabification.method} onChange={changeSyllabification} options={SYLLABIFICATION_OPTIONS} />
       </div>
       <div className="advanced">
         <div className="form-grid compact transcription-settings-grid">
           <Select label="Pozycjonowanie" helper="return_char_alignments" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} onChange={(value) => setSettings({ ...settings, positioning: value })} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
-          {TRANSCRIPTION_STAGE_FIELDS.map(([key, field]) => (
-            <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key] ?? ""} onChange={(next) => setSettings({ ...settings, [key]: Number(next) })} />
+          {TRANSCRIPTION_STAGE_FIELDS.filter(([, field]) => !field.methods || field.methods.includes(settings.vadMethod)).map(([key, field]) => (
+            <TextField key={key} label={field.label} helper={field.helper ?? key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key] ?? ""} onChange={(next) => setSettings((current) => ({ ...current, [key]: Number(next) }))} />
           ))}
         </div>
       </div>
@@ -2586,12 +2596,30 @@ function Progress({ stage }) {
 }
 
 function serializeTranscriptionSettings(settings, syllabificationSettings = defaultSyllabification) {
-  const positioning = syllabificationSettings.method === "none" ? "words_only" : settings.positioning ?? defaultTranscription.positioning;
+  const normalized = normalizeTranscriptionSettings(settings);
+  const positioning = syllabificationSettings.method === "none" ? "words_only" : normalized.positioning ?? defaultTranscription.positioning;
   return {
-    ...settings,
+    ...normalized,
     positioning,
-    sentenceGapMs: nullableNumber(settings.sentenceGapMs),
+    sentenceGapMs: nullableNumber(normalized.sentenceGapMs),
   };
+}
+
+function normalizeTranscriptionSettings(settings = {}) {
+  const normalized = { ...defaultTranscription, ...(settings ?? {}) };
+  if (settings?.vadOnset != null) {
+    if (normalized.vadMethod === "pyannote" && settings.pyannoteVadOnset == null) normalized.pyannoteVadOnset = Number(settings.vadOnset);
+    if (normalized.vadMethod === "silero" && settings.sileroThreshold == null) {
+      normalized.sileroThreshold = Number(settings.vadOnset);
+      if (settings.sileroNegThreshold == null) normalized.sileroNegThreshold = Math.max(Number(settings.vadOnset) - 0.15, 0.01);
+    }
+  }
+  if (settings?.vadOffset != null) {
+    if (normalized.vadMethod === "pyannote" && settings.pyannoteVadOffset == null) normalized.pyannoteVadOffset = Number(settings.vadOffset);
+  }
+  delete normalized.vadOnset;
+  delete normalized.vadOffset;
+  return normalized;
 }
 
 function toEditorArrangement(arrangement) {
@@ -3867,7 +3895,7 @@ function readPersistedUiState() {
       ...parsed,
       metadata: { ...emptyMetadata, ...(parsed.metadata ?? {}) },
       profiles: { ...initialUiState.profiles, ...(parsed.profiles ?? {}) },
-      transcriptionSettings: { ...defaultTranscription, ...(parsed.transcriptionSettings ?? {}) },
+      transcriptionSettings: normalizeTranscriptionSettings(parsed.transcriptionSettings),
       pitchSettings: { ...defaultPitch, ...(parsed.pitchSettings ?? {}) },
       syllabificationSettings: { ...defaultSyllabification, ...(parsed.syllabificationSettings ?? {}) },
       syllabificationTouched: Boolean(parsed.syllabificationTouched),

@@ -179,6 +179,7 @@ surface-sunken (#060620) fill, content-primary text, 2px border-default border, 
 content-tertiary text. Poppins 12px medium uppercase tracking 0.5px. 6px margin-bottom.
 #### Helper Text
 content-tertiary (default) | error (error state) text. Poppins 12px regular. 4px margin-top.
+- W formularzach ustawień modeli helper może pokazywać techniczną nazwę parametru (`threshold`, `vad_onset`, `speech_pad_ms`); opis użytkowy pozostaje w polskiej etykiecie i tooltipie otwieranym ikoną informacji.
 ---
 
 ### Chips

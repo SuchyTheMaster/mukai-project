@@ -51,8 +51,8 @@ class StagedPipelineContractsTest(unittest.TestCase):
         self.assertEqual(routes._changed_stages_for_settings(job, "uploaded", request), ["transcribing", "aligning"])
 
     def test_transcription_asr_change_keeps_pitch_artifacts_valid(self):
-        job = self._job(transcription_settings=TranscriptionSettings(vadOnset=0.5))
-        request = StageSettingsRequest(transcriptionSettings=TranscriptionSettings(vadOnset=0.6))
+        job = self._job(transcription_settings=TranscriptionSettings(sileroThreshold=0.3))
+        request = StageSettingsRequest(transcriptionSettings=TranscriptionSettings(sileroThreshold=0.35))
 
         self.assertEqual(routes._changed_stages_for_settings(job, "transcribing", request), ["transcribing", "aligning"])
 

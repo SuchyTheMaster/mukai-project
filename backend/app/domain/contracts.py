@@ -66,8 +66,13 @@ TranscriptionPositioning = Literal["words_and_syllables", "words_only"]
 
 class TranscriptionSettings(BaseModel):
     vadMethod: Literal["silero", "pyannote"] = "silero"
-    vadOnset: float = Field(default=0.5, gt=0.0, lt=1.0)
-    vadOffset: float = Field(default=0.363, gt=0.0, lt=1.0)
+    sileroThreshold: float = Field(default=0.3, gt=0.0, lt=1.0)
+    sileroNegThreshold: float = Field(default=0.15, gt=0.0, lt=1.0)
+    sileroMinSpeechDurationMs: int = Field(default=80, ge=0)
+    sileroMinSilenceDurationMs: int = Field(default=100, ge=0)
+    sileroSpeechPadMs: int = Field(default=100, ge=0)
+    pyannoteVadOnset: float = Field(default=0.45, gt=0.0, lt=1.0)
+    pyannoteVadOffset: float = Field(default=0.25, gt=0.0, lt=1.0)
     vadChunkSizeSec: int = Field(default=30, ge=1)
     sentenceGapMs: int | None = Field(default=None, ge=0)
     sentencePaddingMs: int = Field(default=80, ge=0)
@@ -76,9 +81,32 @@ class TranscriptionSettings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def migrate_sentence_pause_ms(cls, value):
-        if isinstance(value, dict) and "sentenceGapMs" not in value and "sentencePauseMs" in value:
-            return value | {"sentenceGapMs": value.get("sentencePauseMs")}
-        return value
+        if not isinstance(value, dict):
+            return value
+        migrated = dict(value)
+        if "sentenceGapMs" not in migrated and "sentencePauseMs" in migrated:
+            migrated["sentenceGapMs"] = migrated.get("sentencePauseMs")
+        legacy_onset = migrated.get("vadOnset")
+        legacy_offset = migrated.get("vadOffset")
+        if migrated.get("vadMethod", "silero") == "silero":
+            if "sileroThreshold" not in migrated and legacy_onset is not None:
+                migrated["sileroThreshold"] = legacy_onset
+            if "sileroNegThreshold" not in migrated and legacy_onset is not None:
+                migrated["sileroNegThreshold"] = max(float(legacy_onset) - 0.15, 0.01)
+        else:
+            if "pyannoteVadOnset" not in migrated and legacy_onset is not None:
+                migrated["pyannoteVadOnset"] = legacy_onset
+            if "pyannoteVadOffset" not in migrated and legacy_offset is not None:
+                migrated["pyannoteVadOffset"] = legacy_offset
+        return migrated
+
+    @model_validator(mode="after")
+    def validate_vad_hysteresis(self):
+        if self.sileroNegThreshold >= self.sileroThreshold:
+            raise ValueError("sileroNegThreshold must be lower than sileroThreshold")
+        if self.pyannoteVadOffset >= self.pyannoteVadOnset:
+            raise ValueError("pyannoteVadOffset must be lower than pyannoteVadOnset")
+        return self
 
 
 class PitchSettings(BaseModel):

@@ -43,6 +43,10 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Każda z tych trzech pozycji ma ikonę informacyjną z tooltipem, który krótko wyjaśnia cel kroku i wpływ wyboru.
 - Wybór modelu transkrypcji pokazuje w selekcie tylko nazwy `large-v3` i `large-v3-turbo`; tooltip wyjaśnia, że `large-v3` jest dokładniejszy, a `large-v3-turbo` szybszy.
 - Zaawansowane ustawienia transkrypcji zawierają select `Pozycjonowanie` z opcjami `słowa i sylaby` oraz `tylko słowa`; `słowa i sylaby` jest domyślne, ale przy sylabizacji `Bez podziału` UI wymusza i blokuje `tylko słowa`.
+- Po wybraniu `Silero` formularz pokazuje wyłącznie aktywne pola `threshold`, `neg_threshold`, `min_speech_duration_ms`, `min_silence_duration_ms`, `speech_pad_ms` i wspólne `chunk_size`; preset startowy to odpowiednio `0.30`, `0.15`, `80 ms`, `100 ms`, `100 ms` i `30 s`.
+- Po wybraniu `pyannote` formularz ukrywa pola Silero i pokazuje wyłącznie `vad_onset`, `vad_offset` oraz wspólne `chunk_size`; preset startowy to `0.45`, `0.25` i `30 s`.
+- Przełączenie VAD zachowuje edytowane wartości obu presetów, ale pola nieaktywnego modelu pozostają niewidoczne i nie są stosowane przez backend.
+- Każde pole VAD ma przystępną polską etykietę, ikonę informacji z opisem wpływu parametru oraz techniczną nazwę parametru jako helper pod etykietą.
 - Pole `Ms między sentencjami` edytuje próg przerwy `sentenceGapMs` bezpośrednio w milisekundach; frontend wysyła wpisaną wartość bez przeliczania jednostek, a puste pole oznacza `null` i tryb auto.
 - Zaawansowane ustawienia pitch: próg ciszy, próg periodicity, krok ramek, minimalna długość nuty i scalanie krótkich przerw.
 - Opcjonalny upload covera, który może zostać użyty w eksporcie.
