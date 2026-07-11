@@ -449,6 +449,15 @@ class ResetStageRequest(BaseModel):
     reason: str = "user_requested"
 
 
+class ApplicationResetRequest(BaseModel):
+    jobId: str | None = Field(default=None, pattern=r"^job_[0-9a-f]{32}$")
+    uploadDraftId: str | None = Field(default=None, pattern=r"^draft_[0-9a-f]{32}$")
+
+
+class ApplicationResetResponse(BaseModel):
+    reset: bool = True
+
+
 class ResetStageResponse(BaseModel):
     jobId: str
     status: JobStatus

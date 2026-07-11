@@ -13,7 +13,7 @@ from app.services.ids import new_id
 from app.services.queue import enqueue_transcription, redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
 from app.workers.audio_tools import ffmpeg_convert
-from app.workers.stages import complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
+from app.workers.stages import cleanup_deleted_job_files, complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 
 
 # First run intentionally omits --segment, so Demucs uses the model default.
@@ -38,6 +38,8 @@ def process_job(job_id: str) -> None:
         run_separation(job_id)
     except Exception as exc:  # pragma: no cover - worker guard
         fail_stage(job_id, "separating_vocals", "demucs", "Separacja wokalu nie powiodla sie.", sanitize_log(str(exc)), "worker-separate-stems")
+    finally:
+        cleanup_deleted_job_files(job_id)
 
 
 def run_separation(job_id: str) -> None:

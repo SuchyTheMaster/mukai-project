@@ -16,7 +16,7 @@ from app.services.audio_probe import ffprobe
 from app.services.ids import new_id
 from app.services.queue import enqueue_pitch, redis_client
 from app.services.storage import relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
+from app.workers.stages import cleanup_deleted_job_files, complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 
 
 WHISPER_AUDIO_SAMPLE_RATE = 16000
@@ -42,6 +42,8 @@ def process_job(job_id: str) -> None:
         run_transcription(job_id)
     except Exception as exc:  # pragma: no cover - worker guard
         fail_stage(job_id, "transcribing", "whisperx", "Transkrypcja nie powiodla sie.", sanitize_log(str(exc)), "worker-transcribe")
+    finally:
+        cleanup_deleted_job_files(job_id)
 
 
 def run_transcription(job_id: str) -> None:

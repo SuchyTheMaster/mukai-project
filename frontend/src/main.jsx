@@ -31,6 +31,7 @@ import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const APP_STORAGE_KEY = "mukai.processingState.v1";
+let latestResetContext = { jobId: null, uploadDraftId: null, hasState: false };
 const EDITOR_WINDOW_SEC = 30;
 const MIN_EDITOR_WINDOW_SEC = 0.1;
 const MAX_EDITOR_WINDOW_SEC = 120;
@@ -302,6 +303,42 @@ const initialUiState = {
   reviewOpen: false,
 };
 
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error) {
+    console.error("MUKAI render error", error);
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    const canReset = latestResetContext.hasState || hasStoredProjectState();
+    return (
+      <div className="reset-fallback-shell">
+        <div className="reset-fallback-panel">
+          <div className="brand">
+            <img src="/brand/mukai-logo.png" alt="MUKAI - Music to Karaoke AI Creator" />
+            <div className="brand-copy"><strong>MUKAI</strong><span>Music to Karaoke AI Creator</span></div>
+          </div>
+          <p>Interfejs napotkał błąd JavaScript.</p>
+          {canReset && (
+            <button className="button ghost danger full" type="button" onClick={() => confirmAndResetApplication(latestResetContext)}>
+              <RotateCcw size={16} /> Od nowa
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+}
+
 function App() {
   const persisted = useMemo(readPersistedUiState, []);
   const [audioFile, setAudioFile] = useState(null);
@@ -322,6 +359,8 @@ function App() {
   const [error, setError] = useState(null);
   const [reviewOpen, setReviewOpen] = useState(persisted.reviewOpen);
   const [restartOpen, setRestartOpen] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const resetInProgress = useRef(false);
 
   useEffect(() => {
     if (!job?.jobId) return undefined;
@@ -339,6 +378,7 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (resetInProgress.current) return;
     persistUiState({
       inspection,
       metadata,
@@ -384,6 +424,12 @@ function App() {
     ? jobCoverAsset ? `${API_BASE}/api/jobs/${job.jobId}/artifacts/${jobCoverAsset.assetId}` : null
     : coverFile ? URL.createObjectURL(coverFile) : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
   const isReview = job?.status === "awaiting_review" && reviewOpen;
+  const showRestart = hasMeaningfulProjectState({ audioFile, coverFile, inspection, metadata, job, arrangement, reviewOpen });
+  latestResetContext = {
+    jobId: job?.jobId ?? null,
+    uploadDraftId: inspection?.uploadDraftId ?? null,
+    hasState: showRestart,
+  };
 
   useEffect(() => {
     if (syllabificationTouched) return;
@@ -597,26 +643,19 @@ function App() {
     setJob(null);
     setArrangement(null);
     setReviewOpen(false);
-    window.localStorage.removeItem(APP_STORAGE_KEY);
+    clearBrowserProjectState();
   }
 
   async function restartProject() {
-    setError(null);
-    setBusy(true);
+    const resetContext = { ...latestResetContext };
+    resetInProgress.current = true;
+    setResetting(true);
+    setRestartOpen(false);
+    clearLocalProjectState();
     try {
-      if (job?.jobId) {
-        await apiJson(`/api/jobs/${job.jobId}/restart`, {
-          method: "POST",
-          body: JSON.stringify({ reason: "user_requested" }),
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-      clearLocalProjectState();
-      setRestartOpen(false);
-    } catch (err) {
-      setError(err.message);
+      await resetApplicationData(resetContext);
     } finally {
-      setBusy(false);
+      reloadInitialApplication();
     }
   }
 
@@ -632,6 +671,14 @@ function App() {
             </div>
           </div>
         </section>
+
+        {showRestart && (
+          <section className="restart-section">
+            <button className="button ghost danger full" type="button" onClick={() => setRestartOpen(true)}>
+              <RotateCcw size={16} /> Od nowa
+            </button>
+          </section>
+        )}
 
         <section>
           <div className="section-title">{jobCreated ? "WGRANE AUDIO" : "Upload audio"}</div>
@@ -713,11 +760,6 @@ function App() {
 
       {!isReview && (
         <aside className="right-rail panel">
-          <section className="restart-section">
-            <button className="button ghost danger full" type="button" disabled={busy} onClick={() => setRestartOpen(true)}>
-              <RotateCcw size={16} /> Od nowa
-            </button>
-          </section>
           <section>
             <div className="section-title">Aktualny etap</div>
             <div className="current-stage">
@@ -736,7 +778,7 @@ function App() {
           title="Zacząć od nowa?"
           message="Ta operacja wyczyści lokalny stan przeglądarki oraz artefakty bieżącego zadania i wróci do pierwszego kroku."
           confirmLabel="Od nowa"
-          busy={busy}
+          busy={resetting}
           onCancel={() => setRestartOpen(false)}
           onConfirm={restartProject}
         />
@@ -3935,6 +3977,101 @@ function persistUiState(state) {
   }
 }
 
+function hasMeaningfulProjectState({ audioFile, coverFile, inspection, metadata, job, arrangement, reviewOpen }) {
+  const hasMetadata = ["title", "artist", "album", "year", "genre", "language"].some((key) => Boolean(metadata?.[key]));
+  return Boolean(
+    audioFile
+    || coverFile
+    || inspection
+    || job
+    || arrangement
+    || reviewOpen
+    || hasMetadata
+    || hasStoredProjectState()
+  );
+}
+
+function hasStoredProjectState() {
+  try {
+    return Boolean(window.localStorage.getItem(APP_STORAGE_KEY));
+  } catch {
+    return false;
+  }
+}
+
+function storedResetContext() {
+  try {
+    const raw = window.localStorage.getItem(APP_STORAGE_KEY);
+    if (!raw) return {};
+    const state = JSON.parse(raw);
+    return {
+      jobId: state.job?.jobId ?? null,
+      uploadDraftId: state.inspection?.uploadDraftId ?? null,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function clearBrowserProjectState() {
+  try {
+    window.localStorage.clear();
+  } catch {
+    // Reset pamięci aplikacji nie może zależeć od dostępności localStorage.
+  }
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    // Nie każda przeglądarka udostępnia sessionStorage w każdym trybie.
+  }
+}
+
+async function resetApplicationData(context = {}) {
+  const stored = storedResetContext();
+  const resetContext = {
+    jobId: context.jobId ?? stored.jobId ?? null,
+    uploadDraftId: context.uploadDraftId ?? stored.uploadDraftId ?? null,
+  };
+  clearBrowserProjectState();
+
+  const cleanupTasks = [clearApplicationCaches()];
+  if (resetContext.jobId || resetContext.uploadDraftId) {
+    cleanupTasks.push(requestServerReset(resetContext));
+  }
+  await Promise.allSettled(cleanupTasks);
+}
+
+async function requestServerReset(context) {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    await fetch(`${API_BASE}/api/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jobId: context.jobId, uploadDraftId: context.uploadDraftId }),
+      keepalive: true,
+      signal: controller.signal,
+    });
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+async function clearApplicationCaches() {
+  if (!("caches" in window)) return;
+  const cacheNames = await window.caches.keys();
+  await Promise.all(cacheNames.map((cacheName) => window.caches.delete(cacheName)));
+}
+
+function reloadInitialApplication() {
+  window.location.replace(window.location.pathname);
+}
+
+function confirmAndResetApplication(context) {
+  if (!window.confirm("Zacząć od nowa? Wszystkie dane bieżącego projektu zostaną usunięte.")) return;
+  resetApplicationData(context).finally(reloadInitialApplication);
+}
+
 function defaultStages() {
   return [
     ["uploaded", "source", "Źródło"],
@@ -4237,4 +4374,4 @@ async function parseResponse(response) {
   return payload;
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(<AppErrorBoundary><App /></AppErrorBoundary>);

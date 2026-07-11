@@ -33,7 +33,7 @@ from app.domain.contracts import (
 from app.services.ids import new_id
 from app.services.queue import redis_client
 from app.services.storage import read_json, relative_to_root, resolve_inside, sha256_file, write_json
-from app.workers.stages import complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
+from app.workers.stages import cleanup_deleted_job_files, complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
 from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
 
 
@@ -147,6 +147,13 @@ def main() -> None:
 
 
 def process_job(job_id: str, start_stage: str = "detecting_pitch") -> None:
+    try:
+        _process_job(job_id, start_stage)
+    finally:
+        cleanup_deleted_job_files(job_id)
+
+
+def _process_job(job_id: str, start_stage: str) -> None:
     if start_stage == "aligning":
         try:
             run_draft_alignment(job_id)

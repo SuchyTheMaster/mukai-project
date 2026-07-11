@@ -77,6 +77,7 @@ Obecnie zaimplementowane:
 - `POST /api/jobs/{jobId}/arrangement/resegment`: ponowna agregacja aligned words do sentencji z nowym `sentenceGapMs`, bez uruchamiania przetwarzania audio.
 - `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu.
 - `POST /api/jobs/{jobId}/stages/{stage}/reset`: reset wskazanego etapu i ponowne kolejkowanie zależnych etapów.
+- `POST /api/reset`: idempotentne usunięcie wskazanego joba, aktywnego draftu uploadu, rekordów zależnych i wszystkich plików bieżącego projektu.
 
 Planowane, ale wymagane w MVP:
 

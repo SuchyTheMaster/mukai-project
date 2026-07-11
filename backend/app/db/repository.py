@@ -70,6 +70,12 @@ def get_job(job_id: str) -> Job | None:
     return _row_to_job(row, artifacts)
 
 
+def delete_job(job_id: str) -> None:
+    with get_conn() as conn:
+        conn.execute("DELETE FROM jobs WHERE job_id = %s", (job_id,))
+        conn.commit()
+
+
 def _row_to_job(row: dict, artifact_rows: list[dict]) -> Job:
     return Job(
         jobId=row["job_id"],

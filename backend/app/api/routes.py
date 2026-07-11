@@ -8,6 +8,8 @@ from app.core.config import get_settings
 from app.core.errors import api_error
 from app.db import repository
 from app.domain.contracts import (
+    ApplicationResetRequest,
+    ApplicationResetResponse,
     Arrangement,
     AudioAsset,
     CreateJobUpload,
@@ -35,6 +37,7 @@ from app.services import audio_probe
 from app.services.ids import new_id
 from app.services.queue import enqueue_job, enqueue_pitch, enqueue_separation, enqueue_transcription, redis_client
 from app.services.storage import (
+    purge_tree,
     read_json,
     relative_to_root,
     resolve_inside,
@@ -509,6 +512,16 @@ def restart_job(job_id: str, request: ResetStageRequest):
     invalidated = _invalidate_stages(job_id, _stages_from("preprocessing"))
     repository.update_job_status(job_id, JobStatus.uploaded)
     return ResetStageResponse(jobId=job_id, status=JobStatus.uploaded, resetFromStage="preprocessing", invalidatedStages=invalidated, queued=False)
+
+
+@router.post("/reset", response_model=ApplicationResetResponse)
+def reset_application(request: ApplicationResetRequest) -> ApplicationResetResponse:
+    if request.jobId:
+        repository.delete_job(request.jobId)
+        purge_tree(f"jobs/{request.jobId}")
+    if request.uploadDraftId:
+        purge_tree(f"drafts/{request.uploadDraftId}")
+    return ApplicationResetResponse()
 
 
 @router.post("/jobs/{job_id}/stages/{stage}/resume", response_model=ResetStageResponse)

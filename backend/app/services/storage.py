@@ -1,6 +1,7 @@
 import hashlib
 import json
 import re
+import shutil
 import unicodedata
 from pathlib import Path
 from shutil import copyfileobj
@@ -36,6 +37,12 @@ def resolve_inside(relative_path: str) -> Path:
     if root != target and root not in target.parents:
         raise api_error(400, "unsafe_path", "Sciezka artefaktu wychodzi poza magazyn aplikacji.")
     return target
+
+
+def purge_tree(relative_path: str) -> None:
+    target = resolve_inside(relative_path)
+    if target.exists():
+        shutil.rmtree(target)
 
 
 def relative_to_root(path: Path) -> str:

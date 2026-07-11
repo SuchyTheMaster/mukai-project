@@ -1,9 +1,26 @@
+import re
+
 from app.db import repository
 from app.domain.contracts import JobStatus, ProgressMode, StageSnapshot, StageStatus, stage_key, utc_now
+from app.services.storage import purge_tree
+
+
+JOB_ID_PATTERN = re.compile(r"^job_[0-9a-f]{32}$")
 
 
 def is_stage_confirmed(job, stage: str) -> bool:
     return any(snapshot.stage == stage and snapshot.settingsConfirmedAt is not None for snapshot in job.processing.values())
+
+
+def cleanup_deleted_job_files(job_id: str) -> None:
+    if not JOB_ID_PATTERN.fullmatch(job_id):
+        return
+    try:
+        if repository.get_job(job_id) is None:
+            purge_tree(f"jobs/{job_id}")
+    except Exception:
+        # Sprzątanie po anulowanym jobie nie może zatrzymać pętli workera.
+        return
 
 
 def set_stage(
