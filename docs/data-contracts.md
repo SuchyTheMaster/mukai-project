@@ -621,6 +621,20 @@ Reguły automatycznego szkicu:
 
 Paczka karaoke nie zawiera `mukai-project.json` ani innych danych projektu.
 
+Szczegóły `ExportValidationIssue` odnoszącego się do sylaby mają wspólny kontrakt:
+
+```json
+{
+  "syllableId": "syl_0001",
+  "text": "ka",
+  "startSec": 12.345,
+  "durationMs": 180,
+  "midi": 60
+}
+```
+
+`startSec` jest czasem początku sylaby w sekundach, `durationMs` jej czasem trwania w milisekundach, a `text` i `midi` mogą mieć wartość `null`. UI prezentuje brak tekstu jako `[brak tekstu]`, a brak MIDI jako `[brak midi]`.
+
 ## ProjectSave
 
 ```json

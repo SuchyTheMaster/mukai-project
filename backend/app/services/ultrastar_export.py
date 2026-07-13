@@ -232,6 +232,17 @@ def _assets_by_type(job: Job) -> dict[str, AudioAsset]:
     return {asset.type: asset for asset in job.artifacts}
 
 
+def _syllable_issue_details(syllable: ArrangementSyllable, **extra) -> dict:
+    return {
+        "syllableId": syllable.syllableId,
+        "text": syllable.text or None,
+        "startSec": syllable.startSec,
+        "durationMs": round((syllable.endSec - syllable.startSec) * 1000),
+        "midi": syllable.midi,
+        **extra,
+    }
+
+
 def _validate_arrangement(arrangement: Arrangement, accepted_song_bpm: float, gap_ms: int, error, warning) -> None:
     previous_sentence_start = None
     for sentence in arrangement.sentences:
@@ -244,19 +255,19 @@ def _validate_arrangement(arrangement: Arrangement, accepted_song_bpm: float, ga
                 if not syllable.text:
                     continue
                 if "\n" in syllable.text or "\r" in syllable.text:
-                    error("newline_in_syllable", "Tekst sylaby nie moze zawierac znaku nowej linii.", {"syllableId": syllable.syllableId})
+                    error("newline_in_syllable", "Tekst sylaby nie moze zawierac znaku nowej linii.", _syllable_issue_details(syllable))
                 if previous_syllable_start is not None and syllable.startSec < previous_syllable_start:
-                    error("syllables_out_of_order", "Sylaby w frazie sa poza kolejnoscia.", {"syllableId": syllable.syllableId})
+                    error("syllables_out_of_order", "Sylaby w frazie sa poza kolejnoscia.", _syllable_issue_details(syllable))
                 previous_syllable_start = syllable.startSec
                 _, _, raw_length = seconds_to_ultrastar_beats(syllable.startSec, syllable.endSec, accepted_song_bpm, gap_ms)
                 if raw_length < 1:
-                    error("note_too_short", "Nuta ma mniej niz jeden beat po przeliczeniu do UltraStar.", {"syllableId": syllable.syllableId})
+                    error("note_too_short", "Nuta ma mniej niz jeden beat po przeliczeniu do UltraStar.", _syllable_issue_details(syllable))
                 if syllable.noteType in PITCHED_NOTE_TYPES and syllable.midi is None:
-                    error("missing_midi", "Sylaba punktowana albo rap wymaga wartosci MIDI.", {"syllableId": syllable.syllableId, "noteType": syllable.noteType})
+                    error("missing_midi", "Sylaba punktowana albo rap wymaga wartosci MIDI.", _syllable_issue_details(syllable, noteType=syllable.noteType))
                 if syllable.noteType == "freestyle" and syllable.midi is None:
-                    warning("freestyle_missing_midi", "Freestyle bez MIDI zostanie wyeksportowany z pitch 0.", {"syllableId": syllable.syllableId})
+                    warning("freestyle_missing_midi", "Freestyle bez MIDI zostanie wyeksportowany z pitch 0.", _syllable_issue_details(syllable))
                 if syllable.midi is not None and not 36 <= syllable.midi <= 84:
-                    warning("pitch_out_of_vocal_range", "Pitch jest poza typowym zakresem wokalu.", {"syllableId": syllable.syllableId, "midi": syllable.midi})
+                    warning("pitch_out_of_vocal_range", "Pitch jest poza typowym zakresem wokalu.", _syllable_issue_details(syllable))
 
 
 def _sentence_note_lines(sentence: ArrangementSentence, accepted_song_bpm: float, gap_ms: int) -> tuple[list[str], int]:

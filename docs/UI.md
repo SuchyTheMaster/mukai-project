@@ -21,6 +21,8 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 - Globalny shell nie ma stałego headera pełnej szerokości; branding `MUKAI` zajmuje tylko szerokość lewej kolumny, dzięki czemu środkowa i prawa kolumna zaczynają się od góry strony z zachowaniem paddingu.
 - Po lewej stronie znajduje się pływająca kolumna robocza. Jej górny panel zawiera branding, upload audio, krótkie podsumowanie pliku, podgląd covera oraz akcje covera przed utworzeniem zadania.
 - Akcje `Od nowa` i `Zapisz` znajdują się obok siebie w lewej kolumnie bezpośrednio pod brandingiem. `Zapisz` tworzy ZIP pełnego projektu i jest aktywne po poprawnej inspekcji audio.
+- Przycisk `Od nowa` zachowuje napis w jednym wierszu i używa bocznego paddingu `10px`.
+- Podgląd covera bez wybranej grafiki pokazuje ikonę pliku audio oraz podpis `brak okładki`.
 - Po utworzeniu zadania lewa kolumna pokazuje sekcję `WGRANE AUDIO`, dane pliku i nieklikalny podgląd covera; obszar uploadu audio oraz akcje covera są wtedy ukryte.
 - Lista `Ustawienia zadania` w lewej kolumnie pokazuje tylko grupy ustawień już zatwierdzone przez użytkownika. Po późniejszej edycji zatwierdzone wartości są aktualizowane, a niezatwierdzone formularze etapów nie pojawiają się w tej liście.
 - Lista `Ustawienia zadania` używa większego odstępu `16px` pod wierszami `Język` i `Sylabizacja`, żeby rozdzielić metadane, główne modele i ustawienia zaawansowane; w grupie transkrypcji pokazuje też finalne `Pozycjonowanie`.
@@ -199,6 +201,11 @@ radius-pill corners. 11px medium. 4px/12px padding.
 
 ### Progress Bars
 surface-sunken track, radius-pill corners, 6px height for compact stage rows and 10px for focused panels. Determinate fill uses electric blue; completed fill uses success; failed fill uses error. Indeterminate progress may animate a restrained blue highlight and must become static under reduced motion.
+
+Przed wyborem źródła etap `Źródło` ma status `pending`, żółtą ramkę i żółty znacznik, bez paska postępu. Podczas wysyłania audio lub archiwum ZIP przechodzi w `running`, a pasek pokazuje rzeczywisty procent uploadu. Po poprawnym wgraniu etap ma status `completed` i pełny zielony pasek.
+
+Pola `Tytuł` i `Artysta` są wymagane. Po wgraniu źródła przycisk `Przetwarzaj audio` pozostaje aktywny także przy pustych metadanych, a próbę wysłania zatrzymuje natywna walidacja przeglądarki wskazująca wymagane pola.
+
 ---
 
 ### Lists

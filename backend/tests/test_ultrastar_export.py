@@ -137,7 +137,18 @@ class UltraStarExportTest(unittest.TestCase):
         report = validate_export(job(audio_assets()), arrangement(missing_midi=True), selection())
 
         self.assertFalse(report.valid)
-        self.assertIn("missing_midi", [item.code for item in report.errors])
+        issue = next(item for item in report.errors if item.code == "missing_midi")
+        self.assertEqual(
+            issue.details,
+            {
+                "syllableId": "syl_2",
+                "text": "sza",
+                "startSec": 1.5,
+                "durationMs": 500,
+                "midi": None,
+                "noteType": "normal",
+            },
+        )
 
     def test_validation_allows_freestyle_without_midi_as_warning(self):
         free = arrangement()

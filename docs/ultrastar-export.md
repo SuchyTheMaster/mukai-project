@@ -181,6 +181,8 @@ Eksporter powinien zgłosić ostrzeżenie, jeśli:
 
 Walidacja przez parser konkretnego odtwarzacza nie jest wymagana w MVP.
 
+Każdy błąd lub ostrzeżenie odnoszące się do sylaby zawiera w `details`: `syllableId`, tekst sylaby, jej `startSec`, czas trwania `durationMs` oraz `midi`. Popup blokady eksportu pokazuje te dane obok kodu i opisu problemu. Dla pustego tekstu wyświetla `[brak tekstu]`, a dla braku wysokości `[brak midi]`.
+
 ## Kompatybilność
 
 Eksporter generuje jedną paczkę dla aktualnych wersji:

@@ -357,6 +357,10 @@ function App() {
   const [job, setJob] = useState(persisted.job);
   const [arrangement, setArrangement] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [sourceUpload, setSourceUpload] = useState(() => ({
+    status: persisted.inspection || persisted.job ? "completed" : "pending",
+    progressPercent: persisted.inspection || persisted.job ? 100 : 0,
+  }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [reviewOpen, setReviewOpen] = useState(persisted.reviewOpen);
@@ -450,6 +454,7 @@ function App() {
   }, [syllabificationSettings.method, transcriptionSettings.positioning]);
 
   async function selectSourceFile(file) {
+    setAudioFile(file);
     if (file.name.toLowerCase().endsWith(".zip")) {
       await importProject(file);
       return;
@@ -460,13 +465,16 @@ function App() {
   async function inspect(file) {
     setError(null);
     setBusy(true);
-    setAudioFile(file);
+    setSourceUpload({ status: "running", progressPercent: 0 });
     setInspection(null);
     try {
       const form = new FormData();
       form.append("file", file);
-      const result = await apiForm("/api/uploads/inspect", form);
+      const result = await apiFormWithUploadProgress("/api/uploads/inspect", form, (progressPercent) => {
+        setSourceUpload({ status: "running", progressPercent });
+      });
       setInspection(result);
+      setSourceUpload({ status: "completed", progressPercent: 100 });
       setMetadata({ ...emptyMetadata, ...result.metadata, language: "", languageMode: "auto" });
       setTranscriptionSettings(defaultTranscription);
       setSyllabificationTouched(false);
@@ -479,6 +487,8 @@ function App() {
       setStageWorkingState({});
       setEditorWorkspace(null);
     } catch (err) {
+      setAudioFile(null);
+      setSourceUpload({ status: "pending", progressPercent: 0 });
       setError(err.message);
     } finally {
       setBusy(false);
@@ -488,12 +498,16 @@ function App() {
   async function importProject(file) {
     setError(null);
     setBusy(true);
+    setSourceUpload({ status: "running", progressPercent: 0 });
     try {
       const form = new FormData();
       form.append("file", file);
-      const result = await apiForm("/api/projects/import", form);
+      const result = await apiFormWithUploadProgress("/api/projects/import", form, (progressPercent) => {
+        setSourceUpload({ status: "running", progressPercent });
+      });
       const working = result.workingState ?? {};
       setAudioFile(null);
+      setSourceUpload({ status: "completed", progressPercent: 100 });
       setCoverFile(null);
       setInspection(result.inspection ?? null);
       setMetadata({ ...emptyMetadata, ...(working.metadata ?? result.inspection?.metadata ?? result.job?.metadata ?? {}) });
@@ -509,6 +523,8 @@ function App() {
       setArrangement(null);
       setReviewOpen(result.phase === "review");
     } catch (err) {
+      setAudioFile(null);
+      setSourceUpload({ status: "pending", progressPercent: 0 });
       setError(err.message);
     } finally {
       setBusy(false);
@@ -728,6 +744,7 @@ function App() {
     setAudioFile(null);
     setCoverFile(null);
     setInspection(null);
+    setSourceUpload({ status: "pending", progressPercent: 0 });
     setMetadata(emptyMetadata);
     setProfiles(initialUiState.profiles);
     setTranscriptionSettings(defaultTranscription);
@@ -771,7 +788,7 @@ function App() {
 
         {showRestart && (
           <section className="restart-section project-actions">
-            <button className="button ghost danger full" type="button" onClick={() => setRestartOpen(true)}>
+            <button className="button ghost danger full restart-button" type="button" onClick={() => setRestartOpen(true)}>
               <RotateCcw size={16} /> Od nowa
             </button>
             <button className="button primary full" type="button" disabled={savingProject || busy || (!inspection && !job)} onClick={saveProjectArchive}>
@@ -792,12 +809,12 @@ function App() {
           {(inspection || job?.audio) && <AudioSummary audio={inspection?.audio ?? job.audio} filename={inspection?.originalFilename ?? job?.artifacts?.find((asset) => asset.type === "source_audio")?.originalFilename} />}
           {jobCreated ? (
             <div className="cover-box" aria-label="Podgląd okładki">
-              {coverPreview ? <img src={coverPreview} alt="" /> : <FileAudio size={42} />}
+              {coverPreview ? <img src={coverPreview} alt="" /> : <CoverPlaceholder />}
             </div>
           ) : (
             <>
               <button className="cover-box cover-box-button" type="button" disabled={!inspection} onClick={() => coverInputRef.current?.click()}>
-                {coverPreview ? <img src={coverPreview} alt="" /> : <FileAudio size={42} />}
+                {coverPreview ? <img src={coverPreview} alt="" /> : <CoverPlaceholder />}
               </button>
               <input
                 ref={coverInputRef}
@@ -873,7 +890,7 @@ function App() {
           </section>
           <section>
             <div className="section-title">Pipeline</div>
-            <StageRail job={job} />
+            <StageRail job={job} sourceUpload={sourceUpload} />
           </section>
         </aside>
       )}
@@ -892,8 +909,6 @@ function App() {
 }
 
 function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onSourceSettings, onResumeStage, onOpenReview, busy, stageWorkingState, onStageWorkingStateChange }) {
-  const sourceReady = Boolean(inspection && (metadata.title ?? "").trim() && (metadata.artist ?? "").trim());
-
   return (
     <section className="workspace-panel">
       <div className="workspace-header">
@@ -906,20 +921,20 @@ function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, on
       ) : job ? (
         <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} stageWorkingState={stageWorkingState} onStageWorkingStateChange={onStageWorkingStateChange} />
       ) : (
-        <>
+        <form onSubmit={(event) => { event.preventDefault(); createJob(); }}>
           <div className="form-grid">
-            <TextField label="Tytuł" value={metadata.title ?? ""} onChange={(value) => setMetadata({ ...metadata, title: value })} />
-            <TextField label="Artysta" value={metadata.artist ?? ""} onChange={(value) => setMetadata({ ...metadata, artist: value })} />
+            <TextField label="Tytuł" name="title" required value={metadata.title ?? ""} onChange={(value) => setMetadata({ ...metadata, title: value })} />
+            <TextField label="Artysta" name="artist" required value={metadata.artist ?? ""} onChange={(value) => setMetadata({ ...metadata, artist: value })} />
             <TextField label="Album" value={metadata.album ?? ""} onChange={(value) => setMetadata({ ...metadata, album: value })} />
             <TextField label="Rok" value={metadata.year ?? ""} onChange={(value) => setMetadata({ ...metadata, year: value })} />
             <TextField label="Gatunek" value={metadata.genre ?? ""} onChange={(value) => setMetadata({ ...metadata, genre: value })} />
             <LanguageSelect label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={WHISPER_LANGUAGE_OPTIONS} />
           </div>
 
-          <button className="button primary import-submit" disabled={!sourceReady || busy} onClick={createJob}>
+          <button className="button primary import-submit" type="submit" disabled={!inspection || busy}>
             <Play size={16} /> {busy ? "Przetwarzanie..." : "Przetwarzaj audio"}
           </button>
-        </>
+        </form>
       )}
     </section>
   );
@@ -1961,6 +1976,7 @@ function ValidationModal({ report, onClose }) {
             <li key={`${issue.code}-${index}`}>
               <strong>{issue.code}</strong>
               <span>{issue.message}</span>
+              <ValidationIssueSyllableDetails details={issue.details} />
             </li>
           ))}
         </ul>
@@ -1970,6 +1986,30 @@ function ValidationModal({ report, onClose }) {
       </div>
     </div>
   );
+}
+
+function ValidationIssueSyllableDetails({ details = {} }) {
+  if (!details.syllableId) return null;
+  const text = typeof details.text === "string" && details.text.trim() ? details.text : "[brak tekstu]";
+  const midi = details.midi == null ? "[brak midi]" : details.midi;
+  return (
+    <dl className="validation-issue-details">
+      <div><dt>Tekst sylaby</dt><dd>{text}</dd></div>
+      <div><dt>Początek</dt><dd>{formatValidationStart(details.startSec)}</dd></div>
+      <div><dt>Czas trwania</dt><dd>{formatValidationDuration(details.durationMs)}</dd></div>
+      <div><dt>MIDI</dt><dd>{midi}</dd></div>
+    </dl>
+  );
+}
+
+function formatValidationStart(value) {
+  const seconds = Number(value);
+  return Number.isFinite(seconds) ? `${seconds.toFixed(3)} s` : "—";
+}
+
+function formatValidationDuration(value) {
+  const milliseconds = Number(value);
+  return Number.isFinite(milliseconds) ? `${Math.round(milliseconds)} ms` : "—";
 }
 
 function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes }) {
@@ -2443,8 +2483,8 @@ function QualityFlags({ flags = [] }) {
   return <div className="flag-list">{flags.map((flag) => <span key={flag} className="quality-badge warning">{FLAG_LABELS[flag] ?? flag}</span>)}</div>;
 }
 
-function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step }) {
-  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<input type={type} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
+function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step, name, required = false }) {
+  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<input type={type} name={name} required={required} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function LanguageSelect({ label, value, onChange, options }) {
@@ -2638,6 +2678,10 @@ function AudioSummary({ audio, filename }) {
   return <dl className="summary"><dt>Plik</dt><dd>{filename}</dd><dt>Format</dt><dd>{audio.container ?? "-"}</dd><dt>Kodek</dt><dd>{audio.codec ?? "-"}</dd><dt>Kanały</dt><dd>{audio.channels ?? "-"}</dd><dt>Hz</dt><dd>{audio.sampleRate ?? "-"}</dd><dt>Czas</dt><dd>{audio.durationSec ? `${audio.durationSec.toFixed(2)} s` : "-"}</dd></dl>;
 }
 
+function CoverPlaceholder() {
+  return <span className="cover-placeholder"><FileAudio size={42} /><span>brak okładki</span></span>;
+}
+
 function MetadataSummary({ job }) {
   const confirmedStages = sortedStages(job.processing).filter((stage) => isConfigurableStage(stage) && isSettingsConfirmed(stage));
   if (!confirmedStages.length) return <p className="empty-summary">Brak zatwierdzonych ustawień.</p>;
@@ -2660,9 +2704,9 @@ function MetadataSummary({ job }) {
   );
 }
 
-function StageRail({ job }) {
-  const stages = job?.processing ? sortedStages(job.processing) : defaultStages();
-  return <div className="stage-list">{stages.map((stage) => <div key={`${stage.stage}.${stage.substep}`} className={`stage ${stage.status} ${stage.actionRequired ? "action-required" : ""}`}><span /> <div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.status}</small><Progress stage={stage} /></div></div>)}</div>;
+function StageRail({ job, sourceUpload }) {
+  const stages = job?.processing ? sortedStages(job.processing) : defaultStages(sourceUpload);
+  return <div className="stage-list">{stages.map((stage) => <div key={`${stage.stage}.${stage.substep}`} className={`stage ${stage.status} ${stage.actionRequired || stage.attention ? "action-required" : ""}`}><span /> <div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.status}</small>{!stage.hideProgress && <Progress stage={stage} />}</div></div>)}</div>;
 }
 
 function StatusPanel({ job, onResetStage }) {
@@ -4192,7 +4236,7 @@ function confirmAndResetApplication(context) {
   resetApplicationData(context).finally(reloadInitialApplication);
 }
 
-function defaultStages() {
+function defaultStages(sourceUpload = { status: "pending", progressPercent: 0 }) {
   return [
     ["uploaded", "source", "Źródło"],
     ["preprocessing", "ffmpeg", "Preprocessing audio"],
@@ -4201,7 +4245,16 @@ function defaultStages() {
     ["transcribing", "whisperx", "Transkrypcja"],
     ["detecting_pitch", "pitch_detection", "Detekcja tonów"],
     ["aligning", "draft", "Wstępne dopasowanie"],
-  ].map(([stage, substep, message], index) => ({ stage, substep, message, status: index === 0 ? "running" : "pending" }));
+  ].map(([stage, substep, message], index) => index === 0 ? {
+    stage,
+    substep,
+    message,
+    status: sourceUpload.status,
+    progressMode: "determinate",
+    progressPercent: sourceUpload.progressPercent,
+    attention: sourceUpload.status === "pending",
+    hideProgress: sourceUpload.status === "pending",
+  } : ({ stage, substep, message, status: "pending" }));
 }
 
 function sortedStages(processing) {
@@ -4486,6 +4539,31 @@ function clone(value) {
 async function apiForm(path, form) {
   const response = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
   return parseResponse(response);
+}
+
+function apiFormWithUploadProgress(path, form, onProgress) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_BASE}${path}`);
+    request.responseType = "json";
+    request.upload.addEventListener("progress", (event) => {
+      if (!event.lengthComputable) return;
+      onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+    });
+    request.addEventListener("load", () => {
+      const payload = request.response;
+      if (request.status >= 200 && request.status < 300) {
+        resolve(payload);
+        return;
+      }
+      const error = new Error(payload?.error?.message ?? `HTTP ${request.status}`);
+      error.details = payload?.error?.details ?? {};
+      reject(error);
+    });
+    request.addEventListener("error", () => reject(new Error("Nie udało się wysłać pliku.")));
+    request.addEventListener("abort", () => reject(new Error("Wysyłanie pliku zostało anulowane.")));
+    request.send(form);
+  });
 }
 
 async function apiJson(path, init = {}) {
