@@ -4,7 +4,7 @@
 
 Eksporter karaoke zamienia zatwierdzony `Arrangement` na jedną paczkę ZIP zgodną z aktualnymi wersjami UltraStar Deluxe, UltraStar Play i Vocaluxe. Paczka karaoke zawiera katalog z plikiem `.txt`, oryginalnym audio, instrumentalem i wokalem/a capella w MP3. Cover jest dodawany tylko wtedy, gdy użytkownik go ustawił. Paczka karaoke nie zawiera `mukai-project.json` ani innych danych projektu.
 
-Eksport projektu jest osobną akcją `Wyeksportuj projekt`. Ta akcja generuje oddzielny ZIP projektu do późniejszego importu w Mukai.
+Zapis projektu jest globalną akcją `Zapisz`. Generuje oddzielny ZIP projektu do późniejszego importu w Mukai; przycisk `Eksportuj` w edytorze dotyczy wyłącznie paczki karaoke.
 
 Użytkownik wybiera:
 
@@ -193,7 +193,7 @@ Założenie MVP: najnowsze dostępne wersje tych programów obsługują wspólny
 
 ## Eksport projektu
 
-Akcja `Wyeksportuj projekt` jest oddzielna od eksportu karaoke. Nie modyfikuje zawartości paczki UltraStar, tylko tworzy osobny ZIP projektu.
+Akcja `Zapisz` jest oddzielna od eksportu karaoke. Nie modyfikuje zawartości paczki UltraStar, tylko tworzy osobny ZIP projektu.
 
 Przykładowa nazwa:
 
@@ -237,15 +237,15 @@ ZIP projektu musi zawierać:
 - oryginalny plik źródłowy;
 - wszystkie artefakty zapisane dla `Job` i potrzebne do odtworzenia stanu po wykonanych etapach pipeline'u;
 - manifest artefaktów z typami, ścieżkami w archiwum, hashami, rozmiarami i czasami utworzenia;
-- politykę retencji `projectExportRetentionHours: 24`.
+- zastosowany stan backendu, robocze formularze oraz stan przestrzeni roboczej edytora.
 
 Jeśli `Job` nie ma jeszcze któregoś artefaktu, archiwum nie musi go sztucznie tworzyć. Musi jednak zawierać komplet artefaktów wymaganych dla statusu zapisanego w manifeście.
 
-Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia `cleanupEligibleAt` na 24 godziny po eksporcie i przywraca status `Job` do `awaiting_review`. Lokalny `Job`, oryginalny plik, artefakty i eksporty zapisane dla tego zadania mogą zostać usunięte dopiero po upływie TTL.
+Utworzenie ZIP-a nie zmienia statusu aktywnego `Job` i nie ustawia TTL. Dla aktywnego processingu archiwum zapisuje ukończone etapy oraz informację o pierwszym etapie do automatycznego wznowienia.
 
 ## Import projektu
 
-Import projektu przyjmuje ZIP utworzony przez `Wyeksportuj projekt`. Import nie przyjmuje pojedynczego `mukai-project.json` jako samodzielnego formatu MVP.
+Import projektu przyjmuje ZIP utworzony przez `Zapisz`. Import nie przyjmuje pojedynczego `mukai-project.json` jako samodzielnego formatu MVP.
 
 Import:
 

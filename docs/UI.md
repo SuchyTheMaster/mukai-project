@@ -20,7 +20,7 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 
 - Globalny shell nie ma stałego headera pełnej szerokości; branding `MUKAI` zajmuje tylko szerokość lewej kolumny, dzięki czemu środkowa i prawa kolumna zaczynają się od góry strony z zachowaniem paddingu.
 - Po lewej stronie znajduje się pływająca kolumna robocza. Jej górny panel zawiera branding, upload audio, krótkie podsumowanie pliku, podgląd covera oraz akcje covera przed utworzeniem zadania.
-- Akcja `Od nowa` znajduje się w lewej kolumnie bezpośrednio pod brandingiem i nad sekcją audio. Jest ukryta wyłącznie w całkowicie pustym stanie początkowym.
+- Akcje `Od nowa` i `Zapisz` znajdują się obok siebie w lewej kolumnie bezpośrednio pod brandingiem. `Zapisz` tworzy ZIP pełnego projektu i jest aktywne po poprawnej inspekcji audio.
 - Po utworzeniu zadania lewa kolumna pokazuje sekcję `WGRANE AUDIO`, dane pliku i nieklikalny podgląd covera; obszar uploadu audio oraz akcje covera są wtedy ukryte.
 - Lista `Ustawienia zadania` w lewej kolumnie pokazuje tylko grupy ustawień już zatwierdzone przez użytkownika. Po późniejszej edycji zatwierdzone wartości są aktualizowane, a niezatwierdzone formularze etapów nie pojawiają się w tej liście.
 - Lista `Ustawienia zadania` używa większego odstępu `16px` pod wierszami `Język` i `Sylabizacja`, żeby rozdzielić metadane, główne modele i ustawienia zaawansowane; w grupie transkrypcji pokazuje też finalne `Pozycjonowanie`.

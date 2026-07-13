@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     artifact_root: str = "/app/artifacts"
     model_cache_root: str = "/app/model-cache"
     max_upload_bytes: int = 524_288_000
+    max_project_archive_bytes: int = 2_147_483_648
+    max_project_unpacked_bytes: int = 10_737_418_240
+    max_project_archive_entries: int = 10_000
     cors_origins: list[AnyHttpUrl] | list[str] = Field(
         default_factory=lambda: ["http://localhost:5173", "http://localhost:8080"]
     )

@@ -23,9 +23,9 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - Testy integracyjne całego pipeline'u na krótkich plikach audio.
 - Testy eksportu karaoke i projektu.
 - Testy importu projektu bez ponownego przetwarzania.
-- Testy retencji i czyszczenia artefaktów.
+- Test braku automatycznej retencji po zapisie projektu.
 - Testy responsywności i reduced motion UI.
-- Przegląd dokumentacji pod kątem sprzecznych statusów, nazw artefaktów, retencji, źródła prawdy `Arrangement` i linków.
+- Przegląd dokumentacji pod kątem sprzecznych statusów, nazw artefaktów, źródła prawdy `Arrangement` i linków.
 
 ## Poza zakresem
 
@@ -52,8 +52,8 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - Draft pokazuje tekst, czasy i nuty w zsynchronizowanym widoku.
 - Użytkownik może poprawić tekst, sylaby, typ nuty i pitch.
 - Eksportowana paczka karaoke ZIP zawiera katalog z `.txt`, oryginalnym audio, instrumentalem i wokalem/a capella w MP3 bez danych projektu.
-- Osobna akcja `Wyeksportuj projekt` tworzy ZIP pozwalający kontynuować edycję bez ponownego ASR, pitch i BPM.
-- Po eksporcie projektu lokalny `Job` i artefakty dostają TTL 24h.
+- Globalna akcja `Zapisz` tworzy ZIP pozwalający kontynuować draft, processing albo edycję.
+- Zapis projektu nie ustawia TTL.
 - Wynik da się ręcznie wczytać w aktualnych wersjach UltraStar Deluxe, UltraStar Play i Vocaluxe albo odnotowano jawne założenie o braku testu manualnego.
 
 ## Proponowane testy
@@ -68,4 +68,4 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - Test eksportu: jeden ZIP z plikami `[FULL]`, `[INSTR]`, `[VOC]`, spójnymi tagami i bez `#MP3`.
 - E2E: eksport projektu, import projektu, kontynuacja edycji.
 - Testy manualne dla utworu polskiego, angielskiego, wielojęzycznego, z długim intro, backing vocals i pogłosem.
-- Test dokumentacji: linki, spójność statusów, brak `review.approved.json` jako źródła prawdy i zgodność retencji 24h.
+- Test dokumentacji: linki, spójność statusów i brak `review.approved.json` jako źródła prawdy.

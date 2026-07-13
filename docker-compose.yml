@@ -8,6 +8,9 @@ services:
       ARTIFACT_ROOT: /app/artifacts
       MODEL_CACHE_ROOT: /app/model-cache
       MAX_UPLOAD_BYTES: 524288000
+      MAX_PROJECT_ARCHIVE_BYTES: 2147483648
+      MAX_PROJECT_UNPACKED_BYTES: 10737418240
+      MAX_PROJECT_ARCHIVE_ENTRIES: 10000
       CORS_ORIGINS: '["http://localhost:5173","http://localhost:8080"]'
     volumes:
       - mukai_artifacts:/app/artifacts

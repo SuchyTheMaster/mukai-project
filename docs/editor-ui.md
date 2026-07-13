@@ -18,9 +18,9 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 
 ## Widoki
 
-### Upload
+### Upload audio/projektu
 
-- Pole wyboru pliku audio.
+- Pole `UPLOAD AUDIO/PROJEKTU` przyjmuje plik audio albo ZIP projektu; helper ma treść `Wybierz WAV, MP3, MP4, M4A, OGG, FLAC lub wgraj ZIP z projektem`.
 - Obsługiwane formaty: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
 - Metadane: tytuł, artysta, opcjonalny język, opcjonalny rok/gatunek.
 - Język jest wybierany z przeszukiwalnej listy języków obsługiwanych przez Whisper `large-v3`; pozycja `Auto` oznacza brak wymuszonego języka i pozwala Whisperowi wykryć język.
@@ -57,7 +57,7 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 
 ### Import Projektu
 
-- Użytkownik może wczytać ZIP projektu utworzony przez opcję `Wyeksportuj projekt`.
+- Użytkownik może wczytać ZIP projektu utworzony przez globalną akcję `Zapisz`.
 - UI pokazuje błąd, jeśli archiwum nie ma wymaganej struktury, brakuje w nim artefaktów albo hashe nie zgadzają się z manifestem.
 - Import odtwarza stan tak, jakby pliki były już wgrane i przetworzone przez pipeline.
 - Import nie uruchamia ponownie normalizacji audio, BPM, separacji, transkrypcji, alignacji ani pitch detection.
@@ -114,11 +114,11 @@ Pitch:
 Akcje globalne:
 
 - Undo/redo.
-- Zapis aktualnego stanu roboczego.
+- Globalny zapis pełnego projektu wraz z aktualnym stanem roboczym.
 - Reset aktualnego etapu pracy, jeśli status zadania pozwala na przeliczenie od tego etapu.
 - Walidacja przed eksportem.
 - Eksport po zatwierdzeniu.
-- Wyeksportuj projekt.
+- Eksport paczki karaoke przez przycisk `Eksportuj` w prawym górnym rogu edytora.
 - Skróty klawiaturowe nie są wymagane w MVP.
 
 ## Stany jakości
@@ -156,7 +156,7 @@ Edytor powinien wizualnie oznaczać:
 - Blok sylaby pokazuje tekst w pierwszym wierszu i samą liczbę MIDI w drugim wierszu; przy braku nuty drugi wiersz pokazuje `brak`, a pełna informacja `MIDI {wartość}` jest widoczna w tooltipie.
 - Uchwyty zmiany granic bloku są widoczne na hover, focus i zaznaczeniu.
 - Najczęstsze korekty powinny dać się wykonać bez opuszczania głównego widoku.
-- MVP utrwala tylko jeden aktualny stan edycji; undo/redo działa sesyjnie w otwartym edytorze i nie musi przetrwać odświeżenia strony.
+- Aktywny storage utrwala jeden aktualny `Arrangement`; ZIP projektu przechowuje dodatkowo undo/redo, zaznaczenie, viewport, playhead, ścieżkę audio i ustawienia narzędzi edytora.
 - Interfejs powinien obsługiwać długie utwory bez renderowania całej osi czasu naraz.
 - Tekst w przyciskach i panelach nie może nachodzić na inne elementy przy małej szerokości ekranu.
 - MVP nie wymaga widoku porównania oryginalnego wyniku AI z poprawioną wersją.
@@ -173,8 +173,8 @@ Edytor powinien wizualnie oznaczać:
 - Nazwy plików audio są generowane z bazowej nazwy utworu jako `[FULL]`, `[INSTR]` i `[VOC]`; tagi w pliku `.txt` muszą wskazywać te same nazwy.
 - Użytkownik może wybrać cover z importu, jeśli jest dostępny, albo wgrać inny cover przed eksportem.
 - Jeśli cover nie jest ustawiony, eksport przebiega bez covera.
-- Osobna akcja `Wyeksportuj projekt` generuje ZIP zawierający cały `Job`, oryginalny plik, artefakty i manifesty JSON potrzebne do odtworzenia projektu.
-- Przed akcją `Wyeksportuj projekt` UI powinien jasno poinformować, że po udanym eksporcie lokalny `Job` i artefakty pozostaną dostępne przez 24 godziny, a potem mogą zostać usunięte przez mechanizm czyszczenia.
+- Globalna akcja `Zapisz` generuje ZIP zawierający draft albo cały `Job`, oryginalny plik, artefakty, zastosowane ustawienia, robocze formularze i stan edytora.
+- Zapis projektu nie ustawia TTL i nie uruchamia automatycznego usuwania lokalnego `Job`.
 
 ## Minimalna walidacja przed eksportem
 

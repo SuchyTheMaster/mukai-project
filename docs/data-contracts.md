@@ -6,7 +6,7 @@
 - Eksport UltraStar przelicza sekundy na beaty dopiero na końcu.
 - Każdy artefakt AI ma zapisaną wersję modelu, parametry i hash wejścia.
 - Edycje użytkownika są osobną warstwą względem wyników AI.
-- MVP utrwala tylko aktualny stan edycji `Arrangement`; historia undo/redo jest sesyjna po stronie edytora i nie jest kontraktem trwałego storage.
+- Aktywny storage utrwala aktualny `Arrangement`; ZIP projektu przechowuje dodatkowo historię undo/redo, robocze formularze i ustawienia przestrzeni roboczej.
 - Rekordy `Job`, metadane, wybory eksportu i aktualny `Arrangement` są przechowywane w Postgresie, a pliki audio, artefakty, eksporty oraz cache modeli są przechowywane na wolumenie Docker poza repozytorium.
 - Pola BPM i `#GAP` należą do kontraktu `Tempo`; nie duplikować ich w `Job.metadata`.
 
@@ -621,26 +621,26 @@ Reguły automatycznego szkicu:
 
 Paczka karaoke nie zawiera `mukai-project.json` ani innych danych projektu.
 
-## ProjectExport
+## ProjectSave
 
 ```json
 {
+  "schemaVersion": "1.0.0",
   "archiveNamePattern": "{baseFilename} [mukai-project].zip",
   "includeOriginalAudio": true,
   "includeAllJobArtifacts": true,
   "includeJobManifest": true,
-  "retainJobAfterSuccessfulExport": true,
-  "retentionAfterSuccessfulExportHours": 24
+  "includeWorkingState": true,
+  "includeEditorWorkspace": true
 }
 ```
 
 Zasady:
 
-- `ProjectExport` odpowiada osobnej akcji `Wyeksportuj projekt`, niezależnej od `ExportSelection`.
-- `includeOriginalAudio`, `includeAllJobArtifacts`, `includeJobManifest` i `retainJobAfterSuccessfulExport` są zawsze `true` w MVP.
-- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia `projectExportedAt`, `cleanupEligibleAt = projectExportedAt + 24h` i `cleanupReason = "project_export_ttl"`.
-- Lokalny rekord `Job` oraz artefakty mogą zostać usunięte dopiero przez mechanizm czyszczenia po upływie TTL.
-- Zwykły eksport karaoke nie ustawia retencji po eksporcie projektu.
+- `ProjectSave` odpowiada globalnej akcji `Zapisz`, niezależnej od `ExportSelection` i eksportu karaoke.
+- ZIP może opisywać fazę `draft`, `processing` albo `review` i zawsze zapisuje `appliedState` oraz `workingState`.
+- `editorWorkspace` przechowuje undo/redo, zaznaczenie, viewport, playhead, ścieżkę audio i ustawienia narzędzi.
+- Zapis nie ustawia pól retencji ani TTL; nullable `Retention` pozostaje pustym kontraktem zgodnościowym.
 
 ## MukaiProject
 
@@ -652,6 +652,7 @@ ZIP projektu musi pozwalać kontynuować pracę bez ponownego uruchamiania norma
 {
   "schemaVersion": "1.0.0",
   "projectId": "proj_01J...",
+  "phase": "processing",
   "job": {
     "jobId": "job_01J...",
     "restoredStatus": "awaiting_review"
@@ -677,10 +678,14 @@ ZIP projektu musi pozwalać kontynuować pracę bez ponownego uruchamiania norma
   "pitchFrames": [],
   "noteEvents": [],
   "arrangement": {},
-  "retentionPolicy": {
-    "projectExportRetentionHours": 24
+  "resume": {
+    "mode": "auto",
+    "resumeStage": "transcribing"
   },
-  "exportSelections": []
+  "appliedState": {},
+  "workingState": {},
+  "editorWorkspace": {},
+  "files": []
 }
 ```
 
@@ -688,7 +693,7 @@ W `MukaiProject` pola najwyższego poziomu `pitchFrames` i `noteEvents` przechow
 
 Import:
 
-- Import przyjmuje ZIP projektu utworzony przez opcję `Wyeksportuj projekt`.
+- Import przyjmuje ZIP projektu utworzony przez globalną akcję `Zapisz`.
 - Import waliduje, że każdy wpis z `sourceAudio` i `artifacts` istnieje w archiwum i ma zgodny hash.
 - Import odtwarza `Job` i artefakty tak, jakby odpowiednie etapy pipeline'u były już zakończone.
 - Import nie uruchamia ponownie normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.

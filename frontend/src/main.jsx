@@ -301,6 +301,8 @@ const initialUiState = {
   useEmbeddedCover: true,
   job: null,
   reviewOpen: false,
+  stageWorkingState: {},
+  editorWorkspace: null,
 };
 
 class AppErrorBoundary extends React.Component {
@@ -358,6 +360,9 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [reviewOpen, setReviewOpen] = useState(persisted.reviewOpen);
+  const [stageWorkingState, setStageWorkingState] = useState(persisted.stageWorkingState ?? {});
+  const [editorWorkspace, setEditorWorkspace] = useState(persisted.editorWorkspace ?? null);
+  const [savingProject, setSavingProject] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const resetInProgress = useRef(false);
@@ -390,8 +395,10 @@ function App() {
       useEmbeddedCover,
       job,
       reviewOpen,
+      stageWorkingState,
+      editorWorkspace,
     });
-  }, [inspection, metadata, profiles, transcriptionSettings, pitchSettings, syllabificationSettings, syllabificationTouched, useEmbeddedCover, job, reviewOpen]);
+  }, [inspection, metadata, profiles, transcriptionSettings, pitchSettings, syllabificationSettings, syllabificationTouched, useEmbeddedCover, job, reviewOpen, stageWorkingState, editorWorkspace]);
 
   useEffect(() => {
     if (!job || ["failed", "awaiting_review", "cancelled"].includes(job.status)) return undefined;
@@ -420,9 +427,10 @@ function App() {
   const activeStage = useMemo(() => currentStage(job), [job]);
   const jobCreated = Boolean(job);
   const jobCoverAsset = job?.artifacts?.find((asset) => asset.type === "cover");
+  const importedCover = inspection?.projectCovers?.[inspection?.selectedCoverKind];
   const coverPreview = jobCreated
     ? jobCoverAsset ? `${API_BASE}/api/jobs/${job.jobId}/artifacts/${jobCoverAsset.assetId}` : null
-    : coverFile ? URL.createObjectURL(coverFile) : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
+    : coverFile ? URL.createObjectURL(coverFile) : importedCover ? `${API_BASE}${importedCover.previewUrl}` : inspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${inspection.embeddedCover.previewUrl}` : null;
   const isReview = job?.status === "awaiting_review" && reviewOpen;
   const showRestart = hasMeaningfulProjectState({ audioFile, coverFile, inspection, metadata, job, arrangement, reviewOpen });
   latestResetContext = {
@@ -440,6 +448,14 @@ function App() {
     if (syllabificationSettings.method !== "none" || transcriptionSettings.positioning === "words_only") return;
     setTranscriptionSettings((current) => ({ ...current, positioning: "words_only" }));
   }, [syllabificationSettings.method, transcriptionSettings.positioning]);
+
+  async function selectSourceFile(file) {
+    if (file.name.toLowerCase().endsWith(".zip")) {
+      await importProject(file);
+      return;
+    }
+    await inspect(file);
+  }
 
   async function inspect(file) {
     setError(null);
@@ -460,6 +476,38 @@ function App() {
       setJob(null);
       setArrangement(null);
       setReviewOpen(false);
+      setStageWorkingState({});
+      setEditorWorkspace(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importProject(file) {
+    setError(null);
+    setBusy(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const result = await apiForm("/api/projects/import", form);
+      const working = result.workingState ?? {};
+      setAudioFile(null);
+      setCoverFile(null);
+      setInspection(result.inspection ?? null);
+      setMetadata({ ...emptyMetadata, ...(working.metadata ?? result.inspection?.metadata ?? result.job?.metadata ?? {}) });
+      setProfiles({ ...initialUiState.profiles, ...(working.profiles ?? result.job?.profiles ?? {}) });
+      setTranscriptionSettings(normalizeTranscriptionSettings(working.transcriptionSettings ?? result.job?.transcriptionSettings ?? {}));
+      setPitchSettings({ ...defaultPitch, ...(working.pitchSettings ?? result.job?.pitchSettings ?? {}) });
+      setSyllabificationSettings({ ...defaultSyllabification, ...(working.syllabificationSettings ?? result.job?.syllabificationSettings ?? {}) });
+      setSyllabificationTouched(Boolean(working.syllabificationTouched));
+      setUseEmbeddedCover(working.useEmbeddedCover ?? true);
+      setStageWorkingState(working.stageForms ?? {});
+      setEditorWorkspace(result.editorWorkspace ?? null);
+      setJob(result.job ?? null);
+      setArrangement(null);
+      setReviewOpen(result.phase === "review");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -481,6 +529,7 @@ function App() {
         pitchSettings,
         syllabificationSettings,
         useEmbeddedCover: useEmbeddedCover && !coverFile,
+        draftCoverKind: inspection?.selectedCoverKind ?? (useEmbeddedCover ? "tag" : null),
       };
       const form = new FormData();
       form.append("payload", JSON.stringify(payload));
@@ -492,6 +541,50 @@ function App() {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function projectWorkingState() {
+    return {
+      inspection,
+      metadata,
+      profiles,
+      transcriptionSettings,
+      pitchSettings,
+      syllabificationSettings,
+      syllabificationTouched,
+      useEmbeddedCover,
+      selectedCoverKind: coverFile ? "manual" : inspection?.selectedCoverKind ?? (inspection?.embeddedCover && useEmbeddedCover ? "tag" : null),
+      stageForms: stageWorkingState,
+      activeView: isReview ? "review" : job ? "processing" : "draft",
+    };
+  }
+
+  async function saveProjectArchive() {
+    if (!inspection && !job) return;
+    setError(null);
+    setSavingProject(true);
+    try {
+      if (isReview && arrangement) await saveArrangement(arrangement.approved);
+      const state = { workingState: projectWorkingState(), editorWorkspace };
+      let result;
+      if (job) {
+        result = await apiJson(`/api/jobs/${job.jobId}/exports/project`, {
+          method: "POST",
+          body: JSON.stringify(state),
+          headers: { "Content-Type": "application/json" },
+        });
+      } else {
+        const form = new FormData();
+        form.append("state", JSON.stringify(state));
+        if (coverFile) form.append("cover", coverFile);
+        result = await apiForm(`/api/projects/drafts/${inspection.uploadDraftId}/export`, form);
+      }
+      triggerUrlDownload(result.archive.downloadUrl, result.archive.filename);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingProject(false);
     }
   }
 
@@ -622,11 +715,13 @@ function App() {
     if (!file) return;
     setCoverFile(file);
     setUseEmbeddedCover(false);
+    if (inspection) setInspection({ ...inspection, selectedCoverKind: "manual" });
   }
 
   function resetCover() {
     setCoverFile(null);
     setUseEmbeddedCover(Boolean(inspection?.embeddedCover));
+    if (inspection?.projectCovers?.tag) setInspection({ ...inspection, selectedCoverKind: "tag", embeddedCover: inspection.projectCovers.tag });
   }
 
   function clearLocalProjectState() {
@@ -643,6 +738,8 @@ function App() {
     setJob(null);
     setArrangement(null);
     setReviewOpen(false);
+    setStageWorkingState({});
+    setEditorWorkspace(null);
     clearBrowserProjectState();
   }
 
@@ -673,23 +770,26 @@ function App() {
         </section>
 
         {showRestart && (
-          <section className="restart-section">
+          <section className="restart-section project-actions">
             <button className="button ghost danger full" type="button" onClick={() => setRestartOpen(true)}>
               <RotateCcw size={16} /> Od nowa
+            </button>
+            <button className="button primary full" type="button" disabled={savingProject || busy || (!inspection && !job)} onClick={saveProjectArchive}>
+              <Save size={16} /> {savingProject ? "Zapisywanie..." : "Zapisz"}
             </button>
           </section>
         )}
 
         <section>
-          <div className="section-title">{jobCreated ? "WGRANE AUDIO" : "Upload audio"}</div>
+          <div className="section-title">{jobCreated ? "WGRANE AUDIO" : "UPLOAD AUDIO/PROJEKTU"}</div>
           {!jobCreated && (
             <label className="dropzone">
               <UploadCloud size={22} />
-              <span>{audioFile ? audioFile.name : "Wybierz WAV, MP3, MP4, M4A, OGG albo FLAC"}</span>
-              <input type="file" accept=".wav,.mp3,.mp4,.m4a,.ogg,.flac,audio/*,video/mp4" onChange={(event) => event.target.files?.[0] && inspect(event.target.files[0])} />
+              <span>{audioFile?.name ?? inspection?.originalFilename ?? "Wybierz WAV, MP3, MP4, M4A, OGG, FLAC lub wgraj ZIP z projektem"}</span>
+              <input type="file" accept=".wav,.mp3,.mp4,.m4a,.ogg,.flac,.zip,audio/*,video/mp4,application/zip" onChange={(event) => event.target.files?.[0] && selectSourceFile(event.target.files[0])} />
             </label>
           )}
-          {inspection && <AudioSummary audio={inspection.audio} filename={inspection.originalFilename} />}
+          {(inspection || job?.audio) && <AudioSummary audio={inspection?.audio ?? job.audio} filename={inspection?.originalFilename ?? job?.artifacts?.find((asset) => asset.type === "source_audio")?.originalFilename} />}
           {jobCreated ? (
             <div className="cover-box" aria-label="Podgląd okładki">
               {coverPreview ? <img src={coverPreview} alt="" /> : <FileAudio size={42} />}
@@ -739,6 +839,8 @@ function App() {
             saving={saving}
             onResetStage={resetStage}
             onJobRefresh={refreshJob}
+            initialWorkspace={editorWorkspace}
+            onWorkspaceChange={setEditorWorkspace}
           />
         ) : (
           <>
@@ -753,6 +855,8 @@ function App() {
               onResumeStage={resumeStage}
               onOpenReview={() => setReviewOpen(true)}
               busy={busy}
+              stageWorkingState={stageWorkingState}
+              onStageWorkingStateChange={setStageWorkingState}
             />
           </>
         )}
@@ -787,7 +891,7 @@ function App() {
   );
 }
 
-function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onSourceSettings, onResumeStage, onOpenReview, busy }) {
+function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onSourceSettings, onResumeStage, onOpenReview, busy, stageWorkingState, onStageWorkingStateChange }) {
   const sourceReady = Boolean(inspection && (metadata.title ?? "").trim() && (metadata.artist ?? "").trim());
 
   return (
@@ -798,9 +902,9 @@ function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, on
         </div>
       </div>
       {job?.status === "awaiting_review" ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} onOpenReview={onOpenReview} />
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} onOpenReview={onOpenReview} stageWorkingState={stageWorkingState} onStageWorkingStateChange={onStageWorkingStateChange} />
       ) : job ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} />
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} stageWorkingState={stageWorkingState} onStageWorkingStateChange={onStageWorkingStateChange} />
       ) : (
         <>
           <div className="form-grid">
@@ -825,15 +929,17 @@ const TRANSCRIPTION_STAGE_FIELDS = TRANSCRIPTION_SETTING_FIELDS.filter(([key]) =
 const PITCH_DETECTION_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => !["minNoteLengthMs", "mergeGapMs"].includes(key));
 const ALIGNMENT_PITCH_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => ["minNoteLengthMs", "mergeGapMs"].includes(key));
 
-function StageSettingsPanel({ job, stage, busy, onSubmit, onSourceSubmit, embedded = false }) {
+function StageSettingsPanel({ job, stage, busy, onSubmit, onSourceSubmit, embedded = false, stageWorkingState = {}, onStageWorkingStateChange }) {
   const targetStage = stage ?? sortedStages(job.processing).find((item) => item.actionRequired);
   if (!targetStage) return null;
   const form = targetStage.settingsForm ?? settingsFormForStage(targetStage.stage);
-  if (form === "source") return <SourceStageForm job={job} busy={busy} onSubmit={onSourceSubmit} embedded={embedded} />;
-  if (form === "separation") return <SeparationStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
-  if (form === "transcription") return <TranscriptionStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
-  if (form === "pitch") return <PitchStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
-  if (form === "alignment") return <AlignmentStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} />;
+  const draft = stageWorkingState[targetStage.stage] ?? {};
+  const report = (value) => onStageWorkingStateChange?.((current) => ({ ...current, [targetStage.stage]: value }));
+  if (form === "source") return <SourceStageForm job={job} busy={busy} onSubmit={onSourceSubmit} embedded={embedded} draft={draft} onDraftChange={report} />;
+  if (form === "separation") return <SeparationStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} draft={draft} onDraftChange={report} />;
+  if (form === "transcription") return <TranscriptionStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} draft={draft} onDraftChange={report} />;
+  if (form === "pitch") return <PitchStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} draft={draft} onDraftChange={report} />;
+  if (form === "alignment") return <AlignmentStageForm job={job} busy={busy} onSubmit={onSubmit} embedded={embedded} draft={draft} onDraftChange={report} />;
   return null;
 }
 
@@ -852,12 +958,12 @@ function StageFormShell({ title, embedded, children }) {
   return <Tag className={embedded ? "stage-settings-inline" : "stage-settings-card"}>{!embedded && <h2>{title}</h2>}{children}</Tag>;
 }
 
-function SourceStageForm({ job, busy, onSubmit, embedded = false }) {
-  const [metadata, setMetadata] = useState({ ...emptyMetadata, ...(job.metadata ?? {}) });
-  const [sourceInspection, setSourceInspection] = useState(null);
+function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
+  const [metadata, setMetadata] = useState({ ...emptyMetadata, ...(job.metadata ?? {}), ...(draft.metadata ?? {}) });
+  const [sourceInspection, setSourceInspection] = useState(draft.sourceInspection ?? null);
   const [sourceBusy, setSourceBusy] = useState(false);
   const [coverFile, setCoverFile] = useState(null);
-  const [useEmbeddedCover, setUseEmbeddedCover] = useState(true);
+  const [useEmbeddedCover, setUseEmbeddedCover] = useState(draft.useEmbeddedCover ?? true);
   const [localError, setLocalError] = useState(null);
   const sourceInputRef = useRef(null);
   const coverInputRef = useRef(null);
@@ -865,6 +971,10 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false }) {
   const coverPreview = coverFile
     ? URL.createObjectURL(coverFile)
     : sourceInspection?.embeddedCover && useEmbeddedCover ? `${API_BASE}${sourceInspection.embeddedCover.previewUrl}` : null;
+
+  useEffect(() => {
+    onDraftChange?.({ metadata, sourceInspection, useEmbeddedCover, manualCoverFilename: coverFile?.name ?? draft.manualCoverFilename ?? null });
+  }, [metadata, sourceInspection, useEmbeddedCover, coverFile]);
 
   async function inspectSource(file) {
     if (!file) return;
@@ -885,10 +995,25 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false }) {
     }
   }
 
-  function chooseCover(file) {
+  async function chooseCover(file) {
     if (!file) return;
     setCoverFile(file);
     setUseEmbeddedCover(false);
+    if (sourceInspection?.uploadDraftId) {
+      try {
+        const form = new FormData();
+        form.append("cover", file);
+        const manual = await apiForm(`/api/uploads/drafts/${sourceInspection.uploadDraftId}/manual-cover`, form);
+        setSourceInspection((current) => ({
+          ...current,
+          embeddedCover: manual,
+          selectedCoverKind: "manual",
+          projectCovers: { ...(current?.projectCovers ?? {}), manual },
+        }));
+      } catch (err) {
+        setLocalError(err.message);
+      }
+    }
   }
 
   async function submitSource() {
@@ -897,6 +1022,7 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false }) {
       uploadDraftId: sourceInspection?.uploadDraftId ?? null,
       metadata: { ...metadata, language: language || null, languageMode: language ? "forced" : "auto" },
       useEmbeddedCover: useEmbeddedCover && !coverFile,
+      draftCoverKind: sourceInspection?.selectedCoverKind ?? (useEmbeddedCover ? "tag" : null),
     };
     const form = new FormData();
     form.append("payload", JSON.stringify(payload));
@@ -957,8 +1083,9 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false }) {
   );
 }
 
-function SeparationStageForm({ job, busy, onSubmit, embedded = false }) {
-  const [separationModel, setSeparationModel] = useState(job.profiles?.separationModel ?? "htdemucs_ft");
+function SeparationStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
+  const [separationModel, setSeparationModel] = useState(draft.separationModel ?? job.profiles?.separationModel ?? "htdemucs_ft");
+  useEffect(() => onDraftChange?.({ separationModel }), [separationModel]);
   return (
     <StageFormShell title="Separacja wokalu" embedded={embedded}>
       <div className="controls-row">
@@ -971,12 +1098,14 @@ function SeparationStageForm({ job, busy, onSubmit, embedded = false }) {
   );
 }
 
-function TranscriptionStageForm({ job, busy, onSubmit, embedded = false }) {
-  const [transcriptionModel, setTranscriptionModel] = useState(job.profiles?.transcriptionModel ?? "large-v3");
-  const [settings, setSettings] = useState(normalizeTranscriptionSettings(job.transcriptionSettings));
-  const [syllabification, setSyllabification] = useState({ ...defaultSyllabification, ...(job.syllabificationSettings ?? {}) });
+function TranscriptionStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
+  const [transcriptionModel, setTranscriptionModel] = useState(draft.transcriptionModel ?? job.profiles?.transcriptionModel ?? "large-v3");
+  const [settings, setSettings] = useState(normalizeTranscriptionSettings(draft.settings ?? job.transcriptionSettings));
+  const [syllabification, setSyllabification] = useState({ ...defaultSyllabification, ...(job.syllabificationSettings ?? {}), ...(draft.syllabification ?? {}) });
   const positioningDisabled = syllabification.method === "none";
   const positioningValue = positioningDisabled ? "words_only" : settings.positioning ?? defaultTranscription.positioning;
+
+  useEffect(() => onDraftChange?.({ transcriptionModel, settings, syllabification }), [transcriptionModel, settings, syllabification]);
 
   function changeSyllabification(method) {
     setSyllabification({ method });
@@ -1005,9 +1134,10 @@ function TranscriptionStageForm({ job, busy, onSubmit, embedded = false }) {
   );
 }
 
-function PitchStageForm({ job, busy, onSubmit, embedded = false }) {
-  const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}) });
-  const [pitchProfile, setPitchProfile] = useState(job.profiles?.pitch ?? "fast");
+function PitchStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
+  const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}), ...(draft.settings ?? {}) });
+  const [pitchProfile, setPitchProfile] = useState(draft.pitchProfile ?? job.profiles?.pitch ?? "fast");
+  useEffect(() => onDraftChange?.({ settings, pitchProfile }), [settings, pitchProfile]);
   return (
     <StageFormShell title="Detekcja tonów" embedded={embedded}>
       <div className="advanced">
@@ -1025,9 +1155,10 @@ function PitchStageForm({ job, busy, onSubmit, embedded = false }) {
   );
 }
 
-function AlignmentStageForm({ job, busy, onSubmit, embedded = false }) {
-  const [sentenceGapMs, setSentenceGapMs] = useState(job.transcriptionSettings?.sentenceGapMs ?? "");
-  const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}) });
+function AlignmentStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
+  const [sentenceGapMs, setSentenceGapMs] = useState(draft.sentenceGapMs ?? job.transcriptionSettings?.sentenceGapMs ?? "");
+  const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}), ...(draft.settings ?? {}) });
+  useEffect(() => onDraftChange?.({ sentenceGapMs, settings }), [sentenceGapMs, settings]);
   return (
     <StageFormShell title="Wstępne dopasowanie" embedded={embedded}>
       <div className="form-grid compact pitch-settings-grid">
@@ -1043,13 +1174,13 @@ function AlignmentStageForm({ job, busy, onSubmit, embedded = false }) {
   );
 }
 
-function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage, onOpenReview }) {
+function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage, onOpenReview, stageWorkingState = {}, onStageWorkingStateChange }) {
   const artifactsById = Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.assetId, asset]));
   const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
   const jobRunning = sortedStages(job.processing).some((stage) => stage.status === "running");
   const stageRefs = useRef({});
   const previousStatuses = useRef({});
-  const [editingStage, setEditingStage] = useState(null);
+  const [editingStage, setEditingStage] = useState(stageWorkingState.__activeStage ?? null);
   const [previewAsset, setPreviewAsset] = useState(null);
 
   useEffect(() => {
@@ -1073,15 +1204,18 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
 
   function changeStage(stage) {
     setEditingStage(stage.stage);
+    onStageWorkingStateChange?.((current) => ({ ...current, __activeStage: stage.stage }));
   }
 
   function cancelChange() {
     setEditingStage(null);
+    onStageWorkingStateChange?.((current) => ({ ...current, __activeStage: null }));
   }
 
   async function submitStageSettings(stage, payload) {
     const saved = stage === "uploaded" ? await onSourceSubmit(payload) : await onSubmit(stage, payload);
     if (saved) setEditingStage(null);
+    if (saved) onStageWorkingStateChange?.((current) => ({ ...current, __activeStage: null }));
     return saved;
   }
 
@@ -1117,7 +1251,7 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
                   return <ArtifactPreviewButton key={assetId} asset={asset} fallback={assetId} onOpen={setPreviewAsset} />;
                 })}
               </div>
-              {(stage.actionRequired || isEditing) && <StageSettingsPanel job={job} stage={stage} busy={busy} onSubmit={submitStageSettings} onSourceSubmit={(form) => submitStageSettings("uploaded", form)} embedded />}
+              {(stage.actionRequired || isEditing) && <StageSettingsPanel job={job} stage={stage} busy={busy} onSubmit={submitStageSettings} onSourceSubmit={(form) => submitStageSettings("uploaded", form)} embedded stageWorkingState={stageWorkingState} onStageWorkingStateChange={onStageWorkingStateChange} />}
             </article>
           );
         })}
@@ -1260,7 +1394,7 @@ function ArtifactPreviewModal({ jobId, asset, onClose }) {
   );
 }
 
-function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, saving, onResetStage, onJobRefresh }) {
+function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, saving, onResetStage, onJobRefresh, initialWorkspace = null, onWorkspaceChange }) {
   const waveformRef = useRef(null);
   const waveSurferRef = useRef(null);
   const resumeAfterTrackChange = useRef(false);
@@ -1268,22 +1402,39 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const viewportSyncRef = useRef({ viewportStart: 0, zoomSec: EDITOR_WINDOW_SEC });
   const loopPlaybackRef = useRef(false);
   const [waveformReady, setWaveformReady] = useState(false);
-  const [track, setTrack] = useState("vocals");
-  const [currentTime, setCurrentTime] = useState(0);
+  const [track, setTrack] = useState(initialWorkspace?.track ?? "vocals");
+  const [currentTime, setCurrentTime] = useState(initialWorkspace?.currentTime ?? 0);
   const [playing, setPlaying] = useState(false);
-  const [selected, setSelected] = useState({ type: "line", id: null });
-  const [zoomSec, setZoomSec] = useState(EDITOR_WINDOW_SEC);
-  const [viewportStart, setViewportStart] = useState(0);
-  const [snapToExisting, setSnapToExisting] = useState(true);
-  const [snapThresholdMs, setSnapThresholdMs] = useState(DEFAULT_SNAP_MS);
+  const [selected, setSelected] = useState(initialWorkspace?.selected ?? { type: "line", id: null });
+  const [zoomSec, setZoomSec] = useState(initialWorkspace?.zoomSec ?? EDITOR_WINDOW_SEC);
+  const [viewportStart, setViewportStart] = useState(initialWorkspace?.viewportStart ?? 0);
+  const [snapToExisting, setSnapToExisting] = useState(initialWorkspace?.snapToExisting ?? true);
+  const [snapThresholdMs, setSnapThresholdMs] = useState(initialWorkspace?.snapThresholdMs ?? DEFAULT_SNAP_MS);
   const [dragGuideTime, setDragGuideTime] = useState(null);
-  const [loopPlayback, setLoopPlayback] = useState(false);
-  const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(false);
-  const [showNotes, setShowNotes] = useState(false);
+  const [loopPlayback, setLoopPlayback] = useState(initialWorkspace?.loopPlayback ?? false);
+  const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(initialWorkspace?.limitPlaybackToWindow ?? false);
+  const [showNotes, setShowNotes] = useState(initialWorkspace?.showNotes ?? false);
   const [editorNotice, setEditorNotice] = useState(null);
   const [validationModal, setValidationModal] = useState(null);
-  const [past, setPast] = useState([]);
-  const [future, setFuture] = useState([]);
+  const [past, setPast] = useState(initialWorkspace?.past ?? []);
+  const [future, setFuture] = useState(initialWorkspace?.future ?? []);
+
+  useEffect(() => {
+    onWorkspaceChange?.({
+      past,
+      future,
+      selected,
+      currentTime,
+      track,
+      zoomSec,
+      viewportStart,
+      snapToExisting,
+      snapThresholdMs,
+      loopPlayback,
+      limitPlaybackToWindow,
+      showNotes,
+    });
+  }, [past, future, selected, currentTime, track, zoomSec, viewportStart, snapToExisting, snapThresholdMs, loopPlayback, limitPlaybackToWindow, showNotes]);
 
   const assets = useMemo(() => Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.type, asset])), [job.artifacts]);
   const selectedContext = useMemo(() => selectionContext(arrangement, selected), [arrangement, selected]);
@@ -1705,7 +1856,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
           <button className="icon-button" type="button" title="Undo" aria-label="Undo" disabled={!past.length} onClick={undo}><Undo2 size={16} /></button>
           <button className="icon-button" type="button" title="Redo" aria-label="Redo" disabled={!future.length} onClick={redo}><Redo2 size={16} /></button>
           <button className="button secondary" type="button" onClick={() => onResetStage("aligning")}><Workflow size={16} /> Wróć do audio</button>
-          <SaveExportMenu job={job} saving={saving} onSave={onSave} onJobRefresh={onJobRefresh} onValidationError={setValidationModal} />
+          <ExportKaraokeButton job={job} saving={saving} onSave={onSave} onJobRefresh={onJobRefresh} onValidationError={setValidationModal} />
         </div>
       </div>
 
@@ -1743,31 +1894,10 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   );
 }
 
-function SaveExportMenu({ job, saving, onSave, onJobRefresh, onValidationError }) {
-  const [open, setOpen] = useState(false);
+function ExportKaraokeButton({ job, saving, onSave, onJobRefresh, onValidationError }) {
   const [busy, setBusy] = useState(false);
-  const menuRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function closeOnOutsideClick(event) {
-      if (!menuRef.current?.contains(event.target)) setOpen(false);
-    }
-    document.addEventListener("mousedown", closeOnOutsideClick);
-    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
-  }, [open]);
-
-  async function saveProject() {
-    setOpen(false);
-    try {
-      await onSave(false);
-    } catch {
-      // Global error banner is set by onSave.
-    }
-  }
 
   async function exportKaraoke() {
-    setOpen(false);
     setBusy(true);
     try {
       await onSave(true);
@@ -1808,23 +1938,9 @@ function SaveExportMenu({ job, saving, onSave, onJobRefresh, onValidationError }
   const pending = saving || busy;
 
   return (
-    <div className="save-menu" ref={menuRef}>
-      <button className="button primary save-menu-trigger" type="button" disabled={pending} onClick={() => setOpen((value) => !value)}>
-        <Save size={16} /> {pending ? "Praca..." : "Zapisz"}
-      </button>
-      {open && (
-        <div className="save-menu-list" role="menu">
-          <button type="button" role="menuitem" onClick={saveProject}>
-            <span>projekt</span>
-            <small>do późniejszej edycji</small>
-          </button>
-          <button type="button" role="menuitem" onClick={exportKaraoke}>
-            <span>paczka karaoke</span>
-            <small>UltraStar Deluxe, UltraStar Play, Vocaluxe</small>
-          </button>
-        </div>
-      )}
-    </div>
+    <button className="button primary save-menu-trigger" type="button" disabled={pending} onClick={exportKaraoke}>
+      <Download size={16} /> {pending ? "Eksportowanie..." : "Eksportuj"}
+    </button>
   );
 }
 
@@ -3943,6 +4059,8 @@ function readPersistedUiState() {
       syllabificationTouched: Boolean(parsed.syllabificationTouched),
       useEmbeddedCover: parsed.useEmbeddedCover ?? true,
       reviewOpen: Boolean(parsed.reviewOpen),
+      stageWorkingState: parsed.stageWorkingState ?? {},
+      editorWorkspace: parsed.editorWorkspace ?? null,
     };
   } catch {
     window.localStorage.removeItem(APP_STORAGE_KEY);
@@ -3970,6 +4088,8 @@ function persistUiState(state) {
         useEmbeddedCover: state.useEmbeddedCover,
         job: state.job,
         reviewOpen: state.reviewOpen,
+        stageWorkingState: state.stageWorkingState,
+        editorWorkspace: state.editorWorkspace,
       }),
     );
   } catch {
@@ -4136,6 +4256,15 @@ function triggerArtifactDownload(jobId, asset) {
   const link = document.createElement("a");
   link.href = `${API_BASE}/api/jobs/${jobId}/artifacts/${asset.assetId}`;
   link.download = asset.filename ?? "";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function triggerUrlDownload(url, filename = "") {
+  const link = document.createElement("a");
+  link.href = `${API_BASE}${url}`;
+  link.download = filename;
   document.body.appendChild(link);
   link.click();
   link.remove();

@@ -17,14 +17,14 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Transkrypcja wokalu z czasami fraz oraz słów z wyborem profilu WhisperX.
 - Detekcja wysokości dźwięku z wokalu i segmentacja do nut.
 - Edytor tekstu, sylab, timingów, typów nut i pitch.
-- Import i kontynuacja pracy z ZIP-em projektu utworzonym przez opcję `Wyeksportuj projekt`.
+- Import i kontynuacja pracy z ZIP-em projektu utworzonym przez globalną akcję `Zapisz`.
 - Eksport jednej paczki ZIP zgodnej z aktualnymi wersjami wspieranych odtwarzaczy, bez danych projektu w tej paczce.
 - Osobny eksport pełnego projektu jako ZIP zawierający `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
-- Retencja lokalnego `Job` i artefaktów przez 24 godziny po eksporcie projektu.
+- Pełny zapis draftu, processingu lub edytora bez automatycznej retencji i usuwania lokalnego `Job`.
 
 ## Status implementacji
 
-Dokumentacja nadrzędna opisuje pełny docelowy zakres MVP. Aktualny kod implementuje upload z preflightem, tworzenie `Job`, orkiestrację pipeline'u do edytowalnego `Arrangement`, zapis/resegmentację edycji, pobieranie artefaktów i reset etapów. Eksport karaoke, eksport ZIP-a projektu, import ZIP-a projektu i retencja po eksporcie pozostają wymaganymi etapami MVP, ale nie mają jeszcze endpointów API ani pełnego UI w obecnej implementacji.
+Aktualny kod implementuje upload i import projektu, tworzenie `Job`, orkiestrację pipeline'u, edytowalny `Arrangement`, osobny eksport karaoke oraz pełny zapis i wznowienie projektu z ZIP. Mechanizm retencji projektu pozostaje wyłączony.
 
 ## Poza zakresem pierwszej wersji
 
@@ -54,7 +54,7 @@ Wszystkie modele i narzędzia mają działać lokalnie w kontenerze lub przez lo
 - Kolejka i koordynacja workerów: Redis.
 - Ciężkie workery docelowe: osobne serwisy Docker dla Demucs, WhisperX i pitch detection.
 - Pliki audio, artefakty, eksporty i cache modeli: wolumen Docker poza repozytorium aplikacji.
-- Edycja: MVP utrwala tylko aktualny stan; undo/redo działa sesyjnie w edytorze.
+- Edycja: aktywny `Arrangement` jest źródłem prawdy, a ZIP projektu dodatkowo przechowuje historię undo/redo i ustawienia przestrzeni roboczej.
 
 ## GPU i kontenery
 

@@ -19,6 +19,9 @@ from app.domain.contracts import (
     ExportValidationReport,
     JobStatus,
     NoteEvent,
+    ProjectArchiveResponse,
+    ProjectClientState,
+    ProjectImportResponse,
     ResetStageRequest,
     ResetStageResponse,
     ResegmentArrangementRequest,
@@ -36,6 +39,7 @@ from app.domain.contracts import (
 from app.services import audio_probe
 from app.services.ids import new_id
 from app.services.queue import enqueue_job, enqueue_pitch, enqueue_separation, enqueue_transcription, redis_client
+from app.services.project_archive import generate_draft_archive, generate_job_archive, import_project_archive
 from app.services.storage import (
     purge_tree,
     read_json,
@@ -144,6 +148,45 @@ def draft_cover(draft_id: str) -> Response:
     return FileResponse(cover_path, media_type=cover["mimeType"])
 
 
+@router.get("/uploads/drafts/{draft_id}/cover/{kind}")
+def project_draft_cover(draft_id: str, kind: str) -> Response:
+    if kind not in {"tag", "manual"}:
+        raise api_error(404, "cover_not_found", "Nieznany wariant covera.")
+    draft_path = resolve_inside(f"drafts/{draft_id}/draft.json")
+    if not draft_path.exists():
+        raise api_error(404, "draft_not_found", "Draft uploadu nie istnieje.")
+    draft = read_json(draft_path)
+    cover = draft.get("embeddedCover" if kind == "tag" else "manualCover")
+    if not cover:
+        raise api_error(404, "cover_not_found", "Draft nie zawiera wybranego covera.")
+    return FileResponse(resolve_inside(cover["path"]), media_type=cover.get("mimeType") or "application/octet-stream")
+
+
+@router.post("/uploads/drafts/{draft_id}/manual-cover", response_model=EmbeddedCover)
+async def save_draft_manual_cover(draft_id: str, cover: UploadFile = File(...)) -> EmbeddedCover:
+    draft_path = resolve_inside(f"drafts/{draft_id}/draft.json")
+    if not draft_path.exists():
+        raise api_error(404, "draft_not_found", "Draft uploadu nie istnieje.")
+    draft = read_json(draft_path)
+    name = safe_filename(cover.filename, "manual-cover")
+    path = resolve_inside(f"drafts/{draft_id}/manual-cover{Path(name).suffix.lower() or '.bin'}")
+    size = await save_upload(cover, path, 25 * 1024 * 1024)
+    draft["manualCover"] = {
+        "path": relative_to_root(path),
+        "filename": name,
+        "mimeType": cover.content_type,
+        "sizeBytes": size,
+    }
+    write_json(draft_path, draft)
+    return EmbeddedCover(
+        coverDraftId=f"manual_{draft_id}",
+        mimeType=cover.content_type or "application/octet-stream",
+        sizeBytes=size,
+        previewUrl=f"/api/uploads/drafts/{draft_id}/cover/manual",
+        source="manual_upload",
+    )
+
+
 @router.post("/jobs/uploads")
 async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | None = File(default=None)):
     request = CreateJobUpload.model_validate_json(payload)
@@ -205,17 +248,22 @@ async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | N
     processing[upload_key].artifactIds = [source_asset.assetId]
 
     cover_asset_id = None
+    cover_payload = None
+    cover_kind = None
     if cover:
         cover_name = safe_filename(cover.filename, "cover")
         cover_path = job_dir / "assets" / cover_name
         size = await save_upload(cover, cover_path, 25 * 1024 * 1024)
         cover_asset_id = _save_cover_asset(job_id, cover_path, cover_name, cover.content_type, size, "manual_upload")
-    elif request.useEmbeddedCover and draft.get("embeddedCover"):
-        cover_src = resolve_inside(draft["embeddedCover"]["path"])
+    else:
+        cover_kind = request.draftCoverKind or ("tag" if request.useEmbeddedCover else None)
+        cover_payload = draft.get("manualCover") if cover_kind == "manual" else draft.get("embeddedCover") if cover_kind == "tag" else None
+    if not cover and cover_payload:
+        cover_src = resolve_inside(cover_payload["path"])
         cover_dst = job_dir / "assets" / Path(cover_src).name
         cover_dst.parent.mkdir(parents=True, exist_ok=True)
         cover_src.replace(cover_dst)
-        cover_asset_id = _save_cover_asset(job_id, cover_dst, Path(cover_dst).name, draft["embeddedCover"]["mimeType"], cover_dst.stat().st_size, "audio_tags")
+        cover_asset_id = _save_cover_asset(job_id, cover_dst, Path(cover_dst).name, cover_payload.get("mimeType"), cover_dst.stat().st_size, "manual_upload" if cover_kind == "manual" else "audio_tags")
 
     if cover_asset_id:
         processing[upload_key].artifactIds.append(cover_asset_id)
@@ -305,12 +353,15 @@ async def update_job_source(job_id: str, payload: str = Form(...), cover: Upload
             cover_path = resolve_inside(f"jobs/{job_id}/assets/{cover_name}")
             size = await save_upload(cover, cover_path, 25 * 1024 * 1024)
             source_artifact_ids.append(_save_cover_asset(job_id, cover_path, cover_name, cover.content_type, size, "manual_upload"))
-        elif draft and request.useEmbeddedCover and draft.get("embeddedCover"):
-            cover_src = resolve_inside(draft["embeddedCover"]["path"])
-            cover_dst = resolve_inside(f"jobs/{job_id}/assets/{Path(cover_src).name}")
-            cover_dst.parent.mkdir(parents=True, exist_ok=True)
-            cover_src.replace(cover_dst)
-            source_artifact_ids.append(_save_cover_asset(job_id, cover_dst, Path(cover_dst).name, draft["embeddedCover"]["mimeType"], cover_dst.stat().st_size, "audio_tags"))
+        elif draft and request.useEmbeddedCover:
+            cover_kind = request.draftCoverKind or "tag"
+            draft_cover = draft.get("manualCover") if cover_kind == "manual" else draft.get("embeddedCover")
+            if draft_cover:
+                cover_src = resolve_inside(draft_cover["path"])
+                cover_dst = resolve_inside(f"jobs/{job_id}/assets/{Path(cover_src).name}")
+                cover_dst.parent.mkdir(parents=True, exist_ok=True)
+                cover_src.replace(cover_dst)
+                source_artifact_ids.append(_save_cover_asset(job_id, cover_dst, Path(cover_dst).name, draft_cover.get("mimeType"), cover_dst.stat().st_size, "manual_upload" if cover_kind == "manual" else "audio_tags"))
     else:
         source_artifact_ids.extend(asset.assetId for asset in job.artifacts if asset.type == "cover")
 
@@ -490,6 +541,41 @@ def export_karaoke(job_id: str, selection: ExportSelection) -> ExportKaraokeResp
         validationArtifact=export_ref(validation_asset),
         exports=[export_ref(asset) for asset in export_assets],
     )
+
+
+@router.post("/projects/drafts/{draft_id}/export", response_model=ProjectArchiveResponse)
+def export_draft_project(
+    draft_id: str,
+    state: str = Form(...),
+    cover: UploadFile | None = File(default=None),
+) -> ProjectArchiveResponse:
+    client_state = ProjectClientState.model_validate_json(state)
+    return generate_draft_archive(draft_id, client_state, cover)
+
+
+@router.get("/projects/drafts/{draft_id}/archive")
+def download_draft_project(draft_id: str):
+    exports_dir = resolve_inside(f"drafts/{draft_id}/exports")
+    archives = sorted(exports_dir.glob("*/*.zip"), key=lambda path: path.stat().st_mtime, reverse=True) if exports_dir.exists() else []
+    if not archives:
+        raise api_error(404, "project_archive_missing", "Nie znaleziono zapisanego archiwum projektu.")
+    return FileResponse(archives[0], media_type="application/zip", filename=archives[0].name)
+
+
+@router.post("/jobs/{job_id}/exports/project", response_model=ProjectArchiveResponse)
+def export_job_project(job_id: str, state: ProjectClientState) -> ProjectArchiveResponse:
+    response, asset = generate_job_archive(job_id, state)
+    repository.create_artifact(job_id, asset)
+    return response
+
+
+@router.post("/projects/import", response_model=ProjectImportResponse)
+def import_project(file: UploadFile = File(...)) -> ProjectImportResponse:
+    result = import_project_archive(file)
+    if result.job and result.autoResume and result.resumeStage:
+        _enqueue_stage(result.job.jobId, result.resumeStage)
+        result = result.model_copy(update={"queued": True})
+    return result
 
 
 @router.get("/jobs/{job_id}/artifacts/{asset_id}")

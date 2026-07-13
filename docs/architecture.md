@@ -35,7 +35,7 @@ Project ZIP Import
 - Pokazuje osadzony cover z tagów tak samo jak cover wybrany z dysku, pozwala zastąpić go ręcznie wskazanym plikiem i przywrócić domyślny cover z tagów.
 - Domyślnie wybiera dokładniejsze modele `htdemucs_ft` i `large-v3`, a szybsze profile zostawia jako ręczny wybór użytkownika.
 - Pozwala opcjonalnie wskazać język utworu.
-- Pozwala wczytać ZIP projektu utworzony przez opcję `Wyeksportuj projekt` i kontynuować pracę nad utworem.
+- Pozwala wczytać ZIP projektu utworzony przez globalną akcję `Zapisz` i kontynuować pracę nad utworem.
 - Pokazuje cały stage rail z etapami wykonanymi, przetwarzanymi, oczekującymi i błędnymi.
 - Pokazuje postęp, ETA albo stan indeterminate dla czasochłonnych etapów.
 - Pokazuje błędy jako krótki komunikat oraz kompaktowy rozwijany log diagnostyczny.
@@ -44,7 +44,7 @@ Project ZIP Import
 - Udostępnia edytor tekstu, sylab, fraz, nut i timingów.
 - Pozwala odsłuchać oryginał, wokal i instrumental.
 - Uruchamia eksport jednej paczki karaoke ZIP po zatwierdzeniu aktualnego stanu edycji.
-- Udostępnia osobną akcję `Wyeksportuj projekt`, która pakuje pełny `Job` do ZIP-a projektu.
+- Udostępnia globalną akcję `Zapisz`, która pakuje draft albo pełny `Job` do ZIP-a projektu.
 - Stosuje design system RetroWave opisany w [UI.md](UI.md) dla kolorów, typografii, komponentów i stanów.
 
 ### Backend API
@@ -84,7 +84,8 @@ Planowane, ale wymagane w MVP:
 - `POST /api/projects/import`: import ZIP-a projektu.
 - `POST /api/jobs/{jobId}/exports/validate`: walidacja przed eksportem.
 - `POST /api/jobs/{jobId}/exports/karaoke`: eksport jednej paczki karaoke; po sukcesie `Job` wraca do `awaiting_review`.
-- `POST /api/jobs/{jobId}/exports/project`: eksport ZIP-a projektu, ustawienie TTL retencji i powrót `Job` do `awaiting_review`.
+- `POST /api/projects/drafts/{uploadDraftId}/export`: zapis draftu uploadu i formularza.
+- `POST /api/jobs/{jobId}/exports/project`: zapis spójnego checkpointu `Job` bez zmiany jego statusu.
 
 ### Kolejka i orkiestracja
 
@@ -111,7 +112,7 @@ Planowane, ale wymagane w MVP:
 - Przechowuje oryginalny plik, znormalizowane audio, stems, transkrypcję, pitch frames, nuty, eksporty i snapshoty wymagane przez ZIP projektu.
 - Każdy artefakt ma typ, hash, czas utworzenia i parametry procesu.
 - Pliki audio użytkownika nie powinny trafiać do repozytorium.
-- Po pomyślnym eksporcie projektu ustawia `cleanupEligibleAt` na 24 godziny po eksporcie. Lokalny rekord `Job`, oryginalny plik i artefakty mogą zostać usunięte dopiero po upływie tego TTL.
+- Zapis projektu nie ustawia retencji; pola retencji pozostają puste do czasu zaprojektowania osobnego mechanizmu zarządzania jobami.
 - Zwykły eksport karaoke nie usuwa automatycznie `Job` ani artefaktów.
 
 ### Warstwa trwałości
@@ -137,7 +138,7 @@ Planowane, ale wymagane w MVP:
 - `failed`
 - `cancelled`
 
-`exporting`, `exporting_project` i `importing_project` istnieją w kontraktach jako statusy przepływów eksportu/importu wymaganych w MVP. W obecnej implementacji endpointy eksportu i importu nie są jeszcze dostępne. Po ich wdrożeniu udany eksport karaoke albo ZIP-a projektu ma przywracać `Job` do `awaiting_review`; eksport projektu dodatkowo ustawia pola retencji. `completed` jest zarezerwowany na przyszłe przepływy i nie jest ustawiany po zwykłym eksporcie w MVP.
+`exporting` jest używany przez eksport karaoke. Zapis ZIP-a projektu nie zmienia statusu `Job`, dzięki czemu może działać równolegle z processingiem. `exporting_project`, `importing_project` i `completed` pozostają wartościami zgodnościowymi, ale nie są ustawiane w tym przepływie.
 
 ## Założenia niefunkcjonalne
 

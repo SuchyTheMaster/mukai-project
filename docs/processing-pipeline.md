@@ -10,7 +10,7 @@ Wejście:
 - Sylabizacja: wybór `Kokosznicka`, `Pyphen`, `Heurystyka` albo `Bez podziału`; dla języka `pl` UI domyślnie wybiera Kokosznicką, a dla pozostałych języków Pyphen.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
 - Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
-- Opcjonalny import ZIP-a projektu utworzonego przez opcję `Wyeksportuj projekt` jako kontynuacja wcześniejszej pracy.
+- Opcjonalny import ZIP-a projektu utworzonego przez globalną akcję `Zapisz` jako kontynuacja wcześniejszej pracy.
 
 Preflight uploadu:
 
@@ -267,17 +267,18 @@ Eksporter karaoke generuje:
 - Tagi `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS` wskazują odpowiednio pliki z sufiksami `[FULL]`, `[INSTR]` i `[VOC]`.
 - Raport walidacji eksportu.
 
-Osobna akcja `Wyeksportuj projekt` generuje ZIP projektu:
+Globalna akcja `Zapisz` generuje ZIP projektu:
 
 - ZIP projektu zawiera cały `Job`: oryginalny plik, artefakty wszystkich wykonanych etapów, zapis edycji, ustawienia modeli, metadane, raporty walidacji i pliki JSON potrzebne do odtworzenia projektu.
 - ZIP projektu musi zawierać wszystkie składowe wymagane do odtworzenia stanu bez ponownego uruchamiania przetwarzania.
-- Po pomyślnym utworzeniu i przekazaniu ZIP-a projektu aplikacja ustawia TTL retencji lokalnego `Job` i artefaktów na 24 godziny oraz przywraca status `awaiting_review`.
+- Zapis działającego processingu utrwala spójny checkpoint ukończonych etapów i nie zmienia statusu aktywnego `Job`; import automatycznie uruchamia pierwszy przerwany etap.
+- Zapis nie ustawia TTL ani nie uruchamia mechanizmu czyszczenia.
 
 ## 10. Ponowny import projektu z ZIP-a
 
 Wejście:
 
-- ZIP projektu utworzony przez opcję `Wyeksportuj projekt`.
+- ZIP projektu utworzony przez globalną akcję `Zapisz`.
 
 Zasady:
 

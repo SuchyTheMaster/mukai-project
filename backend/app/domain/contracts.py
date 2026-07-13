@@ -178,6 +178,8 @@ class UploadInspection(BaseModel):
     audio: AudioInfo
     metadata: SourceMetadata
     embeddedCover: EmbeddedCover | None = None
+    projectCovers: dict[str, EmbeddedCover] = Field(default_factory=dict)
+    selectedCoverKind: Literal["tag", "manual"] | None = None
 
 
 class Retention(BaseModel):
@@ -404,6 +406,7 @@ class CreateJobUpload(BaseModel):
     pitchSettings: PitchSettings = Field(default_factory=PitchSettings)
     syllabificationSettings: SyllabificationSettings = Field(default_factory=SyllabificationSettings)
     useEmbeddedCover: bool = True
+    draftCoverKind: Literal["tag", "manual"] | None = None
 
     @model_validator(mode="after")
     def require_title_and_artist(self):
@@ -426,6 +429,7 @@ class UpdateJobSourceRequest(BaseModel):
     uploadDraftId: str | None = None
     metadata: SourceMetadata
     useEmbeddedCover: bool = True
+    draftCoverKind: Literal["tag", "manual"] | None = None
 
     @model_validator(mode="after")
     def require_title_and_artist(self):
@@ -519,6 +523,38 @@ class ExportKaraokeResponse(BaseModel):
     validationReport: ExportValidationReport
     validationArtifact: ExportArtifactRef
     exports: list[ExportArtifactRef] = Field(default_factory=list)
+
+
+ProjectPhase = Literal["draft", "processing", "review"]
+
+
+class ProjectClientState(BaseModel):
+    workingState: dict = Field(default_factory=dict)
+    editorWorkspace: dict | None = None
+
+
+class ProjectArchiveRef(BaseModel):
+    filename: str
+    downloadUrl: str
+    sha256: str
+    sizeBytes: int
+
+
+class ProjectArchiveResponse(BaseModel):
+    phase: ProjectPhase
+    archive: ProjectArchiveRef
+    resumeStage: str | None = None
+
+
+class ProjectImportResponse(BaseModel):
+    phase: ProjectPhase
+    inspection: UploadInspection | None = None
+    job: Job | None = None
+    workingState: dict = Field(default_factory=dict)
+    editorWorkspace: dict | None = None
+    resumeStage: str | None = None
+    autoResume: bool = False
+    queued: bool = False
 
 
 STAGE_ORDER = [
