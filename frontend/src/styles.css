@@ -966,6 +966,7 @@ summary:hover {
   align-content: start;
   gap: 18px;
   min-width: 0;
+  overflow-anchor: none;
 }
 
 .loading-editor p {
@@ -1527,6 +1528,20 @@ summary:hover {
   border-radius: 8px;
 }
 
+.timeline-panel {
+  transition: background-color 200ms ease;
+}
+
+.timeline-pinning-enabled .timeline-panel {
+  position: sticky;
+  top: 0;
+}
+
+.timeline-panel.is-sticky {
+  z-index: 20;
+  background-color: var(--sunken);
+}
+
 .timeline-header {
   margin-bottom: 10px;
   color: var(--tertiary);
@@ -1551,6 +1566,11 @@ summary:hover {
     var(--sunken);
 }
 
+.timeline-panel.is-sticky .combined-editor-shell {
+  height: 240px;
+  min-height: 240px;
+}
+
 .timeline-panel .combined-editor-shell {
   border-bottom-right-radius: 0;
   border-bottom-left-radius: 0;
@@ -1569,6 +1589,10 @@ summary:hover {
   overflow: hidden;
   opacity: 0.72;
   pointer-events: none;
+}
+
+.timeline-panel.is-sticky .waveform-canvas {
+  height: 84px;
 }
 
 .waveform-canvas ::part(scroll) {
@@ -1636,6 +1660,11 @@ summary:hover {
   background: rgba(58, 134, 255, 0.48);
   border: 0;
   opacity: 0.5;
+  transition: filter 160ms ease, box-shadow 160ms ease;
+}
+
+.timeline-panel.is-sticky .phrase-span {
+  top: 92px;
 }
 
 .syllable-block {
@@ -1822,6 +1851,12 @@ summary:hover {
   gap: 8px;
   max-height: 640px;
   overflow: auto;
+}
+
+.timeline-pinning-enabled .properties-panel {
+  position: sticky;
+  top: calc(var(--timeline-panel-height, 0px) + 18px);
+  max-height: clamp(160px, calc(100vh - var(--timeline-panel-height, 0px) - 36px), 640px);
 }
 
 .sentence-separator {
@@ -2221,7 +2256,9 @@ summary:hover {
     grid-template-columns: 1fr;
   }
 
-  .properties-panel {
+  .timeline-pinning-enabled .properties-panel {
+    position: static;
+    top: auto;
     max-height: none;
   }
 }

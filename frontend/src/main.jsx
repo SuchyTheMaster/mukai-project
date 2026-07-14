@@ -10,6 +10,8 @@ import {
   Merge,
   Music2,
   Pause,
+  Pin,
+  PinOff,
   Play,
   Plus,
   RefreshCcw,
@@ -1429,6 +1431,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const [loopPlayback, setLoopPlayback] = useState(initialWorkspace?.loopPlayback ?? false);
   const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(initialWorkspace?.limitPlaybackToWindow ?? false);
   const [showNotes, setShowNotes] = useState(initialWorkspace?.showNotes ?? false);
+  const [timelinePinningEnabled, setTimelinePinningEnabled] = useState(initialWorkspace?.timelinePinningEnabled ?? true);
   const [editorNotice, setEditorNotice] = useState(null);
   const [validationModal, setValidationModal] = useState(null);
   const [past, setPast] = useState(initialWorkspace?.past ?? []);
@@ -1448,8 +1451,9 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       loopPlayback,
       limitPlaybackToWindow,
       showNotes,
+      timelinePinningEnabled,
     });
-  }, [past, future, selected, currentTime, track, zoomSec, viewportStart, snapToExisting, snapThresholdMs, loopPlayback, limitPlaybackToWindow, showNotes]);
+  }, [past, future, selected, currentTime, track, zoomSec, viewportStart, snapToExisting, snapThresholdMs, loopPlayback, limitPlaybackToWindow, showNotes, timelinePinningEnabled]);
 
   const assets = useMemo(() => Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.type, asset])), [job.artifacts]);
   const selectedContext = useMemo(() => selectionContext(arrangement, selected), [arrangement, selected]);
@@ -1856,7 +1860,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   }
 
   return (
-    <section className="workspace-panel editor-shell">
+    <section className={`workspace-panel editor-shell ${timelinePinningEnabled ? "timeline-pinning-enabled" : ""}`}>
       <div className="editor-top">
         <div>
           <h1>Dopasowanie</h1>
@@ -1875,13 +1879,6 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       </div>
 
-      <div className="quality-strip">
-        <SyllabificationBadge info={arrangement.syllabification} />
-        {qualityBadges(arrangement).map(([flag, count]) => (
-          <span key={flag} className={`quality-badge ${count ? "warning" : "ok"}`}>{FLAG_LABELS[flag] ?? flag}: {count}</span>
-        ))}
-      </div>
-
       {editorNotice && (
         <div className="editor-notice" role="alert">
           <span>{editorNotice}</span>
@@ -1889,7 +1886,14 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
+
+      <div className="quality-strip">
+        <SyllabificationBadge info={arrangement.syllabification} />
+        {qualityBadges(arrangement).map(([flag, count]) => (
+          <span key={flag} className={`quality-badge ${count ? "warning" : "ok"}`}>{FLAG_LABELS[flag] ?? flag}: {count}</span>
+        ))}
+      </div>
 
       <div className="editor-grid">
         <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playWordRange={playWordRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
@@ -2012,15 +2016,57 @@ function formatValidationDuration(value) {
   return Number.isFinite(milliseconds) ? `${Math.round(milliseconds)} ms` : "—";
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
+  const timelinePanelRef = useRef(null);
+  const [isSticky, setIsSticky] = useState(false);
   const range = Math.max(windowEnd - windowStart, 0.001);
   const visibleLines = arrangement.lines.filter((line) => line.endSec >= windowStart && line.startSec <= windowEnd);
   const visibleTokens = arrangement.tokens.filter((token) => token.endSec >= windowStart && token.startSec <= windowEnd);
   const visibleGhostNotes = showNotes ? arrangement.noteEvents.filter((note) => note.endSec >= windowStart && note.startSec <= windowEnd) : [];
   const noteById = new Map(arrangement.noteEvents.map((note) => [note.noteId, note]));
   const pitchRange = pitchRangeForWindow(arrangement, visibleTokens, visibleGhostNotes, noteById);
+
+  useEffect(() => {
+    let animationFrame = null;
+    const panel = timelinePanelRef.current;
+    const editorShell = panel?.closest(".editor-shell");
+
+    const syncTimelinePanelHeight = () => {
+      if (!panel || !editorShell) return;
+      editorShell.style.setProperty("--timeline-panel-height", `${panel.getBoundingClientRect().height}px`);
+    };
+
+    const updateStickyState = () => {
+      animationFrame = null;
+      if (!panel) return;
+      const panelTop = panel.getBoundingClientRect().top;
+      const nextIsSticky = timelinePinningEnabled && panelTop <= 1;
+      setIsSticky((current) => current === nextIsSticky ? current : nextIsSticky);
+    };
+
+    const scheduleStickyUpdate = () => {
+      if (animationFrame != null) return;
+      animationFrame = window.requestAnimationFrame(updateStickyState);
+    };
+
+    updateStickyState();
+    syncTimelinePanelHeight();
+    const resizeObserver = panel ? new ResizeObserver(syncTimelinePanelHeight) : null;
+    resizeObserver?.observe(panel);
+    window.addEventListener("scroll", scheduleStickyUpdate, true);
+    window.addEventListener("resize", scheduleStickyUpdate);
+
+    return () => {
+      resizeObserver?.disconnect();
+      editorShell?.style.removeProperty("--timeline-panel-height");
+      window.removeEventListener("scroll", scheduleStickyUpdate, true);
+      window.removeEventListener("resize", scheduleStickyUpdate);
+      if (animationFrame != null) window.cancelAnimationFrame(animationFrame);
+    };
+  }, [timelinePinningEnabled]);
+
   return (
-    <div className="timeline-panel">
+    <div ref={timelinePanelRef} className={`timeline-panel ${timelinePinningEnabled && isSticky ? "is-sticky" : ""}`}>
       <div className="timeline-header">
         <div className="track-switch subtle" role="group" aria-label="Źródło audio">
           {[
@@ -2049,6 +2095,9 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
             <input type="number" min="0" step="10" value={snapThresholdMs} onChange={(event) => setSnapThresholdInput(event.target.value)} />
             <span>ms</span>
           </label>
+          <button className={`icon-button toggle-button ${timelinePinningEnabled ? "active" : ""}`} type="button" title="przypinanie wykresu" aria-label="przypinanie wykresu" aria-pressed={timelinePinningEnabled} onClick={() => setTimelinePinningEnabled((value) => !value)}>
+            {timelinePinningEnabled ? <Pin size={14} fill="currentColor" /> : <PinOff size={14} />}
+          </button>
         </div>
       </div>
       <div className="combined-editor-shell">
