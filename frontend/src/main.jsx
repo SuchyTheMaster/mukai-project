@@ -1765,6 +1765,24 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     if (event.detail === 0) zoom(factor);
   }
 
+  function zoomFromWheel(event) {
+    if (!event.shiftKey || event.deltaY === 0) return;
+    event.preventDefault();
+    const graphRect = event.currentTarget.getBoundingClientRect();
+    const cursorRatio = graphRect.width > 0
+      ? Math.max(0, Math.min(1, (event.clientX - graphRect.left) / graphRect.width))
+      : 0.5;
+    const visibleRange = Math.max(windowEnd - windowStart, MIN_EDITOR_WINDOW_SEC);
+    const anchorTime = windowStart + visibleRange * cursorRatio;
+    const maxZoomSec = Math.max(duration || MIN_EDITOR_WINDOW_SEC, MIN_EDITOR_WINDOW_SEC);
+    const factor = event.deltaY < 0 ? 0.75 : 1.25;
+    const nextZoomSec = Math.max(MIN_EDITOR_WINDOW_SEC, Math.min(maxZoomSec, visibleRange * factor));
+    const nextMaxViewportStart = Math.max((duration || nextZoomSec) - nextZoomSec, 0);
+    const nextViewportStart = Math.max(0, Math.min(anchorTime - nextZoomSec * cursorRatio, nextMaxViewportStart));
+    setZoomSec(nextZoomSec);
+    setViewportStart(nextViewportStart);
+  }
+
   function zoomToLine(line) {
     zoomToRange(line);
   }
@@ -1909,7 +1927,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
 
       <div className="quality-strip">
         <SyllabificationBadge
@@ -2052,7 +2070,7 @@ function formatValidationDuration(value) {
   return Number.isFinite(milliseconds) ? `${Math.round(milliseconds)} ms` : "—";
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
   const timelinePanelRef = useRef(null);
   const [isSticky, setIsSticky] = useState(false);
   const range = Math.max(windowEnd - windowStart, 0.001);
@@ -2136,7 +2154,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
           </button>
         </div>
       </div>
-      <div className="combined-editor-shell">
+      <div className="combined-editor-shell" onWheel={zoomFromWheel}>
         <div ref={bindWaveform} className="waveform-canvas" />
         <div className="combined-editor-overlay" onPointerDown={(event) => startGraphBackgroundDrag(event, windowStart, windowEnd)}>
           <div className="playhead" style={{ left: `${percent(currentTime, windowStart, windowEnd)}%` }} />
