@@ -245,10 +245,18 @@ def _syllable_issue_details(syllable: ArrangementSyllable, **extra) -> dict:
 
 def _validate_arrangement(arrangement: Arrangement, accepted_song_bpm: float, gap_ms: int, error, warning) -> None:
     previous_sentence_start = None
+    previous_sentence = None
     for sentence in arrangement.sentences:
         if previous_sentence_start is not None and sentence.startSec < previous_sentence_start:
             error("sentences_out_of_order", "Frazy sa poza kolejnoscia.", {"sentenceId": sentence.sentenceId})
+        if previous_sentence is not None and sentence.startSec < previous_sentence.endSec:
+            error(
+                "overlapping_line",
+                "Frazy nachodza na siebie.",
+                {"sentenceId": sentence.sentenceId, "previousSentenceId": previous_sentence.sentenceId},
+            )
         previous_sentence_start = sentence.startSec
+        previous_sentence = sentence
         previous_syllable_start = None
         for word in sentence.words:
             for syllable in word.syllables:

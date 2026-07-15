@@ -126,17 +126,20 @@ Akcje globalne:
 Edytor powinien wizualnie oznaczać:
 
 - niską pewność transkrypcji;
-- niską periodicity pitch;
+- niską pewność tonu;
 - sylabę bez wartości MIDI;
 - nutę bez tekstu;
 - zbyt krótką nutę po przeliczeniu na beaty;
-- nachodzące na siebie frazy.
+- nachodzące na siebie sentencje.
+
+Pasek jakości wylicza te stany ponownie po każdej zmianie arrangementu i stosuje dla zbyt krótkich nut ten sam próg przeliczenia BPM na beaty co walidator eksportu. Pokazuje również liczbę sylab z flagą `needs_syllable_review` jako badge `Sylaby do sprawdzenia`. Wszystkie badge'e zachowują ten sam rozmiar również w stanie aktywnym. Kliknięcie badge'a z ostrzeżeniem wyróżnia białą ramką `3px` badge oraz powiązane sylaby na timeline i powiązane sylaby oraz wyrazy na liście sentencji; ponowne kliknięcie wyłącza wyróżnienie. Żółta ramka wyrazu na liście sentencji oraz warningi wyrazu w panelu właściwości są wyłącznie agregacją aktualnych warningów jego sylab: pojawiają się, gdy przynajmniej jedna sylaba ma warning, i znikają automatycznie, gdy nie ma go żadna sylaba. Sam brak przecinającej nuty nadaje wyłącznie `missing_note`, bez `needs_syllable_review`. Badge `Sylaby do sprawdzenia` w panelu właściwości ma tooltip `Kliknij aby potwierdzić, jeśli sylaba jest ok`; kliknięcie usuwa flagę z sylaby, a na poziomie wyrazu potwierdza wszystkie oznaczone sylaby tego wyrazu. Ręczna zmiana tekstu sylaby usuwa jej flagę `uncertain_text`. W panelu właściwości flaga niskiej pewności tekstu ma tooltip `kliknij by oznaczyć jako prawidłowy` i jest klikalna: akceptacja wyrazu usuwa flagę ze wszystkich jego sylab, a akceptacja pojedynczej sylaby usuwa stan wyrazu dopiero po zaakceptowaniu wszystkich jego sylab. Panel właściwości pokazuje również wyliczaną na bieżąco flagę zbyt krótkiej nuty dla sylaby oraz wyrazu. Flaga niskiej pewności tonu ma tooltip `kliknij aby uznać za pewny ton`; znika po kliknięciu albo po ręcznym ustawieniu MIDI. Akceptacja tej flagi na wyrazie obejmuje wszystkie jego sylaby.
 
 ## Wymagania UX
 
 - Odtwarzanie musi być zsynchronizowane z połączonym wykresem waveform/sylaby pitch.
 - Przełączniki `Oryginał`, `Wokal` i `Instrumental` są w nagłówku wykresu, a przyciski poprzedniego/następnego elementu, `Play`, pasek postępu, zoom, kłódka ograniczenia odtwarzania, magnes przyciągania i pole zakresu przyciągania znajdują się po prawej stronie tego samego nagłówka.
 - Przyciski `poprzedni element` i `następny element` przesuwają playhead do najbliższej krawędzi sylaby odpowiednio przed albo po aktualnej pozycji.
+- Kliknięcie prawym przyciskiem myszy na `poprzedni element` albo `następny element` przesuwa playhead do najbliższej wcześniejszej albo późniejszej krawędzi całej sentencji. Gdy takiej krawędzi nie ma, playhead trafia odpowiednio na początek albo koniec całego audio.
 - Wszystkie przyciski w nagłówku wykresu używają tego samego kompaktowego stylu aktywnego i nieaktywnego co przełącznik magnesu.
 - Przyciski przybliżania i oddalania zmieniają widoczny zakres wykresu o `25%` i pozwalają zejść poniżej okna `5 s`.
 - Przycisk z ikoną zapętlania znajduje się bezpośrednio po prawej stronie `Play`, ma systemowy tooltip `Zapętl odtwarzanie` i przełącza zapętlanie aktualnego odtwarzania.
@@ -183,4 +186,5 @@ Edytor powinien wizualnie oznaczać:
 - Każda nuta ma dodatnią długość.
 - Pitch mieści się w rozsądnym zakresie MIDI dla wokalu.
 - Linie są posortowane rosnąco po czasie.
+- Linie nie nachodzą na siebie.
 - Golden notes, rap notes i rap golden notes są obsługiwane jako typy nut w MVP.

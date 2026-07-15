@@ -169,6 +169,7 @@ Eksporter musi zgłosić błąd, jeśli:
 - nazwy plików audio nie odpowiadają wzorowi `{baseFilename} [FULL].mp3`, `{baseFilename} [INSTR].mp3`, `{baseFilename} [VOC].mp3`;
 - nuta ma długość mniejszą niż 1 beat;
 - frazy są poza kolejnością;
+- frazy nachodzą na siebie;
 - sylaba eksportowana jako nuta punktowana nie ma wartości `midi`;
 - wynikowy plik nie kończy się `E`.
 

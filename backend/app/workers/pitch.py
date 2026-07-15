@@ -697,7 +697,7 @@ def syllable_midi_and_flags(notes: list[NoteEvent], start_sec: float, end_sec: f
         if note.requiresReview:
             flags.append("uncertain_pitch")
     if total_weight <= 0:
-        return None, ["missing_note", "needs_syllable_review"]
+        return None, ["missing_note"]
     return int(round(weighted_sum / total_weight)), dedupe_flags(flags)
 
 

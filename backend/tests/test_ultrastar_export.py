@@ -159,6 +159,33 @@ class UltraStarExportTest(unittest.TestCase):
         self.assertTrue(report.valid)
         self.assertIn("freestyle_missing_midi", [item.code for item in report.warnings])
 
+    def test_validation_rejects_note_shorter_than_half_an_ultrastar_beat(self):
+        too_short = arrangement()
+        too_short.sentences[0].words[0].syllables[0].endSec = 1.05
+        report = validate_export(job(audio_assets()), too_short, selection())
+
+        self.assertFalse(report.valid)
+        issue = next(item for item in report.errors if item.code == "note_too_short")
+        self.assertEqual(issue.details["syllableId"], "syl_1")
+
+    def test_validation_rejects_overlapping_sentences(self):
+        overlapping = arrangement()
+        overlap_word = word("word_3", [syllable("syl_4", "druga", 2.9, 3.4, 62)])
+        overlapping.sentences.append(
+            ArrangementSentence(
+                sentenceId="sent_2",
+                startSec=2.9,
+                endSec=3.4,
+                text="druga",
+                words=[overlap_word],
+            )
+        )
+        report = validate_export(job(audio_assets()), overlapping, selection())
+
+        self.assertFalse(report.valid)
+        issue = next(item for item in report.errors if item.code == "overlapping_line")
+        self.assertEqual(issue.details, {"sentenceId": "sent_2", "previousSentenceId": "sent_1"})
+
     def test_zip_export_contains_song_files_without_project_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             get_settings.cache_clear()

@@ -1207,11 +1207,14 @@ summary:hover {
 .quality-badge {
   display: inline-flex;
   align-items: center;
+  box-sizing: border-box;
   min-height: 26px;
   padding: 4px 10px;
+  border: 3px solid transparent;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 600;
+  line-height: 1.4;
 }
 
 .quality-badge.ok {
@@ -1222,6 +1225,20 @@ summary:hover {
 .quality-badge.warning {
   color: var(--warning);
   background: rgba(255, 215, 0, 0.15);
+}
+
+.quality-filter,
+.quality-accept {
+  border-color: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.quality-filter:hover,
+.quality-filter:focus-visible,
+.quality-accept:hover,
+.quality-accept:focus-visible {
+  filter: brightness(1.2);
 }
 
 .save-menu {
@@ -2114,6 +2131,13 @@ summary:hover {
   --syllable-chip-border: #ef4965;
   --syllable-chip-content: #ffd9df;
   --syllable-inner-glow: none;
+}
+
+.quality-badge.quality-highlight,
+.syllable-block.quality-highlight,
+.word-block.quality-highlight,
+.syllable-inline-input.quality-highlight {
+  border: 3px solid #ffffff;
 }
 
 .property-stack {

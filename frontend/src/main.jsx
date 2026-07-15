@@ -267,13 +267,13 @@ const STAGE_LABELS = {
 const PREPROCESSING_DISPLAY_ARTIFACT_TYPES = new Set(["whisperx_input", "torchcrepe_input"]);
 
 const FLAG_LABELS = {
-  uncertain_pitch: "Niska periodicity",
+  uncertain_pitch: "Niska pewność tonu",
   missing_note: "Brak nuty dla tekstu",
   uncertain_text: "Niska pewność tekstu",
   needs_syllable_review: "Sylaby do sprawdzenia",
   contains_review_items: "Elementy do recenzji",
   too_short_note: "Zbyt krótka nuta",
-  overlapping_line: "Nachodzące frazy",
+  overlapping_line: "Nachodzące sentencje",
 };
 
 const NOTE_TYPES = [
@@ -1434,6 +1434,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const [timelinePinningEnabled, setTimelinePinningEnabled] = useState(initialWorkspace?.timelinePinningEnabled ?? true);
   const [editorNotice, setEditorNotice] = useState(null);
   const [validationModal, setValidationModal] = useState(null);
+  const [activeQualityFlag, setActiveQualityFlag] = useState(null);
   const [past, setPast] = useState(initialWorkspace?.past ?? []);
   const [future, setFuture] = useState(initialWorkspace?.future ?? []);
 
@@ -1461,6 +1462,12 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const selectedLine = arrangement?.lines.find((line) => line.lineId === selectedLineId) ?? arrangement?.lines[0] ?? null;
   const selectedWord = selected.type === "word" ? findWordById(arrangement, selected.id)?.word ?? null : null;
   const selectedToken = selected.type === "token" ? arrangement?.tokens.find((token) => token.tokenId === selected.id) : null;
+  const qualityIssues = useMemo(() => qualityIssuesForArrangement(arrangement, job), [arrangement, job.tempo?.acceptedSongBpm]);
+  const syllabificationIssue = useMemo(() => syllabificationIssueForArrangement(arrangement), [arrangement]);
+  const syllabificationWarning = hasSyllabificationWarning(arrangement?.syllabification);
+  const activeQualityIssue = activeQualityFlag === "syllabification" && syllabificationWarning
+    ? syllabificationIssue
+    : qualityIssues.find((issue) => issue.flag === activeQualityFlag && issue.count > 0) ?? null;
   const duration = job.audio?.durationSec ?? arrangementDuration(arrangement);
   const maxViewportStart = Math.max(duration - zoomSec, 0);
   const windowStart = Math.max(0, Math.min(viewportStart, maxViewportStart));
@@ -1486,6 +1493,10 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   }, [arrangement?.arrangementId, selected.id]);
 
   useEffect(() => {
+    if (activeQualityFlag && !activeQualityIssue) setActiveQualityFlag(null);
+  }, [activeQualityFlag, activeQualityIssue]);
+
+  useEffect(() => {
     function onKeyDown(event) {
       if (event.key !== "Delete" || !selected.id) return;
       const target = event.target;
@@ -1505,7 +1516,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     const waveSurfer = WaveSurfer.create({
       container: waveformRef.current,
       url: audioUrl,
-      height: 104,
+      height: Math.max(1, waveformRef.current.clientHeight),
       normalize: true,
       waveColor: "rgba(58, 134, 255, 0.48)",
       progressColor: "rgba(255, 0, 110, 0.72)",
@@ -1519,6 +1530,12 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       cursorWidth: 0,
     });
     waveSurferRef.current = waveSurfer;
+    const syncWaveformHeight = () => {
+      const height = Math.max(1, waveformRef.current?.clientHeight ?? 1);
+      waveSurfer.setOptions({ height });
+    };
+    const waveformResizeObserver = new ResizeObserver(syncWaveformHeight);
+    waveformResizeObserver.observe(waveformRef.current);
     const unsubReady = waveSurfer.on("ready", () => {
       const viewport = viewportSyncRef.current;
       waveSurfer.setTime(Math.min(targetTime, duration || targetTime));
@@ -1552,6 +1569,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       unsubPlay();
       unsubPause();
       unsubFinish();
+      waveformResizeObserver.disconnect();
       waveSurfer.destroy();
       if (waveSurferRef.current === waveSurfer) waveSurferRef.current = null;
     };
@@ -1638,6 +1656,11 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   function seekTokenEdge(direction) {
     const edge = nearestTokenEdge(arrangement, currentTime, direction);
     if (edge != null) seek(edge);
+  }
+
+  function seekSentenceEdge(direction) {
+    const edge = nearestLineEdge(arrangement, currentTime, direction);
+    seek(edge ?? (direction === "previous" ? 0 : duration));
   }
 
   function selectAndSeek(type, id, timeSec) {
@@ -1886,17 +1909,29 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
 
       <div className="quality-strip">
-        <SyllabificationBadge info={arrangement.syllabification} />
-        {qualityBadges(arrangement).map(([flag, count]) => (
-          <span key={flag} className={`quality-badge ${count ? "warning" : "ok"}`}>{FLAG_LABELS[flag] ?? flag}: {count}</span>
-        ))}
+        <SyllabificationBadge
+          info={arrangement.syllabification}
+          active={activeQualityFlag === "syllabification"}
+          onToggle={() => setActiveQualityFlag((current) => current === "syllabification" ? null : "syllabification")}
+        />
+        {qualityIssues.map(({ flag, count }) => count ? (
+          <button
+            key={flag}
+            className={`quality-badge warning quality-filter ${activeQualityFlag === flag ? "quality-highlight" : ""}`}
+            type="button"
+            aria-pressed={activeQualityFlag === flag}
+            onClick={() => setActiveQualityFlag((current) => current === flag ? null : flag)}
+          >
+            {FLAG_LABELS[flag] ?? flag}: {count}
+          </button>
+        ) : <span key={flag} className="quality-badge ok">{FLAG_LABELS[flag] ?? flag}: 0</span>)}
       </div>
 
       <div className="editor-grid">
-        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playWordRange={playWordRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
+        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} highlightedWordIds={activeQualityIssue?.wordIds ?? []} acceptedSongBpm={job.tempo?.acceptedSongBpm} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playWordRange={playWordRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
         <PropertiesPanel
           arrangement={arrangement}
           selected={selected}
@@ -1904,6 +1939,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
           selectedLine={selectedLine}
           selectedWord={selectedWord}
           selectedToken={selectedToken}
+          acceptedSongBpm={job.tempo?.acceptedSongBpm}
           commit={commit}
           onSplitLine={splitSelectedLineAtPlayhead}
         />
@@ -2016,7 +2052,7 @@ function formatValidationDuration(value) {
   return Number.isFinite(milliseconds) ? `${Math.round(milliseconds)} ms` : "—";
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
   const timelinePanelRef = useRef(null);
   const [isSticky, setIsSticky] = useState(false);
   const range = Math.max(windowEnd - windowStart, 0.001);
@@ -2078,8 +2114,8 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
           ))}
         </div>
         <div className="timeline-tools">
-          <button className="icon-button" type="button" title="poprzedni element" aria-label="poprzedni element" onClick={seekPreviousTokenEdge}><SkipBack size={14} /></button>
-          <button className="icon-button" type="button" title="następny element" aria-label="następny element" onClick={seekNextTokenEdge}><SkipForward size={14} /></button>
+          <button className="icon-button" type="button" title="poprzedni element" aria-label="poprzedni element" onClick={seekPreviousTokenEdge} onContextMenu={(event) => { event.preventDefault(); seekPreviousSentenceEdge(); }}><SkipBack size={14} /></button>
+          <button className="icon-button" type="button" title="następny element" aria-label="następny element" onClick={seekNextTokenEdge} onContextMenu={(event) => { event.preventDefault(); seekNextSentenceEdge(); }}><SkipForward size={14} /></button>
           <button className={`button secondary transport-play ${playing ? "active" : ""}`} type="button" disabled={!audioReady} onClick={togglePlay}>
             {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? "Pauza" : "Play"}
           </button>
@@ -2148,7 +2184,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, selec
             return (
               <div
                 key={token.tokenId}
-                className={`syllable-block note-type-${token.noteType ?? "normal"} ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${token.requiresReview ? "review" : ""}`}
+                className={`syllable-block note-type-${token.noteType ?? "normal"} ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${token.requiresReview ? "review" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""}`}
                 style={{
                   left: `${percent(token.startSec, windowStart, windowEnd)}%`,
                   width: `${spanPercent(token.startSec, token.endSec, windowStart, windowEnd)}%`,
@@ -2249,7 +2285,7 @@ function GraphScrollbar({ duration, windowStart, zoomSec, onChange }) {
   );
 }
 
-function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, playTokenRange, playWordRange, playLineRange, commit, zoomToLine, zoomToToken }) {
+function PhraseList({ arrangement, selected, selectedContext, highlightedTokenIds, highlightedWordIds, acceptedSongBpm, selectAndSeek, playTokenRange, playWordRange, playLineRange, commit, zoomToLine, zoomToToken }) {
   const [insertIndex, setInsertIndex] = useState(null);
   const [insertText, setInsertText] = useState("");
   const trimmedInsertText = insertText.trim();
@@ -2312,10 +2348,12 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
               <span>{formatTime(line.startSec)} - {formatTime(line.endSec)}</span>
             </button>
             <div className="word-list">
-              {wordsForLine(arrangement, line).map((word) => (
+              {wordsForLine(arrangement, line).map((word) => {
+                const hasWarnings = propertyQualityFlags(word.tokens, acceptedSongBpm).length > 0;
+                return (
                   <div
                     key={word.wordId}
-                    className={`word-block ${word.requiresReview ? "review" : ""} ${selectedContext.wordIds.includes(word.wordId) ? "selected" : ""}`}
+                    className={`word-block ${hasWarnings ? "review" : ""} ${selectedContext.wordIds.includes(word.wordId) ? "selected" : ""} ${highlightedWordIds.includes(word.wordId) ? "quality-highlight" : ""}`}
                     draggable
                     onDragStart={(event) => startWordDrag(event, word.wordId)}
                     onDragOver={(event) => event.preventDefault()}
@@ -2337,7 +2375,7 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
                       {word.tokens.map((token) => (
                         <input
                           key={token.tokenId}
-                          className={`token-chip syllable-inline-input note-type-${token.noteType ?? "normal"} ${token.midi == null ? "missing-note" : ""} ${token.requiresReview ? "review" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""}`}
+                          className={`token-chip syllable-inline-input note-type-${token.noteType ?? "normal"} ${token.midi == null ? "missing-note" : ""} ${token.requiresReview ? "review" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""}`}
                           draggable
                           value={token.text || ""}
                           aria-label="Treść sylaby"
@@ -2372,7 +2410,8 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
                       </button>
                     </div>
                   </div>
-              ))}
+                );
+              })}
               <button
                 className="mini-add word-insert"
                 type="button"
@@ -2392,7 +2431,7 @@ function PhraseList({ arrangement, selected, selectedContext, selectAndSeek, pla
   );
 }
 
-function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, selectedWord, selectedToken, commit, onSplitLine }) {
+function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, selectedWord, selectedToken, acceptedSongBpm, commit, onSplitLine }) {
   if (!selectedLine) {
     return <div className="properties-panel"><div className="panel-heading"><strong>Właściwości</strong></div></div>;
   }
@@ -2402,6 +2441,8 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
   const previousLine = selectedLineIndex > 0 ? sortedLines[selectedLineIndex - 1] : null;
   const lineInsertIndex = selectedLineIndex === -1 ? sortedLines.length : selectedLineIndex + 1;
   const selectedLineText = lineText(arrangement, selectedLine) || "...";
+  const selectedWordQualityFlags = propertyQualityFlags(selectedWord?.tokens ?? [], acceptedSongBpm);
+  const selectedTokenQualityFlags = propertyQualityFlags(selectedToken ? [selectedToken] : [], acceptedSongBpm);
 
   return (
     <div className="properties-panel">
@@ -2435,7 +2476,10 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
             <PropertyIconButton title="Podziel wyraz" onClick={() => commit((draft) => splitWord(draft, selectedWord.wordId))}><Scissors size={16} /></PropertyIconButton>
             <PropertyIconButton title="Usuń wyraz" danger onClick={() => commit((draft) => deleteWord(draft, selectedWord.wordId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
-          <QualityFlags flags={selectedWord.qualityFlags} />
+          <QualityFlags
+            flags={selectedWordQualityFlags}
+            onAcceptFlag={(flag) => commit((draft) => acceptWordQualityFlag(draft, selectedWord.wordId, flag))}
+          />
         </div>
       )}
 
@@ -2460,7 +2504,10 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
             <PropertyIconButton title="Podziel sylabę" onClick={() => commit((draft) => splitToken(draft, selectedToken.tokenId))}><Scissors size={16} /></PropertyIconButton>
             <PropertyIconButton title="Usuń sylabę" danger onClick={() => commit((draft) => deleteToken(draft, selectedToken.tokenId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
-          <QualityFlags flags={selectedToken.qualityFlags} />
+          <QualityFlags
+            flags={selectedTokenQualityFlags}
+            onAcceptFlag={(flag) => commit((draft) => acceptTokenQualityFlag(draft, selectedToken.tokenId, flag))}
+          />
         </div>
       )}
 
@@ -2527,9 +2574,29 @@ function formatPropertyTime(value) {
   return `${roundTime(value)} s`;
 }
 
-function QualityFlags({ flags = [] }) {
-  if (!flags.length) return <span className="quality-badge ok">Bez flag jakości</span>;
-  return <div className="flag-list">{flags.map((flag) => <span key={flag} className="quality-badge warning">{FLAG_LABELS[flag] ?? flag}</span>)}</div>;
+function QualityFlags({ flags = [], onAcceptFlag }) {
+  if (!flags.length) return null;
+  return (
+    <div className="flag-list">
+      {flags.map((flag) => ["uncertain_text", "uncertain_pitch", "needs_syllable_review"].includes(flag) && onAcceptFlag ? (
+        <button key={flag} className="quality-badge warning quality-accept" type="button" title={qualityAcceptTooltip(flag)} onClick={() => onAcceptFlag(flag)}>
+          {FLAG_LABELS[flag] ?? flag}
+        </button>
+      ) : <span key={flag} className="quality-badge warning">{FLAG_LABELS[flag] ?? flag}</span>)}
+    </div>
+  );
+}
+
+function qualityAcceptTooltip(flag) {
+  if (flag === "uncertain_pitch") return "kliknij aby uznać za pewny ton";
+  if (flag === "needs_syllable_review") return "Kliknij aby potwierdzić, jeśli sylaba jest ok";
+  return "kliknij by oznaczyć jako prawidłowy";
+}
+
+function propertyQualityFlags(tokens, acceptedSongBpm) {
+  const flags = new Set(tokens.flatMap((token) => (token.qualityFlags ?? []).filter((flag) => flag !== "too_short_note")));
+  if (tokens.some((token) => isTooShortForUltraStar(token, acceptedSongBpm))) flags.add("too_short_note");
+  return [...flags];
 }
 
 function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step, name, required = false }) {
@@ -2946,7 +3013,7 @@ function fromEditorArrangement(arrangement) {
         text: syllables.map((syllable) => syllable.text).join(""),
         confidence: null,
         requiresReview: syllables.some((syllable) => syllable.requiresReview),
-        qualityFlags: [],
+        qualityFlags: [...new Set(syllables.flatMap((syllable) => syllable.qualityFlags ?? []))],
         syllables,
       };
     });
@@ -3073,8 +3140,24 @@ function updateLine(draft, lineId, changes) {
 function updateToken(draft, tokenId, changes) {
   const token = draft.tokens.find((item) => item.tokenId === tokenId);
   if (!token) return draft;
+  const textWasChanged = Object.prototype.hasOwnProperty.call(changes, "text") && changes.text !== token.text;
   const cleaned = cleanTiming(changes, token);
   Object.assign(token, cleaned);
+  if (textWasChanged) clearQualityFlag(token, "uncertain_text");
+  return draft;
+}
+
+function acceptTokenQualityFlag(draft, tokenId, flag) {
+  if (!["uncertain_text", "uncertain_pitch", "needs_syllable_review"].includes(flag)) return draft;
+  const token = draft.tokens.find((item) => item.tokenId === tokenId);
+  if (token) clearQualityFlag(token, flag);
+  return draft;
+}
+
+function acceptWordQualityFlag(draft, wordId, flag) {
+  if (!["uncertain_text", "uncertain_pitch", "needs_syllable_review"].includes(flag)) return draft;
+  const found = findWordById(draft, wordId);
+  found?.word.tokens.forEach((token) => clearQualityFlag(token, flag));
   return draft;
 }
 
@@ -3185,6 +3268,7 @@ function setNoteMidi(draft, note, value) {
 function setTokenMidi(draft, token, value) {
   token.midi = clampMidi(value);
   clearMissingNoteFlag(token);
+  clearQualityFlag(token, "uncertain_pitch");
 }
 
 function snapTimeEdge(draft, value, exclude = {}, thresholdSec = 0) {
@@ -3792,6 +3876,7 @@ function normalizeArrangement(arrangement) {
   normalizeWordIds(arrangement);
   normalizeTokenTexts(arrangement);
   syncAssignmentQualityFlags(arrangement);
+  syncTextConfidenceQualityFlags(arrangement);
   arrangement.lines.forEach((line) => {
     const tokens = tokensForLine(arrangement, line);
     if (!tokens.length) return;
@@ -3853,13 +3938,21 @@ function syncAssignmentQualityFlags(arrangement) {
   });
 }
 
+function syncTextConfidenceQualityFlags(arrangement) {
+  arrangement.lines.forEach((line) => {
+    if (tokensForLine(arrangement, line).some((token) => token.qualityFlags?.includes("uncertain_text"))) {
+      markQualityFlag(line, "uncertain_text");
+    } else {
+      clearQualityFlag(line, "uncertain_text");
+    }
+  });
+}
+
 function syncOverlapQualityFlags(arrangement) {
   [...(arrangement.lines ?? []), ...(arrangement.tokens ?? [])].forEach((item) => clearQualityFlag(item, "overlapping_line"));
-  flagOverlaps(arrangement.lines ?? [], (line) => markQualityFlag(line, "overlapping_line"));
-  (arrangement.lines ?? []).forEach((line) => {
-    const words = wordsForLine(arrangement, line);
-    flagOverlaps(words, (word) => word.tokens.forEach((token) => markQualityFlag(token, "overlapping_line")));
-    words.forEach((word) => flagOverlaps(word.tokens, (token) => markQualityFlag(token, "overlapping_line")));
+  flagOverlaps(arrangement.lines ?? [], (line) => {
+    markQualityFlag(line, "overlapping_line");
+    tokensForLine(arrangement, line).forEach((token) => markQualityFlag(token, "overlapping_line"));
   });
 }
 
@@ -3888,6 +3981,24 @@ function nearestTokenEdge(arrangement, timeSec, direction) {
   arrangement.tokens.forEach((token) => {
     if (Number.isFinite(token.startSec)) edgeSet.add(roundTime(token.startSec));
     if (Number.isFinite(token.endSec)) edgeSet.add(roundTime(token.endSec));
+  });
+  const edges = [...edgeSet].sort((left, right) => left - right);
+  const epsilon = 0.001;
+  if (direction === "previous") {
+    for (let index = edges.length - 1; index >= 0; index -= 1) {
+      if (edges[index] < timeSec - epsilon) return edges[index];
+    }
+    return null;
+  }
+  return edges.find((edge) => edge > timeSec + epsilon) ?? null;
+}
+
+function nearestLineEdge(arrangement, timeSec, direction) {
+  if (!arrangement?.lines?.length || !Number.isFinite(timeSec)) return null;
+  const edgeSet = new Set();
+  arrangement.lines.forEach((line) => {
+    if (Number.isFinite(line.startSec)) edgeSet.add(roundTime(line.startSec));
+    if (Number.isFinite(line.endSec)) edgeSet.add(roundTime(line.endSec));
   });
   const edges = [...edgeSet].sort((left, right) => left - right);
   const epsilon = 0.001;
@@ -4002,9 +4113,11 @@ function waveformPixelsPerSecond(container, zoomSec) {
   return Math.max(24, Math.round((container?.clientWidth || 900) / Math.max(zoomSec, 1)));
 }
 
-function SyllabificationBadge({ info }) {
+function SyllabificationBadge({ info, active = false, onToggle }) {
   if (!info) {
-    return <span className="quality-badge warning">Sylabizacja: brak danych</span>;
+    return onToggle
+      ? <button className={`quality-badge warning quality-filter ${active ? "quality-highlight" : ""}`} type="button" aria-pressed={active} onClick={onToggle}>Sylabizacja: brak danych</button>
+      : <span className="quality-badge warning">Sylabizacja: brak danych</span>;
   }
   const requested = info.requestedMethod;
   const applied = info.appliedMethod;
@@ -4012,7 +4125,25 @@ function SyllabificationBadge({ info }) {
   const appliedLabel = syllabificationBadgeLabel(applied);
   const requestedLabel = syllabificationBadgeLabel(requested);
   const text = warning ? `Sylabizacja: ${appliedLabel} (wybrano ${requestedLabel})` : `Sylabizacja: ${appliedLabel}`;
+  if (warning && onToggle) {
+    return <button className={`quality-badge warning quality-filter ${active ? "quality-highlight" : ""}`} type="button" title={info.fallbackReason ?? ""} aria-pressed={active} onClick={onToggle}>{text}</button>;
+  }
   return <span className={`quality-badge ${warning ? "warning" : "ok"}`} title={info.fallbackReason ?? ""}>{text}</span>;
+}
+
+function hasSyllabificationWarning(info) {
+  return !info || Boolean(info.requestedMethod && info.appliedMethod && info.requestedMethod !== info.appliedMethod);
+}
+
+function syllabificationIssueForArrangement(arrangement) {
+  const tokens = arrangement?.tokens ?? [];
+  return {
+    flag: "syllabification",
+    count: tokens.length,
+    lineIds: (arrangement?.lines ?? []).map((line) => line.lineId),
+    wordIds: [...new Set(tokens.map((token) => token.wordId || token.tokenId))],
+    tokenIds: tokens.map((token) => token.tokenId),
+  };
 }
 
 function syllabificationBadgeLabel(method) {
@@ -4044,16 +4175,71 @@ function syncWaveformViewport(waveSurfer, container, startSec, zoomSec) {
   }
 }
 
-function qualityBadges(arrangement) {
-  const flags = ["uncertain_text", "uncertain_pitch", "missing_note", "too_short_note", "overlapping_line"];
-  const counts = Object.fromEntries(flags.map((flag) => [flag, 0]));
-  arrangement.lines.forEach((line) => line.qualityFlags?.forEach((flag) => counts[flag] = (counts[flag] ?? 0) + 1));
-  arrangement.tokens.forEach((token) => token.qualityFlags?.forEach((flag) => counts[flag] = (counts[flag] ?? 0) + 1));
-  arrangement.noteEvents.forEach((note) => note.qualityFlags?.forEach((flag) => counts[flag] = (counts[flag] ?? 0) + 1));
-  arrangement.noteEvents.forEach((note) => {
-    if (note.endSec - note.startSec < 0.08) counts.too_short_note += 1;
+function qualityIssuesForArrangement(arrangement, job) {
+  const flags = ["uncertain_text", "uncertain_pitch", "missing_note", "needs_syllable_review", "too_short_note", "overlapping_line"];
+  const contexts = Object.fromEntries(flags.map((flag) => [flag, {
+    flag,
+    sources: new Set(),
+    lineIds: new Set(),
+    wordIds: new Set(),
+    tokenIds: new Set(),
+  }]));
+  if (!arrangement) return flags.map((flag) => ({ flag, count: 0, lineIds: [], wordIds: [], tokenIds: [] }));
+
+  const addToken = (flag, token, source = `token:${token.tokenId}`) => {
+    const context = contexts[flag];
+    if (!context || !token) return;
+    context.sources.add(source);
+    context.tokenIds.add(token.tokenId);
+    context.wordIds.add(token.wordId || token.tokenId);
+    arrangement.lines.filter((line) => line.tokenIds.includes(token.tokenId)).forEach((line) => context.lineIds.add(line.lineId));
+  };
+  const addLine = (flag, line) => {
+    const context = contexts[flag];
+    if (!context || !line) return;
+    context.sources.add(`line:${line.lineId}`);
+    context.lineIds.add(line.lineId);
+    tokensForLine(arrangement, line).forEach((token) => addToken(flag, token, `line:${line.lineId}`));
+  };
+
+  arrangement.tokens.forEach((token) => {
+    if (token.qualityFlags?.includes("uncertain_text")) addToken("uncertain_text", token);
+    if (token.qualityFlags?.includes("uncertain_pitch")) addToken("uncertain_pitch", token);
+    if (token.midi == null) addToken("missing_note", token);
+    if (token.qualityFlags?.includes("needs_syllable_review")) addToken("needs_syllable_review", token);
+    if (isTooShortForUltraStar(token, job?.tempo?.acceptedSongBpm)) addToken("too_short_note", token);
   });
-  return flags.map((flag) => [flag, counts[flag] ?? 0]);
+  arrangement.lines.forEach((line) => {
+    const tokens = tokensForLine(arrangement, line);
+    if (line.qualityFlags?.includes("uncertain_text") && !tokens.some((token) => token.qualityFlags?.includes("uncertain_text"))) addLine("uncertain_text", line);
+  });
+  const sortedLines = [...arrangement.lines].sort((left, right) => left.startSec - right.startSec);
+  sortedLines.forEach((line, index) => {
+    const next = sortedLines[index + 1];
+    if (next && line.endSec > next.startSec) {
+      addLine("overlapping_line", line);
+      addLine("overlapping_line", next);
+    }
+  });
+
+  return flags.map((flag) => {
+    const context = contexts[flag];
+    return {
+      flag,
+      count: context.sources.size,
+      lineIds: [...context.lineIds],
+      wordIds: [...context.wordIds],
+      tokenIds: [...context.tokenIds],
+    };
+  });
+}
+
+function isTooShortForUltraStar(token, acceptedSongBpm) {
+  const bpm = Number(acceptedSongBpm);
+  if (!Number.isFinite(bpm) || bpm <= 0 || !Number.isFinite(token.startSec) || !Number.isFinite(token.endSec)) return false;
+  const ultrastarBeatMs = 60000 / (bpm * 4);
+  const rawLengthBeats = ((token.endSec - token.startSec) * 1000) / ultrastarBeatMs;
+  return rawLengthBeats <= 0.5;
 }
 
 function countFlaggedItems(arrangement, flag) {
