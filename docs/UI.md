@@ -26,6 +26,7 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 - Po utworzeniu zadania lewa kolumna pokazuje sekcję `WGRANE AUDIO`, dane pliku i nieklikalny podgląd covera; obszar uploadu audio oraz akcje covera są wtedy ukryte.
 - Lista `Ustawienia zadania` w lewej kolumnie pokazuje tylko grupy ustawień już zatwierdzone przez użytkownika. Po późniejszej edycji zatwierdzone wartości są aktualizowane, a niezatwierdzone formularze etapów nie pojawiają się w tej liście.
 - Lista `Ustawienia zadania` używa większego odstępu `16px` pod wierszami `Język` i `Sylabizacja`, żeby rozdzielić metadane, główne modele i ustawienia zaawansowane; w grupie transkrypcji pokazuje też finalne `Pozycjonowanie`.
+- Formularz `Wstępne dopasowanie` pokazuje w jednym rzędzie pola `Ms między sentencjami`, `Najkrótsza nuta karaoke (ms)`, `Scalanie krótkich przerw (ms)`, `WERYFIKUJ SYLABY DŁUŻSZE NIŻ (MS)` z technicznym podpisem `checkNoteLongerThan` i wartością domyślną `400` oraz `Próg ciszy do weryfikacji (dB)` z technicznym podpisem `silenceTresholdForNoteChecking` i wartością domyślną `-60`.
 - Główny obszar pracy pomiędzy kolumnami pokazuje właściwą zawartość aktywnego widoku: upload, status przetwarzania, edytor albo eksport.
 - Po prawej stronie znajduje się pływająca kolumna etapów pipeline'u. Nad listą pipeline'u pokazuje aktualny etap, a niżej od razu wszystkie spodziewane etapy.
 - W widoku `Dopasowanie` prawa kolumna jest domyślnie ukryta, żeby zwiększyć przestrzeń roboczą edytora, ale użytkownik może ją pokazać i ponownie ukryć.

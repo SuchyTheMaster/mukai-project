@@ -255,6 +255,8 @@ def continue_after_transcription(job_id: str) -> None:
                     "sentenceGapMs": refreshed.transcriptionSettings.sentenceGapMs,
                     "minNoteLengthMs": refreshed.pitchSettings.minNoteLengthMs,
                     "mergeGapMs": refreshed.pitchSettings.mergeGapMs,
+                    "checkNoteLongerThan": refreshed.pitchSettings.checkNoteLongerThan,
+                    "silenceTresholdForNoteChecking": refreshed.pitchSettings.silenceTresholdForNoteChecking,
                 },
             )
     elif refreshed and is_stage_confirmed(refreshed, "detecting_pitch"):

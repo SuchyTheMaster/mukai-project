@@ -215,7 +215,7 @@ Cel:
 
 - Połączyć rozpoznane słowa/frazy z nutami w edytowalny szkic karaoke.
 - Przygotować edycję na poziomie słów i sylab.
-- Utworzyć sentencje karaoke z aligned words oraz nuty karaoke z ramek F0 zgodnie z ustawieniami `Ms między sentencjami`, `Najkrótsza nuta karaoke (ms)` i `Scalanie krótkich przerw (ms)`.
+- Utworzyć sentencje karaoke z aligned words oraz nuty karaoke z ramek F0 zgodnie z ustawieniami `Ms między sentencjami`, `Najkrótsza nuta karaoke (ms)`, `Scalanie krótkich przerw (ms)`, `checkNoteLongerThan` i `silenceTresholdForNoteChecking`.
 
 Reguły startowe:
 
@@ -232,6 +232,7 @@ Reguły startowe:
 - Sylaba dostaje własną wartość `midi` wyliczoną jako uśrednienie nut przecinających jej czas trwania.
 - `NoteEvent` pozostaje niezależną warstwą diagnostyczną; initial alignment nie dzieli nut pod sylaby i nie zapisuje trwałej relacji sylaba-nuta.
 - Jeśli kolejne sylaby tego samego słowa mają tę samą wartość `midi`, szkic może scalić je w jeden blok sylaby.
+- Po scaleniu bloków sprawdzać sylaby dłuższe niż `checkNoteLongerThan` (domyślnie `400 ms`). Po pierwszej słyszalnej ramce znaleźć pierwszy ciągły obszar z `loudnessDb` poniżej niezależnego `silenceTresholdForNoteChecking` (domyślnie `-60 dB`) trwający co najmniej `mergeGapMs` i skrócić wyłącznie `ArrangementSyllable.endSec` do początku tego obszaru. Krótsze spadki głośności nie skracają sylaby, późniejszy dźwięk należący do następnej nuty nie anuluje korekty, a całkowity brak słyszalnych ramek nadaje `needs_syllable_review` bez zmiany czasu. `silenceThresholdDb` nadal dotyczy wyłącznie detekcji pitch.
 - Sylaby bez `midi` zostawiać jako elementy do recenzji. Nuty bez przecięcia z sylabami zostają w niezależnej warstwie diagnostycznej bez dopasowywania ich na siłę.
 - Jeśli pitch jest niepewny, oznaczać nutę jako wymagającą korekty zamiast usuwać ją automatycznie.
 

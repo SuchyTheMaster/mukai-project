@@ -67,6 +67,8 @@ const defaultPitch = {
   frameStepMs: 10,
   minNoteLengthMs: 120,
   mergeGapMs: 90,
+  checkNoteLongerThan: 400,
+  silenceTresholdForNoteChecking: -60,
 };
 
 const defaultTranscription = {
@@ -242,6 +244,8 @@ const PITCH_SETTING_FIELDS = [
   ["frameStepMs", { label: "Dokładność czasu analizy (ms)", step: "1", tooltip: "Odstęp między kolejnymi pomiarami tonu. Większa wartość jest szybsza, ale mniej dokładna czasowo. Mniejsza wartość daje gęstszy pomiar i lepsze granice nut, kosztem dłuższej analizy." }],
   ["minNoteLengthMs", { label: "Najkrótsza nuta karaoke (ms)", step: "1", tooltip: "Minimalny czas trwania nuty w szkicu karaoke. Większa wartość usuwa krótkie ozdobniki i przypadkowe skoki, ale może zgubić szybkie sylaby. Mniejsza wartość zachowuje krótkie nuty, ale wynik może być bardziej poszarpany." }],
   ["mergeGapMs", { label: "Scalanie krótkich przerw (ms)", step: "1", tooltip: "Maksymalna przerwa, którą można złączyć między sąsiednimi nutami. Większa wartość wygładza linię melodyczną, ale może zlewać oddzielne sylaby. Mniejsza wartość zostawia więcej przerw, ale może rozbić jedną nutę na kilka części." }],
+  ["checkNoteLongerThan", { label: "WERYFIKUJ SYLABY DŁUŻSZE NIŻ (MS)", step: "1", tooltip: "Minimalna długość sylab dla których weryfikowana jest długość, na podstawie dźwięku i ciszy" }],
+  ["silenceTresholdForNoteChecking", { label: "Próg ciszy do weryfikacji (dB)", step: "1", max: "0", tooltip: "Głośność poniżej której dźwięk będzie uznawany za cisze i dla której będę przycinane nuty dłuższe niże ustawiono w checkNoteLongerThan" }],
 ];
 
 const PIPELINE_ORDER = [
@@ -943,8 +947,8 @@ function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, on
 }
 
 const TRANSCRIPTION_STAGE_FIELDS = TRANSCRIPTION_SETTING_FIELDS.filter(([key]) => key !== "sentenceGapMs");
-const PITCH_DETECTION_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => !["minNoteLengthMs", "mergeGapMs"].includes(key));
-const ALIGNMENT_PITCH_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => ["minNoteLengthMs", "mergeGapMs"].includes(key));
+const PITCH_DETECTION_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => !["minNoteLengthMs", "mergeGapMs", "checkNoteLongerThan", "silenceTresholdForNoteChecking"].includes(key));
+const ALIGNMENT_PITCH_FIELDS = PITCH_SETTING_FIELDS.filter(([key]) => ["minNoteLengthMs", "mergeGapMs", "checkNoteLongerThan", "silenceTresholdForNoteChecking"].includes(key));
 
 function StageSettingsPanel({ job, stage, busy, onSubmit, onSourceSubmit, embedded = false, stageWorkingState = {}, onStageWorkingStateChange }) {
   const targetStage = stage ?? sortedStages(job.processing).find((item) => item.actionRequired);
@@ -1181,7 +1185,7 @@ function AlignmentStageForm({ job, busy, onSubmit, embedded = false, draft = {},
       <div className="form-grid compact pitch-settings-grid">
         <TextField label="Ms między sentencjami" helper="sentenceGapMs" tooltip="Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Puste pole oznacza tryb auto." type="number" step="1" placeholder="auto" value={sentenceGapMs} onChange={setSentenceGapMs} />
         {ALIGNMENT_PITCH_FIELDS.map(([key, field]) => (
-          <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key]} onChange={(next) => setSettings({ ...settings, [key]: Number(next) })} />
+          <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} max={field.max} value={settings[key]} onChange={(next) => setSettings({ ...settings, [key]: field.max == null ? Number(next) : Math.min(Number(next), Number(field.max)) })} />
         ))}
       </div>
       <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("aligning", { transcriptionSettings: { ...job.transcriptionSettings, sentenceGapMs: nullableNumber(sentenceGapMs) }, pitchSettings: settings })}>
@@ -2617,8 +2621,8 @@ function propertyQualityFlags(tokens, acceptedSongBpm) {
   return [...flags];
 }
 
-function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step, name, required = false }) {
-  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<input type={type} name={name} required={required} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
+function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step, min, max, name, required = false }) {
+  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<input type={type} name={name} required={required} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} min={min} max={max} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function LanguageSelect({ label, value, onChange, options }) {
@@ -2918,7 +2922,7 @@ function stageSettingsSummary(job, stage) {
   if (stage.stage === "separating_vocals") return [["Model", job.profiles?.separationModel ?? "-"]];
   if (stage.stage === "transcribing") return [["Model", job.profiles?.transcriptionModel ?? "-"], ["VAD", transcription.vadMethod], ["Pozycjonowanie", TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning], ["Sylabizacja", SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method]];
   if (stage.stage === "detecting_pitch") return [["Profil", PITCH_PROFILE_LABELS[job.profiles?.pitch] ?? job.profiles?.pitch ?? "Dokładny"], ["Czułość dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["Krok ramek", `${pitch.frameStepMs} ms`]];
-  if (stage.stage === "aligning") return [["Ms między sentencjami", transcription.sentenceGapMs == null ? "auto" : `${transcription.sentenceGapMs} ms`], ["Najkrótsza nuta", `${pitch.minNoteLengthMs} ms`], ["Scalanie przerw", `${pitch.mergeGapMs} ms`]];
+  if (stage.stage === "aligning") return [["Ms między sentencjami", transcription.sentenceGapMs == null ? "auto" : `${transcription.sentenceGapMs} ms`], ["Najkrótsza nuta", `${pitch.minNoteLengthMs} ms`], ["Scalanie przerw", `${pitch.mergeGapMs} ms`], ["Weryfikuj sylaby dłuższe niż", `${pitch.checkNoteLongerThan} ms`], ["Próg ciszy do weryfikacji", `${pitch.silenceTresholdForNoteChecking} dB`]];
   return [["Ustawienia", "-"]];
 }
 

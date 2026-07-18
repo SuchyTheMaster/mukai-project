@@ -161,7 +161,9 @@ Domyślne ustawienia pitch są dobrane pod typowe piosenki i późniejsze łącz
   "periodicityThreshold": 0.55,
   "frameStepMs": 10,
   "minNoteLengthMs": 120,
-  "mergeGapMs": 90
+  "mergeGapMs": 90,
+  "checkNoteLongerThan": 400,
+  "silenceTresholdForNoteChecking": -60.0
 }
 ```
 
@@ -172,6 +174,8 @@ Etykiety w UI:
 - `frameStepMs`: Dokładność czasu analizy (ms).
 - `minNoteLengthMs`: Najkrótsza nuta karaoke (ms).
 - `mergeGapMs`: Scalanie krótkich przerw (ms).
+- `checkNoteLongerThan`: minimalna długość sylaby w milisekundach, od której etap wstępnego dopasowania sprawdza jej koniec względem ciszy ścieżki wokalnej; domyślnie `400 ms`.
+- `silenceTresholdForNoteChecking`: niezależny, niedodatni próg ciszy używany wyłącznie podczas weryfikacji długich sylab; domyślnie `-60 dB`. Niższa wartość zachowuje ciche wybrzmienia wokalu i nie wpływa na detekcję pitch sterowaną przez `silenceThresholdDb`.
 
 ## SyllabificationSettings
 
@@ -354,7 +358,9 @@ Zasady:
     "periodicityThreshold": 0.55,
     "frameStepMs": 10,
     "minNoteLengthMs": 120,
-    "mergeGapMs": 90
+    "mergeGapMs": 90,
+    "checkNoteLongerThan": 400,
+    "silenceTresholdForNoteChecking": -60.0
   },
   "syllabificationSettings": {
     "method": "kokosznicka"

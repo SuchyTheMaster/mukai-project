@@ -115,6 +115,8 @@ class PitchSettings(BaseModel):
     frameStepMs: int = 10
     minNoteLengthMs: int = 120
     mergeGapMs: int = 90
+    checkNoteLongerThan: int = Field(default=400, ge=0)
+    silenceTresholdForNoteChecking: float = Field(default=-60.0, le=0.0)
 
 
 class SyllabificationSettings(BaseModel):

@@ -23,6 +23,7 @@ from app.domain.contracts import (
     JobStatus,
     NoteEvent,
     PitchFrame,
+    PitchSettings,
     ProgressMode,
     StageStatus,
     SyllabificationInfo,
@@ -183,6 +184,8 @@ def _process_job(job_id: str, start_stage: str) -> None:
                 "sentenceGapMs": job.transcriptionSettings.sentenceGapMs if job else None,
                 "minNoteLengthMs": job.pitchSettings.minNoteLengthMs if job else 120,
                 "mergeGapMs": job.pitchSettings.mergeGapMs if job else 90,
+                "checkNoteLongerThan": job.pitchSettings.checkNoteLongerThan if job else 400,
+                "silenceTresholdForNoteChecking": job.pitchSettings.silenceTresholdForNoteChecking if job else -60.0,
             },
         )
 
@@ -320,6 +323,8 @@ def run_draft_alignment(job_id: str) -> None:
         requested_sentence_gap_ms=job.transcriptionSettings.sentenceGapMs,
         detected_sentence_gap_ms=detected_sentence_gap_ms,
         effective_sentence_gap_ms=effective_sentence_gap_ms,
+        pitch_frames=frames,
+        pitch_settings=job.pitchSettings,
     )
 
     artifacts_dir = resolve_inside(f"jobs/{job_id}/artifacts")
@@ -330,6 +335,8 @@ def run_draft_alignment(job_id: str) -> None:
         "frameStepMs": job.pitchSettings.frameStepMs,
         "minNoteLengthMs": job.pitchSettings.minNoteLengthMs,
         "mergeGapMs": job.pitchSettings.mergeGapMs,
+        "checkNoteLongerThan": job.pitchSettings.checkNoteLongerThan,
+        "silenceTresholdForNoteChecking": job.pitchSettings.silenceTresholdForNoteChecking,
         "periodicityThreshold": job.pitchSettings.periodicityThreshold,
         "noteCount": len(notes),
         "frameCount": len(frames),
@@ -359,6 +366,11 @@ def run_draft_alignment(job_id: str) -> None:
             "requestedSentenceGapMs": job.transcriptionSettings.sentenceGapMs,
             "detectedSentenceGapMs": detected_sentence_gap_ms,
             "effectiveSentenceGapMs": effective_sentence_gap_ms,
+            "diagnostics": {
+                "checkNoteLongerThan": job.pitchSettings.checkNoteLongerThan,
+                "silenceTresholdForNoteChecking": job.pitchSettings.silenceTresholdForNoteChecking,
+                "correctedLongSyllableCount": arrangement.qualitySummary.get("correctedLongSyllableCount", 0),
+            },
             "syllabification": arrangement.syllabification.model_dump(mode="json") if arrangement.syllabification else None,
             "arrangement": arrangement.model_dump(mode="json"),
         },
@@ -586,11 +598,15 @@ def build_arrangement(
     requested_sentence_gap_ms: int | None = None,
     detected_sentence_gap_ms: int | None = None,
     effective_sentence_gap_ms: int | None = None,
+    pitch_frames: list[PitchFrame] | None = None,
+    pitch_settings: PitchSettings | None = None,
 ) -> Arrangement:
     syllabification_plan = build_syllabification_plan(syllabification_settings, language, language_source)
     note_events = [note.model_copy(deep=True) for note in notes]
     sentences: list[ArrangementSentence] = []
     slots: list[SyllableSlot] = []
+    corrected_long_syllable_count = 0
+    ordered_pitch_frames = sorted(pitch_frames, key=lambda frame: frame.timeSec) if pitch_frames is not None else None
 
     for segment_index, segment in enumerate(segments, start=1):
         words: list[ArrangementWord] = []
@@ -632,6 +648,8 @@ def build_arrangement(
                     )
                 )
             merged_syllables = merge_adjacent_same_midi_syllables(word_syllables)
+            if pitch_settings is not None and ordered_pitch_frames is not None:
+                corrected_long_syllable_count += correct_long_syllable_ends(merged_syllables, ordered_pitch_frames, pitch_settings)
             words.append(
                 ArrangementWord(
                     wordId=word.wordId,
@@ -670,6 +688,7 @@ def build_arrangement(
         note.requiresReview = note.requiresReview or bool(note.qualityFlags)
 
     quality_summary = summarize_quality(sentences, note_events)
+    quality_summary["correctedLongSyllableCount"] = corrected_long_syllable_count
     return Arrangement(
         arrangementId=new_id("arr"),
         jobId=job_id,
@@ -715,6 +734,66 @@ def merge_adjacent_same_midi_syllables(syllables: list[ArrangementSyllable]) -> 
     for index, syllable in enumerate(merged):
         syllable.syllableIndex = index
     return merged
+
+
+def correct_long_syllable_ends(
+    syllables: list[ArrangementSyllable],
+    frames: list[PitchFrame],
+    settings: PitchSettings,
+) -> int:
+    frame_step_sec = max(settings.frameStepMs / 1000.0, MIN_ALIGNMENT_PART_SEC)
+    min_silence_sec = max(settings.mergeGapMs / 1000.0, frame_step_sec)
+    corrected_count = 0
+
+    for syllable in syllables:
+        duration_ms = (syllable.endSec - syllable.startSec) * 1000.0
+        if duration_ms <= settings.checkNoteLongerThan:
+            continue
+
+        overlapping_frames = [
+            frame
+            for frame in frames
+            if frame.timeSec < syllable.endSec and frame.timeSec + frame_step_sec > syllable.startSec
+        ]
+        if not overlapping_frames:
+            mark_syllable_for_review(syllable)
+            continue
+
+        audible_seen = False
+        silence_start: float | None = None
+        corrected_end: float | None = None
+        for frame in overlapping_frames:
+            if frame_is_audible(frame, settings.silenceTresholdForNoteChecking):
+                audible_seen = True
+                silence_start = None
+                continue
+            if not audible_seen:
+                continue
+            if silence_start is None:
+                silence_start = max(frame.timeSec, syllable.startSec)
+            silence_end = min(frame.timeSec + frame_step_sec, syllable.endSec)
+            if silence_end - silence_start >= min_silence_sec:
+                corrected_end = silence_start
+                break
+
+        if not audible_seen:
+            mark_syllable_for_review(syllable)
+            continue
+        if corrected_end is None or corrected_end <= syllable.startSec or corrected_end >= syllable.endSec:
+            continue
+        syllable.endSec = round(corrected_end, 6)
+        corrected_count += 1
+
+    return corrected_count
+
+
+def frame_is_audible(frame: PitchFrame, silence_threshold_db: float) -> bool:
+    return frame.loudnessDb is not None and frame.loudnessDb >= silence_threshold_db
+
+
+def mark_syllable_for_review(syllable: ArrangementSyllable) -> None:
+    syllable.requiresReview = True
+    syllable.qualityFlags = dedupe_flags([*syllable.qualityFlags, "needs_syllable_review"])
 
 
 def note_ids_overlapping_slots(notes: list[NoteEvent], slots: list[SyllableSlot]) -> set[str]:

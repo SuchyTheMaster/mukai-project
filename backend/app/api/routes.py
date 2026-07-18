@@ -19,6 +19,7 @@ from app.domain.contracts import (
     ExportValidationReport,
     JobStatus,
     NoteEvent,
+    PitchFrame,
     ProjectArchiveResponse,
     ProjectClientState,
     ProjectImportResponse,
@@ -465,11 +466,13 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
 
     transcript_asset = next((asset for asset in job.artifacts if asset.type == "transcript_aligned"), None)
     notes_asset = next((asset for asset in job.artifacts if asset.type == "pitch_notes"), None)
-    if not transcript_asset or not notes_asset:
-        raise api_error(409, "missing_artifacts", "Brakuje transcript.aligned.json albo pitch.notes.json do ponownej agregacji.")
+    frames_asset = next((asset for asset in job.artifacts if asset.type == "pitch_frames"), None)
+    if not transcript_asset or not notes_asset or not frames_asset:
+        raise api_error(409, "missing_artifacts", "Brakuje transcript.aligned.json, pitch.notes.json albo pitch.frames.json do ponownej agregacji.")
 
     transcript_payload = read_json(resolve_inside(transcript_asset.path))
     notes_payload = read_json(resolve_inside(notes_asset.path))
+    frames_payload = read_json(resolve_inside(frames_asset.path))
     aligned_segments = [TranscriptSegment.model_validate(segment) for segment in transcript_payload.get("segments", [])]
     transcription_settings = job.transcriptionSettings.model_copy(update={"sentenceGapMs": request.sentenceGapMs})
     segments = build_sentence_segments(
@@ -481,6 +484,7 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
     detected_gap_ms = estimate_auto_sentence_gap(aligned_segments, job.tempo.detectedSongBpm if job.tempo else None)
     effective_gap_ms = request.sentenceGapMs if request.sentenceGapMs is not None else detected_gap_ms
     notes = [NoteEvent.model_validate(note) for note in notes_payload.get("noteEvents", [])]
+    frames = [PitchFrame.model_validate(frame) for frame in frames_payload.get("frames", [])]
     language, language_source = resolve_syllabification_language(job, transcript_payload)
     arrangement = build_arrangement(
         job_id,
@@ -493,6 +497,8 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
         requested_sentence_gap_ms=request.sentenceGapMs,
         detected_sentence_gap_ms=detected_gap_ms,
         effective_sentence_gap_ms=effective_gap_ms,
+        pitch_frames=frames,
+        pitch_settings=job.pitchSettings,
     )
     return repository.save_arrangement(job_id, arrangement)
 
@@ -759,6 +765,8 @@ def _settings_summary_for_config(stage: str, metadata, profiles, transcription_s
             "sentenceGapMs": transcription_settings.sentenceGapMs,
             "minNoteLengthMs": pitch_settings.minNoteLengthMs,
             "mergeGapMs": pitch_settings.mergeGapMs,
+            "checkNoteLongerThan": pitch_settings.checkNoteLongerThan,
+            "silenceTresholdForNoteChecking": pitch_settings.silenceTresholdForNoteChecking,
         }
     return {}
 
@@ -835,6 +843,8 @@ def _changed_stages_for_settings(job, stage: str, request: StageSettingsRequest)
             requested_transcription.sentenceGapMs != job.transcriptionSettings.sentenceGapMs
             or requested_pitch.minNoteLengthMs != job.pitchSettings.minNoteLengthMs
             or requested_pitch.mergeGapMs != job.pitchSettings.mergeGapMs
+            or requested_pitch.checkNoteLongerThan != job.pitchSettings.checkNoteLongerThan
+            or requested_pitch.silenceTresholdForNoteChecking != job.pitchSettings.silenceTresholdForNoteChecking
         )
         return ["aligning"] if alignment_changed else []
     return []
@@ -883,7 +893,14 @@ def _apply_stage_settings(job, stage: str, request: StageSettingsRequest) -> Non
         requested_transcription = request.transcriptionSettings or job.transcriptionSettings
         requested_pitch = request.pitchSettings or job.pitchSettings
         transcription_settings = job.transcriptionSettings.model_copy(update={"sentenceGapMs": requested_transcription.sentenceGapMs})
-        pitch_settings = job.pitchSettings.model_copy(update={"minNoteLengthMs": requested_pitch.minNoteLengthMs, "mergeGapMs": requested_pitch.mergeGapMs})
+        pitch_settings = job.pitchSettings.model_copy(
+            update={
+                "minNoteLengthMs": requested_pitch.minNoteLengthMs,
+                "mergeGapMs": requested_pitch.mergeGapMs,
+                "checkNoteLongerThan": requested_pitch.checkNoteLongerThan,
+                "silenceTresholdForNoteChecking": requested_pitch.silenceTresholdForNoteChecking,
+            }
+        )
         repository.update_job_config(job.jobId, transcription_settings=transcription_settings, pitch_settings=pitch_settings)
         return
 

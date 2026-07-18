@@ -3,22 +3,22 @@ import types
 import unittest
 from unittest.mock import patch
 
-from app.domain.contracts import NoteEvent, SyllabificationSettings, TranscriptChar, TranscriptSegment, TranscriptWord
+from app.domain.contracts import NoteEvent, PitchFrame, PitchSettings, SyllabificationSettings, TranscriptChar, TranscriptSegment, TranscriptWord
 from app.workers.pitch import build_arrangement
 
 
-def segment_with_word(text: str, chars: list[TranscriptChar] | None = None) -> TranscriptSegment:
+def segment_with_word(text: str, chars: list[TranscriptChar] | None = None, end_sec: float = 1.0) -> TranscriptSegment:
     return TranscriptSegment(
         segmentId="seg_0001",
         startSec=0.0,
-        endSec=1.0,
+        endSec=end_sec,
         text=text,
         confidence=0.9,
         words=[
             TranscriptWord(
                 wordId="word_0001_001",
                 startSec=0.0,
-                endSec=1.0,
+                endSec=end_sec,
                 text=text,
                 confidence=0.9,
                 chars=chars or [],
@@ -56,6 +56,10 @@ def syllables(arrangement):
         for word in sentence.words
         for syllable in word.syllables
     ]
+
+
+def pitch_frames(*values: tuple[float, float | None]) -> list[PitchFrame]:
+    return [PitchFrame(timeSec=time_sec, loudnessDb=loudness_db) for time_sec, loudness_db in values]
 
 
 def fake_pyphen_module(positions_by_word: dict[str, list[int]] | None = None, languages: dict[str, object] | None = None):
@@ -155,6 +159,85 @@ class SyllableNoteMappingTest(unittest.TestCase):
         self.assertTrue(all(item.midi is None for item in syllables(arrangement)))
         self.assertTrue(all("missing_note" in item.qualityFlags for item in syllables(arrangement)))
         self.assertFalse(any("needs_syllable_review" in item.qualityFlags for item in syllables(arrangement)))
+
+    def test_syllable_at_long_duration_threshold_is_not_corrected(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("aa")],
+            [note("n1", 0.0, 1.0)],
+            pitch_frames=pitch_frames((0.0, -20.0), (0.4, -20.0), (0.9, -80.0)),
+            pitch_settings=PitchSettings(frameStepMs=100, checkNoteLongerThan=1000),
+        )
+
+        self.assertEqual(syllables(arrangement)[0].endSec, 1.0)
+        self.assertEqual(arrangement.qualitySummary["correctedLongSyllableCount"], 0)
+
+    def test_long_merged_syllable_is_trimmed_at_trailing_silence(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("aa")],
+            [note("n1", 0.0, 1.0)],
+            pitch_frames=pitch_frames((0.0, -20.0), (0.4, -20.0), (0.5, -80.0), (0.9, -80.0)),
+            pitch_settings=PitchSettings(frameStepMs=100, checkNoteLongerThan=400),
+        )
+
+        self.assertEqual([item.text for item in syllables(arrangement)], ["aa"])
+        self.assertEqual(syllables(arrangement)[0].endSec, 0.5)
+        self.assertEqual(arrangement.noteEvents[0].endSec, 1.0)
+        self.assertEqual(arrangement.qualitySummary["correctedLongSyllableCount"], 1)
+
+    def test_separate_note_checking_threshold_preserves_quiet_vocal_tail(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("a", end_sec=4.4)],
+            [note("n1", 0.0, 4.4)],
+            pitch_frames=pitch_frames(
+                (0.0, -20.0),
+                (0.4, -20.0),
+                (0.5, -50.0),
+                (1.3, -50.0),
+                (1.4, -80.0),
+                (4.2, -80.0),
+                (4.3, -15.0),
+            ),
+            pitch_settings=PitchSettings(
+                frameStepMs=100,
+                checkNoteLongerThan=400,
+                silenceThresholdDb=-42.0,
+                silenceTresholdForNoteChecking=-60.0,
+            ),
+        )
+
+        self.assertEqual(syllables(arrangement)[0].endSec, 1.4)
+        self.assertEqual(arrangement.noteEvents[0].endSec, 4.4)
+        self.assertEqual(arrangement.qualitySummary["correctedLongSyllableCount"], 1)
+
+    def test_long_syllable_with_short_internal_silence_and_audible_end_is_unchanged(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("a")],
+            [note("n1", 0.0, 1.0)],
+            pitch_frames=pitch_frames((0.0, -20.0), (0.4, -80.0), (0.41, -80.0), (0.9, -20.0)),
+            pitch_settings=PitchSettings(frameStepMs=10, mergeGapMs=90, checkNoteLongerThan=400),
+        )
+
+        self.assertEqual(syllables(arrangement)[0].endSec, 1.0)
+        self.assertEqual(arrangement.qualitySummary["correctedLongSyllableCount"], 0)
+
+    def test_long_syllable_fully_in_silence_is_marked_for_review(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_word("a")],
+            [note("n1", 0.0, 1.0)],
+            pitch_frames=pitch_frames((0.0, None), (0.4, -80.0), (0.9, -80.0)),
+            pitch_settings=PitchSettings(frameStepMs=100, checkNoteLongerThan=400),
+        )
+
+        result = syllables(arrangement)[0]
+        self.assertEqual(result.endSec, 1.0)
+        self.assertTrue(result.requiresReview)
+        self.assertIn("needs_syllable_review", result.qualityFlags)
+        self.assertEqual(arrangement.qualitySummary["correctedLongSyllableCount"], 0)
 
     def test_unoverlapped_note_stays_diagnostic_without_unassigned_flag(self):
         arrangement = build_arrangement("job_1", [segment_with_word("a")], [note("n1", 1.1, 1.4)])

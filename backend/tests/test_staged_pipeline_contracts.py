@@ -83,6 +83,40 @@ class StagedPipelineContractsTest(unittest.TestCase):
 
         self.assertEqual(routes._changed_stages_for_settings(job, "aligning", request), ["aligning"])
 
+    def test_pitch_settings_default_and_legacy_payload_use_long_syllable_threshold(self):
+        self.assertEqual(PitchSettings().checkNoteLongerThan, 400)
+        self.assertEqual(PitchSettings.model_validate({"minNoteLengthMs": 150}).checkNoteLongerThan, 400)
+        self.assertEqual(PitchSettings().silenceTresholdForNoteChecking, -60.0)
+        self.assertEqual(PitchSettings.model_validate({"silenceThresholdDb": -42.0}).silenceTresholdForNoteChecking, -60.0)
+        with self.assertRaises(ValueError):
+            PitchSettings(silenceTresholdForNoteChecking=1.0)
+
+    def test_long_syllable_threshold_change_invalidates_only_alignment(self):
+        job = self._job(pitch_settings=PitchSettings(checkNoteLongerThan=400))
+        request = StageSettingsRequest(pitchSettings=PitchSettings(checkNoteLongerThan=650))
+
+        self.assertEqual(routes._changed_stages_for_settings(job, "aligning", request), ["aligning"])
+
+    def test_note_checking_silence_threshold_change_invalidates_only_alignment(self):
+        job = self._job(pitch_settings=PitchSettings(silenceTresholdForNoteChecking=-60.0))
+        request = StageSettingsRequest(pitchSettings=PitchSettings(silenceTresholdForNoteChecking=-66.0))
+
+        self.assertEqual(routes._changed_stages_for_settings(job, "aligning", request), ["aligning"])
+
+    def test_alignment_applies_and_summarizes_long_syllable_threshold(self):
+        job = self._job(pitch_settings=PitchSettings(checkNoteLongerThan=400))
+        request = StageSettingsRequest(pitchSettings=PitchSettings(checkNoteLongerThan=650, silenceTresholdForNoteChecking=-64.0))
+
+        with patch.object(routes.repository, "update_job_config") as update_job_config:
+            routes._apply_stage_settings(job, "aligning", request)
+
+        saved_pitch_settings = update_job_config.call_args.kwargs["pitch_settings"]
+        self.assertEqual(saved_pitch_settings.checkNoteLongerThan, 650)
+        self.assertEqual(saved_pitch_settings.silenceTresholdForNoteChecking, -64.0)
+        summary = routes._settings_summary_for_job(job.model_copy(update={"pitchSettings": saved_pitch_settings}), "aligning")
+        self.assertEqual(summary["checkNoteLongerThan"], 650)
+        self.assertEqual(summary["silenceTresholdForNoteChecking"], -64.0)
+
     def test_source_file_change_invalidates_all_audio_processing_stages(self):
         self.assertEqual(
             routes._stages_from("preprocessing"),
