@@ -48,9 +48,10 @@ Nagłówki obowiązkowe:
 #TITLE:Song Title
 #ARTIST:Artist
 #AUDIO:Artist - Song Title [FULL].mp3
+#MP3:Artist - Song Title [FULL].mp3
 #INSTRUMENTAL:Artist - Song Title [INSTR].mp3
 #VOCALS:Artist - Song Title [VOC].mp3
-#BPM:493.8
+#BPM:123.45
 #GAP:12345
 ```
 
@@ -65,26 +66,27 @@ Opcjonalne nagłówki:
 
 Polityka plików audio:
 
-- `#AUDIO` wskazuje oryginalne audio skonwertowane do MP3 z sufiksem `[FULL]`.
+- `#AUDIO` i kompatybilnościowy `#MP3` wskazują ten sam oryginalny plik audio skonwertowany do MP3 z sufiksem `[FULL]`.
 - `#INSTRUMENTAL` wskazuje instrumentalny stem skonwertowany do MP3 z sufiksem `[INSTR]`.
 - `#VOCALS` wskazuje wokal/a capella skonwertowany do MP3 z sufiksem `[VOC]`.
 - Nazwy plików audio muszą być spójne z tagami w pliku `.txt`.
-- Eksporter nie generuje tagu `#MP3`; starsze tryby kompatybilności nie są częścią MVP.
+- Eksporter generuje równocześnie `#AUDIO` i `#MP3`. Parsery obsługujące format `1.x` wybierają `#AUDIO`, a `#MP3` umożliwia wykrycie piosenki przez buildy wymagające legacy tagu.
 - Jeśli cover nie jest ustawiony, nie generować tagu `#COVER` i nie dodawać pliku covera do ZIP-a.
 
 ## Mapowanie czasu
 
 Wewnętrznie aplikacja używa sekund. UltraStar używa beatów liczonych względem `#BPM` i `#GAP`.
 
-Aplikacja wykrywa realne BPM utworu, ale do tagu `#BPM` eksportuje BPM UltraStar. Zgodnie ze specyfikacją UltraStar `#BPM` nie jest zwykłym BPM utworu; idealnie jest to wartość około cztery razy większa niż muzyczne BPM utworu.
+Aplikacja zapisuje w `#BPM` zaakceptowane muzyczne BPM utworu. UltraStar Deluxe po odczytaniu nagłówka mnoży tę wartość wewnętrznie przez domyślną rozdzielczość siatki `4`; dlatego eksporter nie może wpisywać do nagłówka wartości już przemnożonej.
 
 Definicje:
 
 ```text
 song_bpm = acceptedSongBpm
-ultrastar_bpm = acceptedSongBpm * 4
+header_bpm = acceptedSongBpm
+note_grid_bpm = acceptedSongBpm * 4
 gap_ms = gapMs
-beat_ms = 60000 / ultrastar_bpm
+beat_ms = 60000 / note_grid_bpm
 start_beat = round((start_sec * 1000 - gap_ms) / beat_ms)
 length_beats = max(1, round((end_sec - start_sec) * 1000 / beat_ms))
 ```
@@ -92,7 +94,7 @@ length_beats = max(1, round((end_sec - start_sec) * 1000 / beat_ms))
 Rekomendacja MVP:
 
 - Wykryć realne BPM utworu i zapisać je jako `Tempo.detectedSongBpm`.
-- Wyliczyć `#BPM` jako UltraStar BPM na podstawie `Tempo.acceptedSongBpm`.
+- Zapisać `#BPM` dokładnie jako `Tempo.acceptedSongBpm`; mnożnik `4` stosować wyłącznie przy przeliczaniu sekund na jednostki siatki nut.
 - Pozwolić użytkownikowi poprawić BPM przed eksportem; UI musi jasno pokazać wykryte BPM, zaakceptowane BPM i wynikowe `#BPM`.
 - Użyć `Tempo.gapMs` jako `#GAP`; domyślnie jest to czas startu pierwszej zatwierdzonej nuty w milisekundach.
 - Eksportować absolutne beaty bez `#RELATIVE`.
@@ -164,8 +166,8 @@ E
 
 Eksporter musi zgłosić błąd, jeśli:
 
-- brakuje `TITLE`, `ARTIST`, `AUDIO`, `INSTRUMENTAL` albo `VOCALS`;
-- `#AUDIO`, `#INSTRUMENTAL` albo `#VOCALS` wskazuje plik, którego nie ma w paczce;
+- brakuje `TITLE`, `ARTIST`, audio dla `AUDIO`/`MP3`, `INSTRUMENTAL` albo `VOCALS`;
+- `#AUDIO`, `#MP3`, `#INSTRUMENTAL` albo `#VOCALS` wskazuje plik, którego nie ma w paczce;
 - nazwy plików audio nie odpowiadają wzorowi `{baseFilename} [FULL].mp3`, `{baseFilename} [INSTR].mp3`, `{baseFilename} [VOC].mp3`;
 - nuta ma długość mniejszą niż 1 beat;
 - frazy są poza kolejnością;
@@ -192,7 +194,7 @@ Eksporter generuje jedną paczkę dla aktualnych wersji:
 - UltraStar Play;
 - Vocaluxe.
 
-Założenie MVP: najnowsze dostępne wersje tych programów obsługują wspólny zestaw tagów `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS`. Każda paczka powinna mieć test ręcznego otwarcia w aktualnych wersjach wspieranych programów albo jawnie opisane założenie, jeśli test manualny nie został jeszcze wykonany.
+Eksporter zapisuje równocześnie `#AUDIO` i zgodny wstecznie `#MP3` dla głównego audio oraz osobne `#INSTRUMENTAL` i `#VOCALS`. Decyzja wynika z testu ręcznego UltraStar Deluxe 2026.6.0; każda paczka nadal powinna mieć test ręcznego otwarcia w aktualnych wersjach wspieranych programów.
 
 ## Eksport projektu
 

@@ -170,8 +170,8 @@ Testy eksportu karaoke oraz round-trip zapisu/importu projektu są wymagane dla 
 - Walidacja wykrytego muzycznego BPM, zaakceptowanego BPM i wynikowego `#BPM` UltraStar.
 - Walidacja `Arrangement`.
 - Walidacja `ExportSelection`.
-- Walidacja tagów UltraStar `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS`.
-- Walidacja braku legacy tagu `#MP3` w eksporcie MVP.
+- Walidacja tagów UltraStar `#AUDIO`, kompatybilnościowego `#MP3`, `#INSTRUMENTAL` i `#VOCALS`.
+- Walidacja, że `#AUDIO` i `#MP3` wskazują ten sam istniejący plik `[FULL].mp3`.
 - Walidacja spójności nazw plików audio z sufiksami `[FULL]`, `[INSTR]` i `[VOC]`.
 - Walidacja kompletności ZIP-a projektu, manifestu `mukai-project.json` i hashy artefaktów.
 - Walidacja, że import nie przyjmuje pojedynczego `mukai-project.json` jako samodzielnego formatu MVP.
@@ -199,8 +199,8 @@ Testy eksportu karaoke oraz round-trip zapisu/importu projektu są wymagane dla 
 - torchcrepe na syntetycznej sinusoidzie i wokalu testowym.
 - Eksport jednego ZIP-a karaoke dla aktualnych wersji UltraStar Deluxe, UltraStar Play i Vocaluxe.
 - Weryfikacja, że ZIP zawiera plik `.txt` oraz pliki audio `[FULL]`, `[INSTR]` i `[VOC]`.
-- Weryfikacja, że tagi `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS` wskazują istniejące pliki w paczce.
-- Weryfikacja, że eksport nie generuje tagu `#MP3`.
+- Weryfikacja, że tagi `#AUDIO`, `#MP3`, `#INSTRUMENTAL` i `#VOCALS` wskazują istniejące pliki w paczce.
+- Weryfikacja, że `#BPM` zawiera zaakceptowane muzyczne BPM bez mnożnika `4`, a pozycje nut używają czterech jednostek siatki na beat.
 - Weryfikacja, że po udanym eksporcie karaoke `Job` wraca do `awaiting_review`.
 - Weryfikacja, że paczka karaoke nie zawiera `mukai-project.json`.
 - Zapis ZIP-a projektu przez globalne `Zapisz`.
@@ -210,7 +210,7 @@ Testy eksportu karaoke oraz round-trip zapisu/importu projektu są wymagane dla 
 - Ponowny import ZIP-a projektu bez uruchamiania normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
 - Ponowny import ZIP-a projektu z brakującym artefaktem i oczekiwany błąd walidacji.
 - Eksport bez covera.
-- Eksport z tagami `#AUDIO`, `#VOCALS` i `#INSTRUMENTAL`.
+- Eksport z tagami `#AUDIO`, `#MP3`, `#VOCALS` i `#INSTRUMENTAL`.
 - Ręczne otwarcie paczki w aktualnych wersjach UltraStar Deluxe, UltraStar Play i Vocaluxe albo zapis jawnego założenia, jeśli test manualny nie został wykonany.
 
 ## Przyszłe testy manualne

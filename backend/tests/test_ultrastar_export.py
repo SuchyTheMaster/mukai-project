@@ -87,7 +87,7 @@ def job(artifacts: list[AudioAsset] | None = None) -> Job:
         metadata=SourceMetadata(title="Song Title", artist="Artist", language="pl"),
         profiles=ModelProfiles(),
         transcriptionSettings=TranscriptionSettings(),
-        tempo=Tempo(detectedSongBpm=120, acceptedSongBpm=120, ultrastarBpm=480, gapMs=1000),
+        tempo=Tempo(detectedSongBpm=120, acceptedSongBpm=120, ultrastarBpm=120, gapMs=1000),
         audio=AudioInfo(durationSec=180),
         artifacts=artifacts or [],
     )
@@ -118,13 +118,26 @@ class UltraStarExportTest(unittest.TestCase):
         text = build_ultrastar_text(job(), arrangement(), selection())
 
         self.assertIn("#AUDIO:Artist - Song Title [FULL].mp3\n", text)
+        self.assertIn("#MP3:Artist - Song Title [FULL].mp3\n", text)
         self.assertIn("#INSTRUMENTAL:Artist - Song Title [INSTR].mp3\n", text)
         self.assertIn("#VOCALS:Artist - Song Title [VOC].mp3\n", text)
-        self.assertNotIn("#MP3:", text)
+        self.assertIn("#BPM:120\n", text)
+        self.assertNotIn("#BPM:480\n", text)
         self.assertIn(": 0 4 -3 Pierw\n", text)
         self.assertIn(": 10 5 0  fraza\n", text)
         self.assertTrue(text.endswith("E\n"))
         self.assertNotEqual(text.encode("utf-8")[:3], b"\xef\xbb\xbf")
+
+    def test_exported_bpm_and_note_grid_reconstruct_original_duration_in_usdx(self):
+        text = build_ultrastar_text(job(), arrangement(), selection())
+        header_bpm = float(next(line.split(":", 1)[1] for line in text.splitlines() if line.startswith("#BPM:")))
+        first_note = next(line for line in text.splitlines() if line.startswith(": "))
+        _, _, length_beats, _, _ = first_note.split(" ", 4)
+
+        usdx_internal_bpm = header_bpm * 4
+        reconstructed_duration_sec = int(length_beats) * 60 / usdx_internal_bpm
+
+        self.assertEqual(reconstructed_duration_sec, 0.5)
 
     def test_validation_requires_all_three_audio_assets(self):
         report = validate_export(job([asset("source_audio", "jobs/job_1/source/source.wav")]), arrangement(), selection())

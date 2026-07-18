@@ -20,7 +20,7 @@ Zamienić zatwierdzony `Arrangement` na jedną paczkę karaoke ZIP zgodną z akt
 - Mapowanie sekund na beaty na podstawie `Tempo.acceptedSongBpm` i `Tempo.gapMs`.
 - Mapowanie MIDI na pitch UltraStar jako `midi_note - 60`.
 - Obsługa typów nut `normal`, `golden`, `freestyle`, `rap` i `rap_golden`.
-- Stała polityka tagów `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS`.
+- Stała polityka tagów `#AUDIO`, kompatybilnościowego `#MP3`, `#INSTRUMENTAL` i `#VOCALS`.
 - Spójne nazwy plików audio: `[FULL]`, `[INSTR]`, `[VOC]`.
 - Opcjonalny cover tylko wtedy, gdy został ustawiony.
 - Raport walidacji eksportu jako artefakt.
@@ -47,11 +47,11 @@ Zamienić zatwierdzony `Arrangement` na jedną paczkę karaoke ZIP zgodną z akt
 
 ## Kryteria akceptacji
 
-- Plik `.txt` zawiera `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS`.
-- `#AUDIO` wskazuje `{baseFilename} [FULL].mp3`.
+- Plik `.txt` zawiera `#AUDIO`, `#MP3`, `#INSTRUMENTAL` i `#VOCALS`.
+- `#AUDIO` i `#MP3` wskazują `{baseFilename} [FULL].mp3`.
 - `#INSTRUMENTAL` wskazuje `{baseFilename} [INSTR].mp3`.
 - `#VOCALS` wskazuje `{baseFilename} [VOC].mp3`.
-- Eksporter nie generuje `#MP3`.
+- `#BPM` zawiera `Tempo.acceptedSongBpm`, natomiast mnożnik `4` jest stosowany tylko do siatki pozycji nut.
 - Eksport bez covera nie generuje `#COVER` i nie dodaje pliku covera.
 - Wynikowy plik `.txt` kończy się `E`.
 
@@ -60,9 +60,9 @@ Zamienić zatwierdzony `Arrangement` na jedną paczkę karaoke ZIP zgodną z akt
 - Test jednostkowy `seconds -> UltraStar beats`.
 - Test jednostkowy `MIDI -> UltraStar pitch`.
 - Test walidacji `ExportSelection`.
-- Test generowania tagów `#AUDIO`, `#INSTRUMENTAL` i `#VOCALS`.
+- Test generowania tagów `#AUDIO`, `#MP3`, `#INSTRUMENTAL` i `#VOCALS`.
 - Test spójności tagów z nazwami plików `[FULL]`, `[INSTR]`, `[VOC]`.
-- Test braku tagu `#MP3`.
+- Test zgodności `#AUDIO` i `#MP3` oraz regresji tempa odtwarzania w UltraStar Deluxe.
 - Test eksportu z coverem i bez covera.
 - Test, że paczka karaoke nie zawiera `mukai-project.json`.
 - Test manualnego otwarcia wyniku w aktualnych wersjach UltraStar Deluxe, UltraStar Play i Vocaluxe lub zapis jawnego założenia, jeśli test nie został wykonany.

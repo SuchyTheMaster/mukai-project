@@ -32,8 +32,8 @@ PITCHED_NOTE_TYPES = {"normal", "golden", "rap", "rap_golden"}
 
 
 def seconds_to_ultrastar_beats(start_sec: float, end_sec: float, accepted_song_bpm: float, gap_ms: int) -> tuple[int, int, int]:
-    ultrastar_bpm = accepted_song_bpm * 4
-    beat_ms = 60000 / ultrastar_bpm
+    note_grid_bpm = accepted_song_bpm * 4
+    beat_ms = 60000 / note_grid_bpm
     start_beat = round((start_sec * 1000 - gap_ms) / beat_ms)
     raw_length_beats = round((end_sec - start_sec) * 1000 / beat_ms)
     return start_beat, max(1, raw_length_beats), raw_length_beats
@@ -76,7 +76,7 @@ def validate_export(job: Job, arrangement: Arrangement | None, selection: Export
     if not (job.metadata.artist or "").strip():
         error("missing_artist", "Brakuje artysty.")
     if not assets_by_type.get("source_audio"):
-        error("missing_source_audio", "Brakuje oryginalnego audio dla tagu #AUDIO.")
+        error("missing_source_audio", "Brakuje oryginalnego audio dla tagow #AUDIO i #MP3.")
     if not assets_by_type.get("instrumental"):
         error("missing_instrumental", "Brakuje stemu instrumentalnego dla tagu #INSTRUMENTAL.")
     if not assets_by_type.get("vocals"):
@@ -119,12 +119,13 @@ def build_ultrastar_text(job: Job, arrangement: Arrangement, selection: ExportSe
         f"#TITLE:{_header_value(job.metadata.title)}",
         f"#ARTIST:{_header_value(job.metadata.artist)}",
         f"#AUDIO:{audio_filenames['audio']}",
+        f"#MP3:{audio_filenames['audio']}",
         f"#INSTRUMENTAL:{audio_filenames['instrumental']}",
         f"#VOCALS:{audio_filenames['vocals']}",
     ]
     headers.extend(
         [
-            f"#BPM:{job.tempo.acceptedSongBpm * 4:g}",
+            f"#BPM:{job.tempo.acceptedSongBpm:g}",
             f"#GAP:{job.tempo.gapMs}",
             "#CREATOR:Mukai",
         ]

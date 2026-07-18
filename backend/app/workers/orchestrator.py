@@ -160,7 +160,7 @@ def detect_bpm(path: Path) -> tuple[Tempo, dict]:
     tempo = Tempo(
         detectedSongBpm=float(bpm),
         acceptedSongBpm=float(bpm),
-        ultrastarBpm=float(bpm) * 4,
+        ultrastarBpm=float(bpm),
         gapMs=int(float(beats[0]) * 1000) if len(beats) else 0,
         confidence=float(confidence),
         method="essentia_RhythmExtractor2013",

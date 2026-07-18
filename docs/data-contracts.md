@@ -451,7 +451,7 @@ Zasady:
 {
   "detectedSongBpm": 123.45,
   "acceptedSongBpm": 123.45,
-  "ultrastarBpm": 493.8,
+  "ultrastarBpm": 123.45,
   "gapMs": 12345,
   "confidence": 0.68,
   "method": "auto_detected",
@@ -460,7 +460,7 @@ Zasady:
 }
 ```
 
-`detectedSongBpm` pochodzi z detektora BPM. `acceptedSongBpm` jest wartością zaakceptowaną albo poprawioną przez użytkownika i to z niej eksporter wylicza `ultrastarBpm`. `gapMs` jest domyślnie czasem startu pierwszej zatwierdzonej nuty. `beatPositionsSec` pochodzi z Essentii i może być użyte przez UI do kontroli siatki, ale eksport nadal opiera się na zaakceptowanym BPM.
+`detectedSongBpm` pochodzi z detektora BPM. `acceptedSongBpm` jest wartością zaakceptowaną albo poprawioną przez użytkownika. `ultrastarBpm` odpowiada wartości zapisywanej w nagłówku `#BPM` i nie zawiera mnożnika rozdzielczości siatki; dla nowych danych jest równe `acceptedSongBpm`. Mnożnik `4` jest używany wyłącznie przy konwersji sekund na pozycje nut. `gapMs` jest domyślnie czasem startu pierwszej zatwierdzonej nuty. `beatPositionsSec` pochodzi z Essentii i może być użyte przez UI do kontroli siatki, ale eksport nadal opiera się na zaakceptowanym BPM.
 
 ## TranscriptSegment
 
@@ -613,7 +613,7 @@ Reguły automatycznego szkicu:
 
 `audioFilenames`:
 
-- `audio`: plik wskazywany przez tag `#AUDIO`, czyli oryginalne audio w MP3 z sufiksem `[FULL]`.
+- `audio`: plik wskazywany równocześnie przez tagi `#AUDIO` i `#MP3`, czyli oryginalne audio w MP3 z sufiksem `[FULL]`.
 - `instrumental`: plik wskazywany przez tag `#INSTRUMENTAL`, czyli instrumental w MP3 z sufiksem `[INSTR]`.
 - `vocals`: plik wskazywany przez tag `#VOCALS`, czyli wokal/a capella w MP3 z sufiksem `[VOC]`.
 
@@ -625,7 +625,7 @@ Reguły automatycznego szkicu:
 `internalDirectoryName` i `baseFilename`:
 
 - Są bazą dla katalogu wewnątrz ZIP-a, pliku `.txt` i trzech plików audio.
-- Nazwy plików audio są deterministyczne i muszą odpowiadać tagom `#AUDIO`, `#INSTRUMENTAL` oraz `#VOCALS`.
+- Nazwy plików audio są deterministyczne i muszą odpowiadać tagom `#AUDIO`, `#MP3`, `#INSTRUMENTAL` oraz `#VOCALS`.
 
 Paczka karaoke nie zawiera `mukai-project.json` ani innych danych projektu.
 

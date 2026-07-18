@@ -65,7 +65,7 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - `docker compose build worker-pitch --progress=plain`.
 - Smoke test GPU przez kontener CUDA, jeśli host ma GPU NVIDIA.
 - E2E: upload, preflight, przetwarzanie, edycja, eksport karaoke.
-- Test eksportu: jeden ZIP z plikami `[FULL]`, `[INSTR]`, `[VOC]`, spójnymi tagami i bez `#MP3`.
+- Test eksportu: jeden ZIP z plikami `[FULL]`, `[INSTR]`, `[VOC]`, spójnymi tagami `#AUDIO`/`#MP3` i poprawnym `#BPM` w UltraStar Deluxe 2026.6.0.
 - E2E: eksport projektu, import projektu, kontynuacja edycji.
 - Testy manualne dla utworu polskiego, angielskiego, wielojęzycznego, z długim intro, backing vocals i pogłosem.
 - Test dokumentacji: linki, spójność statusów i brak `review.approved.json` jako źródła prawdy.
