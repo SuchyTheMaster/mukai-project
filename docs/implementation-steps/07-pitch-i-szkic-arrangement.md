@@ -22,8 +22,8 @@ Dodać detekcję wysokości śpiewanych nut oraz pierwszy edytowalny szkic karao
 - Użycie ustawień pitch zaakceptowanych przy uploadzie lub zmienionych przed resetem etapu.
 - Przechowywanie surowych ramek F0 niezależnie od nut.
 - Worker `worker-aligner` lub lekki moduł alignacji łączący `transcript.aligned.json` i `pitch.notes.json`.
-- Użycie finalnych fraz z `transcript.aligned.json` jako linii karaoke.
-- Podział słów na sylaby przed dopasowaniem nut wybraną metodą `Job.syllabificationSettings`.
+- Podział słów na sylaby przed dopasowaniem nut wybraną metodą `Job.syllabificationSettings`, wraz z korektą końców długich sylab.
+- Utworzenie sentencji dopiero po dopasowaniu sylab: najpierw według granic linii z `transcript.aligned.json`, a następnie przez dodatkowy podział każdej linii po dłuższych przerwach.
 - Obsługa metod `kokosznicka`, `pyphen`, `heuristic` i `none`.
 - Rozstrzyganie języka dla sylabizacji w kolejności: wymuszony język z `Job.metadata`, `detectedLanguage`, `alignmentLanguage`.
 - Fallback do dotychczasowej heurystyki, gdy wybrana metoda nie obsłuży języka, pakiet nie będzie dostępny albo zwróci niepoprawny wynik.

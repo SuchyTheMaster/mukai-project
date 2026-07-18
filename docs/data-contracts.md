@@ -98,7 +98,7 @@ Domyślne wartości w UI:
 
 ## TranscriptionSettings
 
-Ustawienia transkrypcji sterują VAD WhisperX i finalnym grupowaniem słów w frazy karaoke. Surowe segmenty ASR pozostają w `transcript.raw.json`, a `transcript.aligned.json` zawiera finalne `TranscriptSegment` zbudowane z aligned words.
+Ustawienia transkrypcji sterują VAD WhisperX i parametrami późniejszego grupowania słów w sentencje karaoke. Surowe segmenty ASR pozostają w `transcript.raw.json`, a `transcript.aligned.json` zawiera linie forced alignment z aligned words. Finalne sentencje powstają w etapie wstępnego dopasowania.
 
 ```json
 {
@@ -464,7 +464,7 @@ Zasady:
 
 ## TranscriptSegment
 
-`TranscriptSegment` reprezentuje finalną frazę/sentencję karaoke po forced alignment i pogrupowaniu słów na podstawie dłuższych pauz. Nie musi odpowiadać jednemu surowemu segmentowi ASR z WhisperX.
+`TranscriptSegment` w `transcript.aligned.json` reprezentuje linię zwróconą przez forced alignment WhisperX. Granica segmentu jest później zachowywana jako bezwzględna granica sentencji, ale jedna linia może zostać dodatkowo podzielona po dłuższej pauzie.
 
 ```json
 {
@@ -577,7 +577,9 @@ Zasady:
 
 Reguły automatycznego szkicu:
 
-- WhisperX dostarcza słowa i czasy słów; sentencje są agregowane z kolejnych słów według `effectiveSentenceGapMs`.
+- WhisperX dostarcza linie, słowa i czasy słów. Wstępne dopasowanie najpierw tworzy sylaby, przypisuje im MIDI i weryfikuje końce długich sylab.
+- Każda linia transkrypcji wyznacza bezwzględną granicę sentencji; słowa z różnych linii nie są scalane.
+- Po dopasowaniu sylab każda linia jest dodatkowo dzielona według `effectiveSentenceGapMs`, liczonego między skorygowanymi granicami sylab sąsiednich słów.
 - Jeśli `requestedSentenceGapMs` jest `null`, próg sentencji jest wykrywany automatycznie z BPM i odstępów między słowami.
 - Czas trwania sylab wypełnia czas trwania słowa bez przerw między sylabami.
 - `midi` sylaby jest uśrednioną wartością nut przecinających jej czas trwania.

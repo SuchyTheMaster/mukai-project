@@ -230,6 +230,34 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
         self.assertEqual(segments[1].startSec, 1.3)
         self.assertEqual(segments[1].endSec, 1.5)
 
+    def test_sentence_segments_preserve_transcription_line_boundaries(self):
+        aligned = [
+            TranscriptSegment(
+                segmentId="line_1",
+                startSec=0.0,
+                endSec=0.4,
+                text="pierwsza",
+                confidence=0.9,
+                words=[TranscriptWord(wordId="w1", startSec=0.0, endSec=0.4, text="pierwsza", confidence=0.9)],
+            ),
+            TranscriptSegment(
+                segmentId="line_2",
+                startSec=0.45,
+                endSec=0.8,
+                text="druga",
+                confidence=0.9,
+                words=[TranscriptWord(wordId="w2", startSec=0.45, endSec=0.8, text="druga", confidence=0.9)],
+            ),
+        ]
+
+        segments = build_sentence_segments(
+            aligned,
+            TranscriptionSettings(sentenceGapMs=600, sentencePaddingMs=0),
+            low_confidence_threshold=0.55,
+        )
+
+        self.assertEqual([segment.text for segment in segments], ["pierwsza", "druga"])
+
     def test_sentence_segments_auto_gap_uses_word_gaps_and_bpm(self):
         words = [
             TranscriptWord(wordId="w1", startSec=0.0, endSec=0.2, text="ala", confidence=0.9),

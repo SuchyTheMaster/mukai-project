@@ -27,6 +27,26 @@ def segment_with_word(text: str, chars: list[TranscriptChar] | None = None, end_
     )
 
 
+def segment_with_words(segment_id: str, words: list[tuple[str, float, float]]) -> TranscriptSegment:
+    return TranscriptSegment(
+        segmentId=segment_id,
+        startSec=words[0][1],
+        endSec=words[-1][2],
+        text=" ".join(text for text, _, _ in words),
+        confidence=0.9,
+        words=[
+            TranscriptWord(
+                wordId=f"{segment_id}_word_{index}",
+                startSec=start,
+                endSec=end,
+                text=text,
+                confidence=0.9,
+            )
+            for index, (text, start, end) in enumerate(words, start=1)
+        ],
+    )
+
+
 def note(
     note_id: str,
     start: float,
@@ -76,6 +96,53 @@ def fake_pyphen_module(positions_by_word: dict[str, list[int]] | None = None, la
 
 
 class SyllableNoteMappingTest(unittest.TestCase):
+    def test_transcription_lines_are_sentence_boundaries_even_without_a_long_pause(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [
+                segment_with_words("line_1", [("pierwsza", 0.0, 0.4)]),
+                segment_with_words("line_2", [("druga", 0.45, 0.8)]),
+            ],
+            [],
+            syllabification_settings=SyllabificationSettings(method="none"),
+            effective_sentence_gap_ms=600,
+        )
+
+        self.assertEqual([sentence.text for sentence in arrangement.sentences], ["pierwsza", "druga"])
+
+    def test_long_pause_splits_a_transcription_line_after_syllable_alignment(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_words("line_1", [("pierwsza", 0.0, 0.4), ("druga", 1.1, 1.5)])],
+            [],
+            syllabification_settings=SyllabificationSettings(method="none"),
+            effective_sentence_gap_ms=600,
+        )
+
+        self.assertEqual([sentence.text for sentence in arrangement.sentences], ["pierwsza", "druga"])
+
+    def test_long_syllable_correction_is_applied_before_pause_splitting(self):
+        arrangement = build_arrangement(
+            "job_1",
+            [segment_with_words("line_1", [("pierwsza", 0.0, 1.0), ("druga", 1.55, 1.9)])],
+            [note("n1", 0.0, 1.0), note("n2", 1.55, 1.9, 62)],
+            syllabification_settings=SyllabificationSettings(method="none"),
+            effective_sentence_gap_ms=600,
+            pitch_frames=pitch_frames(
+                (0.0, -20.0),
+                (0.4, -20.0),
+                (0.5, -80.0),
+                (0.9, -80.0),
+                (1.55, -20.0),
+                (1.8, -20.0),
+            ),
+            pitch_settings=PitchSettings(frameStepMs=100, mergeGapMs=90, checkNoteLongerThan=400),
+        )
+
+        self.assertEqual([sentence.text for sentence in arrangement.sentences], ["pierwsza", "druga"])
+        self.assertEqual(arrangement.sentences[0].words[0].syllables[0].endSec, 0.5)
+        self.assertEqual(arrangement.qualitySummary["correctedLongSyllableCount"], 1)
+
     def test_syllables_have_midi_without_note_assignment(self):
         arrangement = build_arrangement("job_1", [segment_with_word("aa")], [note("n1", 0.0, 0.45), note("n2", 0.55, 1.0, 62)])
 

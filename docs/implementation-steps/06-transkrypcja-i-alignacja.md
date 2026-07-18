@@ -23,8 +23,8 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Osobne ustawienia Silero (`threshold`, `neg_threshold`, minimalny czas wokalu/ciszy i padding detekcji) oraz pyannote (`vad_onset`, `vad_offset`), wraz ze wspólnymi `vadChunkSizeSec`, `sentenceGapMs` i `sentencePaddingMs`.
 - Zapis `transcript.raw.json` z segmentami ASR.
 - Zapis w `transcript.raw.json` interwałów VAD/Cut & Merge faktycznie przekazanych do ASR.
-- Zapis `transcript.aligned.json` z finalnymi frazami karaoke, słowami, start/end i confidence.
-- Budowanie finalnych fraz z aligned words przez podział po dłuższych pauzach między słowami.
+- Zapis `transcript.aligned.json` z liniami forced alignment, słowami, start/end i confidence.
+- Zachowanie granic linii transkrypcji do późniejszego budowania sentencji w etapie wstępnego dopasowania.
 - Oznaczanie segmentów o niskiej pewności do ręcznej korekty bez automatycznego usuwania.
 - Zapis wersji WhisperX, modelu ASR, modelu alignacji, PyTorch/CUDA, parametrów batch, metody VAD, opcji VAD i parametrów budowania fraz.
 - Aktualizacja statusu `transcribing`, postępu, diagnostyki i artefaktów.
@@ -43,7 +43,7 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 ## Wynik etapu
 
 - `Job` ma transkrypcję z segmentami i słowami w czasie.
-- Segmenty w `transcript.aligned.json` są frazami karaoke, a nie kopią surowych segmentów ASR.
+- Segmenty w `transcript.aligned.json` są liniami forced alignment z ujednoliconym kontraktem słów i czasów.
 - UI może pokazać etap WhisperX, pobrać artefakty i oznaczyć niską pewność jako wymagającą recenzji.
 - Dane są gotowe do połączenia z pitch i szkicem karaoke.
 
@@ -53,7 +53,7 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Dla utworu bez wskazanego języka worker nie wymusza języka.
 - Segmenty zachowują globalne czasy względem oryginalnego utworu.
 - Worker przekazuje do WhisperX jawną metodę VAD i opcje VAD.
-- Przerwa między słowami większa niż efektywny `sentenceGapMs` rozdziela finalne sentencje; `null` uruchamia automatyczne oszacowanie progu.
+- Artefakt zachowuje osobne linie forced alignment; próg `sentenceGapMs` jest stosowany później przez wstępne dopasowanie, a `null` uruchamia automatyczne oszacowanie progu.
 - Niska pewność nie usuwa tekstu z wyniku, tylko oznacza go do korekty.
 - Worker nie korzysta z zewnętrznych API.
 
@@ -63,7 +63,7 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Test WhisperX bez wymuszonego języka.
 - Test dłuższego pliku z weryfikacją globalnych czasów segmentów.
 - Test wstrzyknięcia przypiętego Silero i przekazania parametrów aktywnego VAD do WhisperX.
-- Test budowania finalnych fraz z aligned words dla pauz poniżej i powyżej progu.
+- Test zachowania granic linii i aligned words w `transcript.aligned.json`.
 - Test serializacji `TranscriptSegment` i słów.
 - Test oznaczania niskiej pewności.
 - Test błędu workera i logu diagnostycznego bez prywatnych ścieżek.

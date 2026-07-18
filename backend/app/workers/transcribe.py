@@ -120,12 +120,7 @@ def run_transcription(job_id: str) -> None:
     aligned_asr_segments = normalize_segments(aligned.get("segments", []), settings.transcription_low_confidence_threshold)
     detected_sentence_gap_ms = estimate_auto_sentence_gap(aligned_asr_segments, job.tempo.detectedSongBpm if job.tempo else None)
     effective_sentence_gap_ms = transcription_settings.sentenceGapMs if transcription_settings.sentenceGapMs is not None else detected_sentence_gap_ms
-    segments = build_sentence_segments(
-        aligned_asr_segments,
-        transcription_settings,
-        settings.transcription_low_confidence_threshold,
-        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
-    )
+    segments = aligned_asr_segments
     raw_segments = jsonable(result.get("segments", []))
     max_raw_end_sec = max_segment_end(raw_segments)
     max_aligned_end_sec = max((segment.endSec for segment in segments), default=None)
@@ -170,6 +165,7 @@ def run_transcription(job_id: str) -> None:
         "expectedWindowCount": expected_window_count,
         "rawAsrSegmentCount": len(raw_segments),
         "alignedWordSegmentCount": len(segments),
+        "alignedLineCount": len(segments),
         "asrSegmentCount": len(raw_segments),
         "alignedSegmentCount": len(segments),
         "maxRawSegmentEndSec": max_raw_end_sec,
@@ -540,25 +536,26 @@ def build_sentence_segments(
     low_confidence_threshold: float,
     detected_song_bpm: float | None = None,
 ) -> list[TranscriptSegment]:
-    words = sorted(
-        [word for segment in aligned_segments for word in segment.words if word.text],
-        key=lambda word: (word.startSec, word.endSec),
-    )
-    if not words:
+    if not any(word.text for segment in aligned_segments for word in segment.words):
         return renumber_segments(aligned_segments, low_confidence_threshold)
 
     pause_sec = detected_sentence_gap(transcription_settings, aligned_segments, detected_song_bpm) / 1000.0
     groups: list[list[TranscriptWord]] = []
-    current: list[TranscriptWord] = []
-    previous: TranscriptWord | None = None
-    for word in words:
-        if previous is not None and word.startSec - previous.endSec > pause_sec:
+    for aligned_segment in aligned_segments:
+        words = sorted(
+            [word for word in aligned_segment.words if word.text],
+            key=lambda word: (word.startSec, word.endSec),
+        )
+        current: list[TranscriptWord] = []
+        previous: TranscriptWord | None = None
+        for word in words:
+            if previous is not None and word.startSec - previous.endSec > pause_sec:
+                groups.append(current)
+                current = []
+            current.append(word)
+            previous = word
+        if current:
             groups.append(current)
-            current = []
-        current.append(word)
-        previous = word
-    if current:
-        groups.append(current)
 
     padding_sec = transcription_settings.sentencePaddingMs / 1000.0
     raw_bounds = [(group[0].startSec, max(word.endSec for word in group)) for group in groups]

@@ -161,7 +161,7 @@ Wejście:
 Wyjście:
 
 - `transcript.raw.json`: segmenty modelu ASR; asset typu `transcript_raw`.
-- `transcript.aligned.json`: finalne frazy karaoke zbudowane z aligned words, z czasami start/end, opcjonalnymi czasami znaków i confidence; asset typu `transcript_aligned`. Wstępne dopasowanie może je ponownie pogrupować po zmianie `sentenceGapMs`.
+- `transcript.aligned.json`: linie zwrócone przez forced alignment WhisperX, z czasami start/end, słowami, opcjonalnymi czasami znaków i confidence; asset typu `transcript_aligned`. Finalne sentencje powstają dopiero podczas wstępnego dopasowania.
 
 Wymagania:
 
@@ -177,7 +177,7 @@ Wymagania:
 - `TranscriptionSettings.positioning` steruje `return_char_alignments`: `words_and_syllables` zapisuje czasy znaków przy słowach, a `words_only` zostawia tylko czasy słów.
 - `transcript.raw.json` zachowuje surowe segmenty ASR bez przepisywania ich na frazy karaoke.
 - `transcript.raw.json` zachowuje też interwały VAD/Cut & Merge faktycznie przekazane do ASR.
-- Po forced alignment worker zapisuje aligned words bez finalnego grupowania w sentencje karaoke.
+- Po forced alignment worker zapisuje aligned words z zachowaniem granic linii transkrypcji, bez finalnego grupowania w sentencje karaoke.
 - Artefakty transkrypcji zapisują czas trwania wejścia, rozmiar okna, oczekiwaną liczbę okien i maksymalny czas końca segmentów, żeby dało się diagnostycznie wykryć wynik ucięty do pierwszych 30 sekund.
 - Artefakty transkrypcji zapisują metodę VAD, opcje VAD, próg pauzy dla fraz i padding fraz.
 - Zachować segmenty o niskiej pewności, ale oznaczyć je do ręcznej korekty.
@@ -219,7 +219,9 @@ Cel:
 
 Reguły startowe:
 
-- Fraza tekstu wyznacza linię karaoke.
+- Najpierw dopasować sylaby i ich długości do nut oraz wykonać dodatkową weryfikację końców długich sylab.
+- Następnie każda linia z `transcript.aligned.json` wyznacza bezwzględną granicę sentencji karaoke; wstępne dopasowanie nie scala słów z różnych linii.
+- Na końcu dzielić każdą linię dodatkowo po przerwach dłuższych niż `effectiveSentenceGapMs`, liczonych od skorygowanego końca ostatniej sylaby poprzedniego słowa do początku pierwszej sylaby następnego słowa.
 - W ramach frazy dzielić słowa na sylaby przed dopasowaniem nut zgodnie z `Job.syllabificationSettings`.
 - Tryb `none` nie dzieli słów; całe wyrazy z transkrypcji są pojedynczymi sylabami edycyjnymi.
 - Jeśli `positioning=words_and_syllables` i słowo ma kompletne czasy znaków, granice sylab wyznaczać z pierwszej i ostatniej litery sylaby, przycinając wynik do czasu słowa.

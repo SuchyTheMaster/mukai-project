@@ -59,7 +59,7 @@ from app.services.ultrastar_export import (
 )
 from app.workers.pitch import build_arrangement, resolve_syllabification_language
 from app.workers.stages import require_stage_settings
-from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
+from app.workers.transcribe import estimate_auto_sentence_gap
 
 router = APIRouter(prefix="/api")
 
@@ -475,12 +475,6 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
     frames_payload = read_json(resolve_inside(frames_asset.path))
     aligned_segments = [TranscriptSegment.model_validate(segment) for segment in transcript_payload.get("segments", [])]
     transcription_settings = job.transcriptionSettings.model_copy(update={"sentenceGapMs": request.sentenceGapMs})
-    segments = build_sentence_segments(
-        aligned_segments,
-        transcription_settings,
-        get_settings().transcription_low_confidence_threshold,
-        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
-    )
     detected_gap_ms = estimate_auto_sentence_gap(aligned_segments, job.tempo.detectedSongBpm if job.tempo else None)
     effective_gap_ms = request.sentenceGapMs if request.sentenceGapMs is not None else detected_gap_ms
     notes = [NoteEvent.model_validate(note) for note in notes_payload.get("noteEvents", [])]
@@ -488,7 +482,7 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
     language, language_source = resolve_syllabification_language(job, transcript_payload)
     arrangement = build_arrangement(
         job_id,
-        segments,
+        aligned_segments,
         notes,
         syllabification_settings=job.syllabificationSettings,
         language=language,
@@ -497,6 +491,7 @@ def resegment_arrangement(job_id: str, request: ResegmentArrangementRequest) -> 
         requested_sentence_gap_ms=request.sentenceGapMs,
         detected_sentence_gap_ms=detected_gap_ms,
         effective_sentence_gap_ms=effective_gap_ms,
+        sentence_padding_ms=transcription_settings.sentencePaddingMs,
         pitch_frames=frames,
         pitch_settings=job.pitchSettings,
     )

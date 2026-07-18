@@ -35,7 +35,7 @@ from app.services.ids import new_id
 from app.services.queue import redis_client
 from app.services.storage import read_json, relative_to_root, resolve_inside, sha256_file, write_json
 from app.workers.stages import cleanup_deleted_job_files, complete_stage_from_existing_artifacts, fail_stage, is_stage_confirmed, require_stage_settings, set_stage
-from app.workers.transcribe import build_sentence_segments, estimate_auto_sentence_gap
+from app.workers.transcribe import estimate_auto_sentence_gap
 
 
 PITCH_SAMPLE_RATE = 16000
@@ -304,17 +304,11 @@ def run_draft_alignment(job_id: str) -> None:
     frames = [PitchFrame.model_validate(frame) for frame in frames_payload.get("frames", [])]
     detected_sentence_gap_ms = estimate_auto_sentence_gap(aligned_segments, job.tempo.detectedSongBpm if job.tempo else None)
     effective_sentence_gap_ms = job.transcriptionSettings.sentenceGapMs if job.transcriptionSettings.sentenceGapMs is not None else detected_sentence_gap_ms
-    segments = build_sentence_segments(
-        aligned_segments,
-        job.transcriptionSettings,
-        get_settings().transcription_low_confidence_threshold,
-        detected_song_bpm=job.tempo.detectedSongBpm if job.tempo else None,
-    )
     notes = segment_notes(frames, job.pitchSettings)
     syllabification_language, syllabification_language_source = resolve_syllabification_language(job, transcript_payload)
     arrangement = build_arrangement(
         job_id,
-        segments,
+        aligned_segments,
         notes,
         syllabification_settings=job.syllabificationSettings,
         language=syllabification_language,
@@ -323,6 +317,7 @@ def run_draft_alignment(job_id: str) -> None:
         requested_sentence_gap_ms=job.transcriptionSettings.sentenceGapMs,
         detected_sentence_gap_ms=detected_sentence_gap_ms,
         effective_sentence_gap_ms=effective_sentence_gap_ms,
+        sentence_padding_ms=job.transcriptionSettings.sentencePaddingMs,
         pitch_frames=frames,
         pitch_settings=job.pitchSettings,
     )
@@ -598,12 +593,13 @@ def build_arrangement(
     requested_sentence_gap_ms: int | None = None,
     detected_sentence_gap_ms: int | None = None,
     effective_sentence_gap_ms: int | None = None,
+    sentence_padding_ms: int = 0,
     pitch_frames: list[PitchFrame] | None = None,
     pitch_settings: PitchSettings | None = None,
 ) -> Arrangement:
     syllabification_plan = build_syllabification_plan(syllabification_settings, language, language_source)
     note_events = [note.model_copy(deep=True) for note in notes]
-    sentences: list[ArrangementSentence] = []
+    aligned_lines: list[tuple[TranscriptSegment, list[ArrangementWord]]] = []
     slots: list[SyllableSlot] = []
     corrected_long_syllable_count = 0
     ordered_pitch_frames = sorted(pitch_frames, key=lambda frame: frame.timeSec) if pitch_frames is not None else None
@@ -663,25 +659,15 @@ def build_arrangement(
                 )
             )
 
-        sentence_flags = []
-        if segment.requiresReview:
-            sentence_flags.append("uncertain_text")
-        if any(word.requiresReview for word in words):
-            sentence_flags.append("contains_review_items")
-        sentences.append(
-            ArrangementSentence(
-                sentenceId=f"sent_{segment_index:04d}",
-                startSec=segment.startSec,
-                endSec=segment.endSec,
-                text=segment.text,
-                effectiveSentenceGapMs=effective_sentence_gap_ms,
-                requestedSentenceGapMs=requested_sentence_gap_ms,
-                detectedSentenceGapMs=detected_sentence_gap_ms,
-                requiresReview=bool(sentence_flags),
-                qualityFlags=sentence_flags,
-                words=words,
-            )
-        )
+        aligned_lines.append((segment, words))
+
+    sentences = build_sentences_from_aligned_lines(
+        aligned_lines,
+        requested_sentence_gap_ms=requested_sentence_gap_ms,
+        detected_sentence_gap_ms=detected_sentence_gap_ms,
+        effective_sentence_gap_ms=effective_sentence_gap_ms,
+        sentence_padding_ms=sentence_padding_ms,
+    )
 
     for note in note_events:
         note.qualityFlags = [flag for flag in note.qualityFlags if flag != "unassigned_note"]
@@ -700,6 +686,89 @@ def build_arrangement(
         qualitySummary=quality_summary,
         syllabification=syllabification_plan.to_info(),
     )
+
+
+def build_sentences_from_aligned_lines(
+    aligned_lines: list[tuple[TranscriptSegment, list[ArrangementWord]]],
+    *,
+    requested_sentence_gap_ms: int | None,
+    detected_sentence_gap_ms: int | None,
+    effective_sentence_gap_ms: int | None,
+    sentence_padding_ms: int,
+) -> list[ArrangementSentence]:
+    """Split aligned words only after syllable timing and long-syllable correction."""
+    sentence_groups: list[tuple[TranscriptSegment, list[ArrangementWord], float, float]] = []
+    pause_sec = effective_sentence_gap_ms / 1000.0 if effective_sentence_gap_ms is not None else None
+
+    for source_line, words in aligned_lines:
+        if not words:
+            sentence_groups.append((source_line, [], source_line.startSec, source_line.endSec))
+            continue
+
+        current: list[ArrangementWord] = []
+        for word in words:
+            previous = current[-1] if current else None
+            if previous is not None and pause_sec is not None:
+                gap_sec = arrangement_word_start(word) - arrangement_word_end(previous)
+                if gap_sec > pause_sec:
+                    sentence_groups.append(
+                        (source_line, current, arrangement_word_start(current[0]), arrangement_word_end(current[-1]))
+                    )
+                    current = []
+            current.append(word)
+        if current:
+            sentence_groups.append(
+                (source_line, current, arrangement_word_start(current[0]), arrangement_word_end(current[-1]))
+            )
+
+    padding_sec = max(sentence_padding_ms, 0) / 1000.0
+    raw_bounds = [(raw_start, raw_end) for _, _, raw_start, raw_end in sentence_groups]
+    sentences: list[ArrangementSentence] = []
+    for sentence_index, (source_line, words, raw_start, raw_end) in enumerate(sentence_groups, start=1):
+        start = max(0.0, raw_start - padding_sec)
+        end = raw_end + padding_sec
+        if sentence_index > 1:
+            previous_end = raw_bounds[sentence_index - 2][1]
+            start = max(start, midpoint(previous_end, raw_start))
+        if sentence_index < len(sentence_groups):
+            next_start = raw_bounds[sentence_index][0]
+            end = min(end, midpoint(raw_end, next_start))
+        if end <= start:
+            start = raw_start
+            end = raw_end if raw_end > raw_start else raw_start + MIN_ALIGNMENT_PART_SEC
+
+        sentence_flags: list[str] = []
+        if source_line.requiresReview:
+            sentence_flags.append("uncertain_text")
+        if any(word.requiresReview for word in words):
+            sentence_flags.append("contains_review_items")
+        sentences.append(
+            ArrangementSentence(
+                sentenceId=f"sent_{sentence_index:04d}",
+                startSec=round(start, 6),
+                endSec=round(end, 6),
+                text=" ".join(word.text.strip() for word in words if word.text.strip()).strip() or source_line.text,
+                effectiveSentenceGapMs=effective_sentence_gap_ms,
+                requestedSentenceGapMs=requested_sentence_gap_ms,
+                detectedSentenceGapMs=detected_sentence_gap_ms,
+                requiresReview=bool(sentence_flags),
+                qualityFlags=sentence_flags,
+                words=words,
+            )
+        )
+    return sentences
+
+
+def arrangement_word_start(word: ArrangementWord) -> float:
+    return min((syllable.startSec for syllable in word.syllables), default=word.startSec)
+
+
+def arrangement_word_end(word: ArrangementWord) -> float:
+    return max((syllable.endSec for syllable in word.syllables), default=word.endSec)
+
+
+def midpoint(left: float, right: float) -> float:
+    return left + (right - left) / 2.0
 
 
 def syllable_midi_and_flags(notes: list[NoteEvent], start_sec: float, end_sec: float) -> tuple[int | None, list[str]]:

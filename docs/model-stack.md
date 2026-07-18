@@ -123,7 +123,7 @@ Aktualna decyzja implementacyjna dla etapu 06:
 
 - `worker-transcribe` używa osobnego obrazu `backend/Transcribe.Dockerfile` opartego o `pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime`, tak jak worker separacji, żeby nie instalować PyTorch/CUDA z domyślnego PyPI.
 - `backend/requirements-transcribe.txt` pinuje `whisperx==3.8.6`, czyli aktualną stabilną wersję PyPI z 2026-05-25; wersja `3.8.2` pozostaje pominięta, bo została wycofana przez problem z timestampami słów i kompatybilnością `faster-whisper`.
-- Worker zapisuje `transcript.raw.json` z wynikiem ASR oraz `transcript.aligned.json` z finalnymi frazami `TranscriptSegment`, słowami, opcjonalnymi czasami znaków, confidence i `requiresReview`.
+- Worker zapisuje `transcript.raw.json` z wynikiem ASR oraz `transcript.aligned.json` z liniami forced alignment jako `TranscriptSegment`, słowami, opcjonalnymi czasami znaków, confidence i `requiresReview`.
 - Język jest przekazywany do WhisperX tylko dla `languageMode=forced` i nie jest przekazywany, gdy użytkownik zostawił język pusty.
 - Worker ładuje cały plik `worker_inputs/whisperx.wav` przez `whisperx.load_audio` i przekazuje cały waveform do `model.transcribe`; nie wykonuje własnego obcięcia do pierwszych 30 sekund.
 - Worker domyślnie wstrzykuje Silero VAD `v6.2.1` przypięte do rewizji `7e30209a3e901f9842f81b225f3e93d8199902b1`. `pyannote` pozostaje obsługiwanym trybem alternatywnym przez `TranscriptionSettings.vadMethod`.
@@ -131,8 +131,8 @@ Aktualna decyzja implementacyjna dla etapu 06:
 - Preset Silero używa `threshold=0.30`, `neg_threshold=0.15`, `min_speech_duration_ms=80`, `min_silence_duration_ms=100`, `speech_pad_ms=100` i `chunk_size=30`.
 - Preset pyannote używa `vad_onset=0.45`, `vad_offset=0.25` i `chunk_size=30`. Parametry nieaktywnego VAD nie są przekazywane do modelu.
 - Worker przekazuje do `whisperx.align` `return_char_alignments=True` tylko dla `TranscriptionSettings.positioning="words_and_syllables"`; przy `words_only` zapisuje wyłącznie czasy słów.
-- Po forced alignment worker buduje finalne sentencje karaoke z aligned words. Sentencje są rozdzielane przerwą większą niż efektywny `sentenceGapMs`; `null` oznacza automatyczne oszacowanie z BPM i odstępów między słowami.
-- `transcript.raw.json` zachowuje surowe segmenty ASR i `vadSegments` faktycznie przekazane do ASR, a `transcript.aligned.json` zapisuje finalne `TranscriptSegment` jako frazy karaoke oraz wersje WhisperX/PyTorch, wariant CUDA, źródło środowiska, model ASR, język alignacji, `batchSize`, `computeType`, hash wejścia, próg niskiej pewności, czas trwania wejścia, oczekiwaną liczbę okien 30 s, maksymalne czasy końca segmentów ASR/alignacji, metodę i rewizję VAD, opcje VAD i parametry budowania fraz.
+- Po forced alignment worker zachowuje granice linii i aligned words. Finalne sentencje buduje worker wstępnego dopasowania dopiero po dopasowaniu sylab; najpierw respektuje linie, a następnie dzieli je po przerwie większej niż efektywny `sentenceGapMs`. Wartość `null` oznacza automatyczne oszacowanie z BPM i odstępów między słowami.
+- `transcript.raw.json` zachowuje surowe segmenty ASR i `vadSegments` faktycznie przekazane do ASR, a `transcript.aligned.json` zapisuje linie forced alignment jako `TranscriptSegment` oraz wersje WhisperX/PyTorch, wariant CUDA, źródło środowiska, model ASR, język alignacji, `batchSize`, `computeType`, hash wejścia, próg niskiej pewności, czas trwania wejścia, oczekiwaną liczbę okien 30 s, maksymalne czasy końca segmentów ASR/alignacji, metodę i rewizję VAD oraz opcje VAD. Finalne frazy karaoke buduje worker wstępnego dopasowania po dopasowaniu i weryfikacji sylab.
 
 Aktualna decyzja implementacyjna dla etapu 07:
 
