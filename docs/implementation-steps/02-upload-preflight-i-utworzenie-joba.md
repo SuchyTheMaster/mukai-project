@@ -21,6 +21,8 @@ Dodać pierwszy realny przepływ użytkownika: wybór pliku audio, inspekcję te
 - Zwracanie `UploadInspection`, `SourceMetadata` i `EmbeddedCover`.
 - Tymczasowe przechowanie draftu uploadu i covera do czasu utworzenia `Job`.
 - Formularz uploadu w React: audio, metadane, opcjonalny język, cover, profile modeli i zaawansowane ustawienia pitch.
+- Wyszukiwalny combobox `Konfiguracja` z grupami plikowych/bazodanowych presetów wbudowanych i bazodanowych presetów użytkownika, oraz osobny select `Tryb` z wartościami `manual` i `automatic`.
+- Rozwiązywanie częściowych presetów względem plikowego `default`, wymagane ostrzeżenie przed startem i zapis snapshotu nazwy, typu oraz pól fallbacku w `Job`.
 - Domyślne profile `htdemucs_ft` i `large-v3` oraz ręczny wybór szybszych `htdemucs` i `large-v3-turbo`.
 - Akcja `Przywróć domyślny` dla covera z tagów.
 - Endpoint `POST /api/jobs/uploads`, który promuje zaakceptowany draft do `Job`.
@@ -61,4 +63,3 @@ Dodać pierwszy realny przepływ użytkownika: wybór pliku audio, inspekcję te
 - Test wykrycia osadzonego covera i zastąpienia go ręcznym coverem.
 - Test utworzenia `Job` ze statusem `uploaded`.
 - Test UI: uzupełnienie formularza z tagów, edycja pól, przywrócenie domyślnego covera i start zadania.
-

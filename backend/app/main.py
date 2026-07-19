@@ -5,6 +5,7 @@ from app.api.routes import router
 from app.core.config import get_settings
 from app.core.errors import ApiError, api_error_handler, http_error_handler
 from app.db.database import run_migrations
+from app.services.configuration_presets import load_default_preset_document
 
 
 settings = get_settings()
@@ -24,5 +25,6 @@ app.include_router(router)
 
 @app.on_event("startup")
 def startup() -> None:
+    load_default_preset_document()
     if settings.auto_migrate:
         run_migrations()

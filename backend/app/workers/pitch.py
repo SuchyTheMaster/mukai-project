@@ -182,8 +182,8 @@ def _process_job(job_id: str, start_stage: str) -> None:
             "alignment",
             {
                 "sentenceGapMs": job.transcriptionSettings.sentenceGapMs if job else None,
-                "minNoteLengthMs": job.pitchSettings.minNoteLengthMs if job else 120,
-                "mergeGapMs": job.pitchSettings.mergeGapMs if job else 90,
+                "minNoteLengthMs": job.pitchSettings.minNoteLengthMs if job else 75,
+                "mergeGapMs": job.pitchSettings.mergeGapMs if job else 130,
                 "checkNoteLongerThan": job.pitchSettings.checkNoteLongerThan if job else 400,
                 "silenceTresholdForNoteChecking": job.pitchSettings.silenceTresholdForNoteChecking if job else -60.0,
             },

@@ -1,0 +1,45 @@
+{
+  "presetId": "default",
+  "name": "Domyślna",
+  "presetType": "predefined",
+  "configuration": {
+    "profiles": {
+      "separationModel": "htdemucs_ft",
+      "transcriptionModel": "large-v3",
+      "pitch": "default"
+    },
+    "transcriptionSettings": {
+      "vadMethod": "pyannote",
+      "sileroThreshold": 0.3,
+      "sileroNegThreshold": 0.15,
+      "sileroMinSpeechDurationMs": 80,
+      "sileroMinSilenceDurationMs": 100,
+      "sileroSpeechPadMs": 100,
+      "pyannoteVadOnset": 0.45,
+      "pyannoteVadOffset": 0.25,
+      "vadChunkSizeSec": 30,
+      "sentenceGapMs": null,
+      "sentencePaddingMs": 80,
+      "positioning": "words_and_syllables"
+    },
+    "pitchSettings": {
+      "silenceThresholdDb": -48.0,
+      "periodicityThreshold": 0.48,
+      "frameStepMs": 10,
+      "minNoteLengthMs": 75,
+      "mergeGapMs": 130,
+      "checkNoteLongerThan": 400,
+      "silenceTresholdForNoteChecking": -60.0
+    },
+    "syllabificationSettings": {
+      "method": "pyphen"
+    }
+  },
+  "languageOverrides": {
+    "pl": {
+      "syllabificationSettings": {
+        "method": "kokosznicka"
+      }
+    }
+  }
+}

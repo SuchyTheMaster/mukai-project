@@ -155,6 +155,10 @@ Checklist audytu `docs` względem kodu:
 - Porównać typy `AudioAsset.type` opisywane w [Kontrakty danych](data-contracts.md) i [Pipeline przetwarzania](processing-pipeline.md) z workerami w `backend/app/workers/`.
 - Sprawdzić, czy statusy `JobStatus` z kodu mają zgodną semantykę w dokumentach, szczególnie statusy eksportu/importu istniejące w kontraktach przed implementacją endpointów.
 - Porównać domyślne wartości UI z `frontend/src/main.jsx`, w tym modele, sylabizację, pozycjonowanie, snap i limity edytora.
+- Sprawdzić niezależność pól: każdy preset `Konfiguracja` działa zarówno w `processingMode=manual`, jak i `processingMode=automatic`; pierwszy zatrzymuje każdy konfigurowalny etap na formularzu, a drugi automatycznie przechodzi dalej.
+- Sprawdzić, że `Wróć do audio` zachowuje ostatni `configurationPreset` i wartości ustawień, przełącza `processingMode` na `manual` i zatrzymuje się na formularzu aligningu, natomiast `Od nowa` wraca do pustego formularza z presetem `default` i trybem `automatic`.
+- Sprawdzić katalog presetów: grupowanie i wyszukiwanie, identyczne nazwy między `predefined` i `custom`, konflikt nazwy tylko wewnątrz `custom`, blokadę modyfikacji wbudowanych oraz potwierdzane usuwanie.
+- Sprawdzić częściowy preset: konflikt przed startem, wszystkie akcje ostrzeżenia, fallback zależnej od języka sylabizacji oraz czerwone pola znikające wyłącznie po ich edycji.
 - Sprawdzić jednostki czasu w UI i API: backendowe pola z sufiksem `Ms` przechowują milisekundy, nawet jeśli UI pokazuje wygodniejszą jednostkę i przelicza ją przed wysłaniem.
 
 ## Przyszłe testy jednostkowe

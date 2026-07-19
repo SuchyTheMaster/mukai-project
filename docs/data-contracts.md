@@ -24,13 +24,18 @@
     "language": "pl",
     "languageMode": "forced"
   },
+  "configurationPreset": "default",
+  "configurationPresetName": "Domyślna",
+  "configurationPresetType": "predefined",
+  "configurationFallbackFields": [],
+  "processingMode": "automatic",
   "profiles": {
     "separationModel": "htdemucs_ft",
     "transcriptionModel": "large-v3",
-    "pitch": "fast"
+    "pitch": "default"
   },
   "transcriptionSettings": {
-    "vadMethod": "silero",
+    "vadMethod": "pyannote",
     "sileroThreshold": 0.3,
     "sileroNegThreshold": 0.15,
     "sileroMinSpeechDurationMs": 80,
@@ -89,12 +94,25 @@ Domyślne wartości w UI:
 
 - `separationModel`: `htdemucs_ft`.
 - `transcriptionModel`: `large-v3`.
-- `pitch`: `fast`.
+- `pitch`: `default` (dokładny model `torchcrepe full`).
+
+`configurationPreset` jest rozszerzalnym identyfikatorem presetu konfiguracji pipeline'u:
+
+- `default`: domyślny zestaw wartości ustawień etapów.
+- Przyszłe identyfikatory mogą dostarczać inne zestawy wartości bez wpływania na sposób przechodzenia pipeline'u.
+- `configurationPresetName` i `configurationPresetType` są snapshotem użytego wpisu, więc usunięcie globalnego presetu nie zmienia istniejącego joba.
+- `configurationFallbackFields` zawiera ścieżki liści uzupełnionych z plikowego presetu `default`; edycja pola w trybie ręcznym usuwa wyłącznie jego ścieżkę.
+
+`processingMode` steruje przechodzeniem etapów niezależnie od presetu:
+
+- `manual`: przed każdym konfigurowalnym etapem wymaga `settingsConfirmedAt`.
+- `automatic`: automatycznie uruchamia kolejne etapy z wartościami wynikającymi z presetu.
+- Starszy `configurationPreset="manual"` jest migrowany do `configurationPreset="default"` i `processingMode="manual"`; pozostałe zapisane presety bez pola `processingMode` zachowują wcześniejsze zachowanie automatyczne. Job bez obu pól przyjmuje bezpieczny tryb `manual`.
 
 `pitch`:
 
-- `fast`: szybszy profil torchcrepe `tiny`, domyślny dla nowych zadań.
-- `default`: dokładniejszy profil torchcrepe `full`, wolniejszy na długich wokalach.
+- `fast`: szybszy profil torchcrepe `tiny`.
+- `default`: domyślny, dokładniejszy profil torchcrepe `full`, wolniejszy na długich wokalach.
 
 ## TranscriptionSettings
 
@@ -102,7 +120,7 @@ Ustawienia transkrypcji sterują VAD WhisperX i parametrami późniejszego grupo
 
 ```json
 {
-  "vadMethod": "silero",
+  "vadMethod": "pyannote",
   "sileroThreshold": 0.3,
   "sileroNegThreshold": 0.15,
   "sileroMinSpeechDurationMs": 80,
@@ -119,8 +137,8 @@ Ustawienia transkrypcji sterują VAD WhisperX i parametrami późniejszego grupo
 
 `vadMethod`:
 
-- `silero`: domyślny VAD dla WhisperX; aktywne są wyłącznie pola `silero*` oraz wspólne `vadChunkSizeSec`.
-- `pyannote`: alternatywny VAD; aktywne są wyłącznie `pyannoteVadOnset`, `pyannoteVadOffset` oraz wspólne `vadChunkSizeSec`.
+- `silero`: alternatywny VAD; aktywne są wyłącznie pola `silero*` oraz wspólne `vadChunkSizeSec`.
+- `pyannote`: domyślny VAD dla WhisperX; aktywne są wyłącznie `pyannoteVadOnset`, `pyannoteVadOffset` oraz wspólne `vadChunkSizeSec`.
 
 Parametry Silero:
 
@@ -153,15 +171,15 @@ Zasady:
 
 ## PitchSettings
 
-Domyślne ustawienia pitch są dobrane pod typowe piosenki i późniejsze łączenie słów z nutami w szkicu karaoke: zachowują krok analizy `10 ms`, ale odrzucają bardzo krótkie nuty i scalają drobne przerwy po separacji wokalu.
+Domyślne ustawienia pitch są dobrane pod zachowanie cichego wokalu i krótkich sylab podczas późniejszego łączenia słów z nutami: używają dokładnego profilu, zachowują krok analizy `10 ms`, dopuszczają nuty od `75 ms` i scalają przerwy do `130 ms`.
 
 ```json
 {
-  "silenceThresholdDb": -42.0,
-  "periodicityThreshold": 0.55,
+  "silenceThresholdDb": -48.0,
+  "periodicityThreshold": 0.48,
   "frameStepMs": 10,
-  "minNoteLengthMs": 120,
-  "mergeGapMs": 90,
+  "minNoteLengthMs": 75,
+  "mergeGapMs": 130,
   "checkNoteLongerThan": 400,
   "silenceTresholdForNoteChecking": -60.0
 }
@@ -329,6 +347,9 @@ Zasady:
 ```json
 {
   "uploadDraftId": "draft_01J...",
+  "configurationPreset": "default",
+  "acknowledgeConfigurationFallback": false,
+  "processingMode": "automatic",
   "metadata": {
     "title": "Song Title",
     "artist": "Artist",
@@ -338,10 +359,10 @@ Zasady:
   "profiles": {
     "separationModel": "htdemucs_ft",
     "transcriptionModel": "large-v3",
-    "pitch": "fast"
+    "pitch": "default"
   },
   "transcriptionSettings": {
-    "vadMethod": "silero",
+    "vadMethod": "pyannote",
     "sileroThreshold": 0.3,
     "sileroNegThreshold": 0.15,
     "sileroMinSpeechDurationMs": 80,
@@ -354,11 +375,11 @@ Zasady:
     "sentencePaddingMs": 80
   },
   "pitchSettings": {
-    "silenceThresholdDb": -42.0,
-    "periodicityThreshold": 0.55,
+    "silenceThresholdDb": -48.0,
+    "periodicityThreshold": 0.48,
     "frameStepMs": 10,
-    "minNoteLengthMs": 120,
-    "mergeGapMs": 90,
+    "minNoteLengthMs": 75,
+    "mergeGapMs": 130,
     "checkNoteLongerThan": 400,
     "silenceTresholdForNoteChecking": -60.0
   },
@@ -369,11 +390,25 @@ Zasady:
 }
 ```
 
+Backend rozwiązuje ustawienia na podstawie `configurationPreset`; przesłane profile i ustawienia pozostają polami zgodnościowymi, ale preset jest źródłem wartości nowego joba. Dla częściowego presetu wymagane jest ponowienie żądania z `acknowledgeConfigurationFallback=true` po pokazaniu ostrzeżenia użytkownikowi.
+
+## ConfigurationPreset
+
+Plikowy preset `default` nie ma rekordu w bazie. Tabela `configuration_presets` przechowuje globalne rekordy `predefined` i `custom` z polami `preset_id`, `name`, `preset_type`, `configuration`, `created_at` i `updated_at`. Nazwa jest unikalna bez uwzględniania wielkości liter w obrębie typu, dlatego wpisy `predefined` i `custom` mogą mieć tę samą nazwę.
+
+Kanoniczne `configuration` zawiera:
+
+- `profiles`;
+- edytowalne `transcriptionSettings` bez danych runtime;
+- `pitchSettings`;
+- `syllabificationSettings`.
+
+`GET /api/configuration-presets` zwraca wspólny katalog z `presetId`, `name`, `presetType`, `canDelete`, `canOverwrite`, `missingFields` oraz opcjonalnym `invalidReason`. `POST` zapisuje konfigurację ukończonego joba jako nowy `custom`; konflikt nazwy z istniejącym `custom` zwraca jego ID. `PUT` i `DELETE` przyjmują wyłącznie ID customowego presetu.
+
 Zasady:
 
-- Brak `transcriptionSettings` w payloadzie oznacza użycie wartości domyślnych.
-- `transcriptionSettings` są zapisywane w `Job` i używane przy pierwszym uruchomieniu oraz ponownym przeliczeniu transkrypcji.
-- Brak `syllabificationSettings` w payloadzie oznacza użycie wartości domyślnej backendu `pyphen`; UI powinien wysłać jawny wybór użytkownika.
+- Rozwiązane `transcriptionSettings`, `pitchSettings`, `profiles` i `syllabificationSettings` są materializowane w `Job` i używane przy pierwszym uruchomieniu oraz ponownym przeliczeniu etapów.
+- Dla plikowego `default` sylabizacja zależy od języka metadanych: polski używa Kokosznickiej, a pozostałe języki Pyphen.
 
 ## SourceMetadata
 

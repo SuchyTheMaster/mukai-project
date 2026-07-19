@@ -363,6 +363,69 @@ h1 {
   box-shadow: inset 0 0 0 1px rgba(255, 0, 110, 0.4);
 }
 
+.configuration-preset-options {
+  min-width: 280px;
+}
+
+.preset-option-group + .preset-option-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.preset-option-group-title {
+  padding: 5px 10px;
+  color: var(--tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.preset-option-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.preset-option-row.deletable {
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+.preset-option-row.active {
+  background: rgba(255, 0, 110, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(255, 0, 110, 0.4);
+}
+
+.language-options .preset-option-row > button {
+  min-width: 0;
+}
+
+.language-options .preset-option-row > .preset-delete-button {
+  justify-content: center;
+  width: 34px;
+  padding: 6px;
+  color: var(--tertiary);
+}
+
+.language-options .preset-option-row > .preset-delete-button:hover {
+  color: var(--error);
+  background: rgba(255, 65, 108, 0.14);
+}
+
+.preset-options-empty {
+  padding: 10px;
+  color: var(--tertiary);
+  font-size: 13px;
+}
+
+.configuration-fallback-field input,
+.configuration-fallback-field select {
+  border-color: var(--error);
+  box-shadow: 0 0 8px rgba(255, 65, 108, 0.28);
+}
+
 .controls-row,
 .cover-actions {
   display: flex;
@@ -508,7 +571,19 @@ h1 {
 }
 
 .import-submit {
+  margin: 0;
+}
+
+.initial-processing-actions {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 16px;
+  align-items: end;
   margin-top: 24px;
+}
+
+.initial-processing-actions .button {
+  min-width: 210px;
 }
 
 .button.primary:hover:not(:disabled) {
@@ -809,9 +884,8 @@ summary:focus-visible {
   white-space: pre-wrap;
 }
 
-.summary-editor-button {
-  justify-self: start;
-  margin-top: 4px;
+.review-entry-button {
+  margin-top: 0;
 }
 
 .artifact-links {
@@ -1410,6 +1484,34 @@ summary:hover {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.52);
+}
+
+.configuration-warning-modal,
+.preset-save-modal {
+  width: min(620px, 100%);
+}
+
+.configuration-warning-actions {
+  flex-wrap: wrap;
+}
+
+.modal-action-spacer {
+  flex: 1 1 auto;
+}
+
+.modal-backdrop-nested {
+  z-index: 120;
+}
+
+.preset-save-mode {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.preset-save-button {
+  justify-self: start;
+  margin-top: 20px;
 }
 
 .modal-header,
@@ -2309,8 +2411,14 @@ summary:hover {
 
   .form-grid,
   .form-grid.compact,
-  .status-row {
+  .status-row,
+  .initial-processing-actions {
     grid-template-columns: 1fr;
+  }
+
+  .initial-processing-actions .button {
+    width: 100%;
+    min-width: 0;
   }
 
   .editor-top,

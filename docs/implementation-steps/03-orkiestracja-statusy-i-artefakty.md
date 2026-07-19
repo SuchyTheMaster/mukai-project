@@ -22,6 +22,8 @@ Utworzyć warstwę sterowania pipeline'em zanim pojawią się kosztowne workery 
 - Rejestrowanie `artifactIds`, `producedByStage` i `producedBySubstep`.
 - Endpoint pobierania artefaktów `GET /api/jobs/{jobId}/artifacts/{assetId}` z walidacją dostępu do ścieżek.
 - Planowany reset etapu przez `POST /api/jobs/{jobId}/stages/{stage}/reset`.
+- Automatyczne przechodzenie między konfigurowalnymi etapami dla `processingMode=automatic`; tryb `manual` ustawia `actionRequired` i czeka na zatwierdzenie formularza niezależnie od wybranego presetu konfiguracji.
+- Formularze ręczne oznaczają czerwono wartości uzupełnione z `default` i usuwają ścieżkę z `configurationFallbackFields` dopiero po edycji konkretnego pola.
 - Widok statusu w UI z pełnym stage railem, postępem, ETA lub stanem indeterminate, błędami i akcjami pobierania artefaktów.
 - Mockowane etapy pipeline'u pozwalające przejść od `uploaded` do kontrolowanego stanu testowego.
 
@@ -56,5 +58,5 @@ Utworzyć warstwę sterowania pipeline'em zanim pojawią się kosztowne workery 
 - Test błędu workera i sanitizacji logu diagnostycznego.
 - Test pobierania artefaktu oraz próby path traversal.
 - Test resetu etapu i listy unieważnionych zależności.
+- Test ręcznej i automatycznej kontynuacji niezależnie od presetu konfiguracji oraz wymuszenia `processingMode=manual` przez `Wróć do audio`.
 - Test UI stage rail dla stanów wykonany, przetwarzany, oczekujący i błędny.
-

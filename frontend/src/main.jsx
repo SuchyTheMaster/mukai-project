@@ -62,17 +62,17 @@ const emptyMetadata = {
 };
 
 const defaultPitch = {
-  silenceThresholdDb: -42,
-  periodicityThreshold: 0.55,
+  silenceThresholdDb: -48,
+  periodicityThreshold: 0.48,
   frameStepMs: 10,
-  minNoteLengthMs: 120,
-  mergeGapMs: 90,
+  minNoteLengthMs: 75,
+  mergeGapMs: 130,
   checkNoteLongerThan: 400,
   silenceTresholdForNoteChecking: -60,
 };
 
 const defaultTranscription = {
-  vadMethod: "silero",
+  vadMethod: "pyannote",
   sileroThreshold: 0.3,
   sileroNegThreshold: 0.15,
   sileroMinSpeechDurationMs: 80,
@@ -118,6 +118,23 @@ const PITCH_PROFILE_OPTIONS = [
 ];
 
 const PITCH_PROFILE_LABELS = Object.fromEntries(PITCH_PROFILE_OPTIONS);
+
+const DEFAULT_CONFIGURATION_PRESET = "default";
+const DEFAULT_CONFIGURATION_PRESET_SUMMARY = {
+  presetId: DEFAULT_CONFIGURATION_PRESET,
+  name: "Domyślna",
+  presetType: "predefined",
+  canDelete: false,
+  canOverwrite: false,
+  missingFields: [],
+};
+const DEFAULT_PROCESSING_MODE = "automatic";
+const MANUAL_PROCESSING_MODE = "manual";
+const PROCESSING_MODE_OPTIONS = [
+  [MANUAL_PROCESSING_MODE, "Ręczny"],
+  [DEFAULT_PROCESSING_MODE, "Automatyczny"],
+];
+const PROCESSING_MODE_LABELS = Object.fromEntries(PROCESSING_MODE_OPTIONS);
 
 const WHISPER_LANGUAGE_OPTIONS = [
   ["", "Auto"],
@@ -299,7 +316,9 @@ const MODEL_TOOLTIPS = {
 const initialUiState = {
   inspection: null,
   metadata: emptyMetadata,
-  profiles: { separationModel: "htdemucs_ft", transcriptionModel: "large-v3", pitch: "fast" },
+  configurationPreset: DEFAULT_CONFIGURATION_PRESET,
+  processingMode: DEFAULT_PROCESSING_MODE,
+  profiles: { separationModel: "htdemucs_ft", transcriptionModel: "large-v3", pitch: "default" },
   transcriptionSettings: defaultTranscription,
   pitchSettings: defaultPitch,
   syllabificationSettings: defaultSyllabification,
@@ -354,6 +373,9 @@ function App() {
   const coverInputRef = useRef(null);
   const [inspection, setInspection] = useState(persisted.inspection);
   const [metadata, setMetadata] = useState(persisted.metadata);
+  const [configurationPreset, setConfigurationPreset] = useState(persisted.configurationPreset);
+  const [configurationPresets, setConfigurationPresets] = useState([DEFAULT_CONFIGURATION_PRESET_SUMMARY]);
+  const [processingMode, setProcessingMode] = useState(persisted.processingMode);
   const [profiles, setProfiles] = useState(persisted.profiles);
   const [transcriptionSettings, setTranscriptionSettings] = useState(persisted.transcriptionSettings);
   const [pitchSettings, setPitchSettings] = useState(persisted.pitchSettings);
@@ -375,7 +397,31 @@ function App() {
   const [savingProject, setSavingProject] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [fallbackWarning, setFallbackWarning] = useState(null);
+  const [presetDeleteTarget, setPresetDeleteTarget] = useState(null);
+  const [presetSaveOpen, setPresetSaveOpen] = useState(false);
+  const [presetNameCollision, setPresetNameCollision] = useState(null);
+  const [presetSaving, setPresetSaving] = useState(false);
   const resetInProgress = useRef(false);
+
+  async function refreshConfigurationPresets() {
+    const catalog = await apiJson("/api/configuration-presets");
+    const presets = catalog.presets?.length ? catalog.presets : [DEFAULT_CONFIGURATION_PRESET_SUMMARY];
+    setConfigurationPresets(presets);
+    return presets;
+  }
+
+  useEffect(() => {
+    let ignore = false;
+    apiJson("/api/configuration-presets")
+      .then((catalog) => {
+        if (!ignore) setConfigurationPresets(catalog.presets?.length ? catalog.presets : [DEFAULT_CONFIGURATION_PRESET_SUMMARY]);
+      })
+      .catch((err) => {
+        if (!ignore) setError(err.message);
+      });
+    return () => { ignore = true; };
+  }, []);
 
   useEffect(() => {
     if (!job?.jobId) return undefined;
@@ -397,6 +443,8 @@ function App() {
     persistUiState({
       inspection,
       metadata,
+      configurationPreset,
+      processingMode,
       profiles,
       transcriptionSettings,
       pitchSettings,
@@ -408,7 +456,7 @@ function App() {
       stageWorkingState,
       editorWorkspace,
     });
-  }, [inspection, metadata, profiles, transcriptionSettings, pitchSettings, syllabificationSettings, syllabificationTouched, useEmbeddedCover, job, reviewOpen, stageWorkingState, editorWorkspace]);
+  }, [inspection, metadata, configurationPreset, processingMode, profiles, transcriptionSettings, pitchSettings, syllabificationSettings, syllabificationTouched, useEmbeddedCover, job, reviewOpen, stageWorkingState, editorWorkspace]);
 
   useEffect(() => {
     if (!job || ["failed", "awaiting_review", "cancelled"].includes(job.status)) return undefined;
@@ -435,6 +483,7 @@ function App() {
   }, [job?.jobId, job?.status, reviewOpen]);
 
   const activeStage = useMemo(() => currentStage(job), [job]);
+  const selectedConfigurationPreset = configurationPresets.find((preset) => preset.presetId === configurationPreset) ?? DEFAULT_CONFIGURATION_PRESET_SUMMARY;
   const jobCreated = Boolean(job);
   const jobCoverAsset = job?.artifacts?.find((asset) => asset.type === "cover");
   const importedCover = inspection?.projectCovers?.[inspection?.selectedCoverKind];
@@ -453,6 +502,14 @@ function App() {
     if (syllabificationTouched) return;
     setSyllabificationSettings(defaultSyllabificationForLanguage(metadata.language));
   }, [metadata.language, syllabificationTouched]);
+
+  useEffect(() => {
+    if (job?.configurationPreset) setConfigurationPreset(normalizeConfigurationPreset(job.configurationPreset));
+  }, [job?.configurationPreset]);
+
+  useEffect(() => {
+    if (job) setProcessingMode(resolveProcessingMode({}, job));
+  }, [job?.processingMode, job?.configurationPreset]);
 
   useEffect(() => {
     if (syllabificationSettings.method !== "none" || transcriptionSettings.positioning === "words_only") return;
@@ -517,6 +574,8 @@ function App() {
       setCoverFile(null);
       setInspection(result.inspection ?? null);
       setMetadata({ ...emptyMetadata, ...(working.metadata ?? result.inspection?.metadata ?? result.job?.metadata ?? {}) });
+      setConfigurationPreset(normalizeConfigurationPreset(working.configurationPreset ?? result.job?.configurationPreset));
+      setProcessingMode(resolveProcessingMode(working, result.job));
       setProfiles({ ...initialUiState.profiles, ...(working.profiles ?? result.job?.profiles ?? {}) });
       setTranscriptionSettings(normalizeTranscriptionSettings(working.transcriptionSettings ?? result.job?.transcriptionSettings ?? {}));
       setPitchSettings({ ...defaultPitch, ...(working.pitchSettings ?? result.job?.pitchSettings ?? {}) });
@@ -537,8 +596,12 @@ function App() {
     }
   }
 
-  async function createJob() {
+  async function createJob({ mode = processingMode, acknowledgeFallback = false } = {}) {
     if (!inspection) return;
+    if (!acknowledgeFallback && selectedConfigurationPreset.missingFields?.length) {
+      setFallbackWarning({ missingFields: selectedConfigurationPreset.missingFields });
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -546,6 +609,9 @@ function App() {
       const payload = {
         uploadDraftId: inspection.uploadDraftId,
         metadata: { ...metadata, language: language || null, languageMode: language ? "forced" : "auto" },
+        configurationPreset,
+        acknowledgeConfigurationFallback: acknowledgeFallback,
+        processingMode: mode,
         profiles,
         transcriptionSettings: serializeTranscriptionSettings(transcriptionSettings, syllabificationSettings),
         pitchSettings,
@@ -558,11 +624,81 @@ function App() {
       if (coverFile) form.append("cover", coverFile);
       const created = await apiForm("/api/jobs/uploads", form);
       setJob(created);
+      setConfigurationPreset(created.configurationPreset ?? configurationPreset);
+      setProcessingMode(created.processingMode ?? mode);
+      setFallbackWarning(null);
       setReviewOpen(false);
+    } catch (err) {
+      if (err.code === "configuration_preset_fallback_required") {
+        setFallbackWarning({ missingFields: err.details?.missingFields ?? [] });
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteConfigurationPreset() {
+    if (!presetDeleteTarget) return;
+    setPresetSaving(true);
+    setError(null);
+    try {
+      await apiJson(`/api/configuration-presets/${presetDeleteTarget.presetId}`, { method: "DELETE" });
+      if (configurationPreset === presetDeleteTarget.presetId) setConfigurationPreset(DEFAULT_CONFIGURATION_PRESET);
+      await refreshConfigurationPresets();
+      setPresetDeleteTarget(null);
     } catch (err) {
       setError(err.message);
     } finally {
-      setBusy(false);
+      setPresetSaving(false);
+    }
+  }
+
+  async function createConfigurationPreset(name) {
+    if (!job) return false;
+    setPresetSaving(true);
+    setError(null);
+    try {
+      await apiJson("/api/configuration-presets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, sourceJobId: job.jobId }),
+      });
+      await refreshConfigurationPresets();
+      setPresetSaveOpen(false);
+      return true;
+    } catch (err) {
+      if (err.code === "custom_preset_name_exists") {
+        setPresetNameCollision({ presetId: err.details?.presetId, name: err.details?.name ?? name });
+      } else {
+        setError(err.message);
+      }
+      return false;
+    } finally {
+      setPresetSaving(false);
+    }
+  }
+
+  async function overwriteConfigurationPreset(presetId) {
+    if (!job || !presetId) return false;
+    setPresetSaving(true);
+    setError(null);
+    try {
+      await apiJson(`/api/configuration-presets/${presetId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceJobId: job.jobId }),
+      });
+      await refreshConfigurationPresets();
+      setPresetNameCollision(null);
+      setPresetSaveOpen(false);
+      return true;
+    } catch (err) {
+      setError(err.message);
+      return false;
+    } finally {
+      setPresetSaving(false);
     }
   }
 
@@ -570,6 +706,8 @@ function App() {
     return {
       inspection,
       metadata,
+      configurationPreset,
+      processingMode,
       profiles,
       transcriptionSettings,
       pitchSettings,
@@ -610,18 +748,24 @@ function App() {
     }
   }
 
-  async function resetStage(stage) {
+  async function resetStage(stage, { forceManualMode = false } = {}) {
     if (!job) return;
     setError(null);
     try {
       await apiJson(`/api/jobs/${job.jobId}/stages/${stage}/reset`, {
         method: "POST",
-        body: JSON.stringify({ reason: "user_requested" }),
+        body: JSON.stringify({ reason: forceManualMode ? "return_to_audio" : "user_requested", forceManualMode }),
         headers: { "Content-Type": "application/json" },
       });
       setArrangement(null);
       setReviewOpen(false);
-      setJob(await apiJson(`/api/jobs/${job.jobId}`));
+      const refreshed = await apiJson(`/api/jobs/${job.jobId}`);
+      setJob(refreshed);
+      setConfigurationPreset(refreshed.configurationPreset ?? configurationPreset);
+      setProcessingMode(refreshed.processingMode ?? processingMode);
+      if (forceManualMode) {
+        setStageWorkingState((current) => ({ ...current, [stage]: {}, __activeStage: null }));
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -752,6 +896,8 @@ function App() {
     setInspection(null);
     setSourceUpload({ status: "pending", progressPercent: 0 });
     setMetadata(emptyMetadata);
+    setConfigurationPreset(DEFAULT_CONFIGURATION_PRESET);
+    setProcessingMode(DEFAULT_PROCESSING_MODE);
     setProfiles(initialUiState.profiles);
     setTranscriptionSettings(defaultTranscription);
     setPitchSettings(defaultPitch);
@@ -797,7 +943,7 @@ function App() {
             <button className="button ghost danger full restart-button" type="button" onClick={() => setRestartOpen(true)}>
               <RotateCcw size={16} /> Od nowa
             </button>
-            <button className="button primary full" type="button" disabled={savingProject || busy || (!inspection && !job)} onClick={saveProjectArchive}>
+            <button className="button secondary full" type="button" disabled={savingProject || busy || (!inspection && !job)} onClick={saveProjectArchive}>
               <Save size={16} /> {savingProject ? "Zapisywanie..." : "Zapisz"}
             </button>
           </section>
@@ -870,16 +1016,22 @@ function App() {
             <UploadWorkspace
               metadata={metadata}
               setMetadata={setMetadata}
+              configurationPreset={configurationPreset}
+              setConfigurationPreset={setConfigurationPreset}
+              configurationPresets={configurationPresets}
+              onDeleteConfigurationPreset={setPresetDeleteTarget}
+              processingMode={processingMode}
+              setProcessingMode={setProcessingMode}
               inspection={inspection}
               job={job}
               createJob={createJob}
               onStageSettings={saveStageSettings}
               onSourceSettings={saveSourceSettings}
               onResumeStage={resumeStage}
-              onOpenReview={() => setReviewOpen(true)}
               busy={busy}
               stageWorkingState={stageWorkingState}
               onStageWorkingStateChange={setStageWorkingState}
+              onSaveConfigurationPreset={() => setPresetSaveOpen(true)}
             />
           </>
         )}
@@ -898,6 +1050,14 @@ function App() {
             <div className="section-title">Pipeline</div>
             <StageRail job={job} sourceUpload={sourceUpload} />
           </section>
+          {job?.status === "awaiting_review" && (
+            <section className="review-entry-section">
+              <div className="section-title">Edycja dopasowania</div>
+              <button className="button primary full review-entry-button" type="button" onClick={() => setReviewOpen(true)}>
+                <Music2 size={16} /> Przejdź do edycji
+              </button>
+            </section>
+          )}
         </aside>
       )}
       {restartOpen && (
@@ -910,11 +1070,49 @@ function App() {
           onConfirm={restartProject}
         />
       )}
+      {fallbackWarning && (
+        <ConfigurationFallbackModal
+          processingMode={processingMode}
+          busy={busy}
+          onCancel={() => setFallbackWarning(null)}
+          onManualConfirm={() => { setProcessingMode(MANUAL_PROCESSING_MODE); createJob({ mode: MANUAL_PROCESSING_MODE, acknowledgeFallback: true }); }}
+          onAutomaticConfirm={() => createJob({ mode: DEFAULT_PROCESSING_MODE, acknowledgeFallback: true })}
+        />
+      )}
+      {presetDeleteTarget && (
+        <ConfirmDialog
+          title="Usunąć preset?"
+          message={`Preset „${presetDeleteTarget.name}” zostanie trwale usunięty.`}
+          confirmLabel="Usuń preset"
+          busy={presetSaving}
+          nested={presetSaveOpen}
+          onCancel={() => setPresetDeleteTarget(null)}
+          onConfirm={deleteConfigurationPreset}
+        />
+      )}
+      {presetSaveOpen && job?.status === "awaiting_review" && (
+        <SaveConfigurationPresetModal
+          customPresets={configurationPresets.filter((preset) => preset.presetType === "custom")}
+          busy={presetSaving}
+          onCancel={() => { setPresetSaveOpen(false); setPresetNameCollision(null); }}
+          onCreate={createConfigurationPreset}
+          onOverwrite={overwriteConfigurationPreset}
+          onDelete={setPresetDeleteTarget}
+        />
+      )}
+      {presetNameCollision && (
+        <PresetNameCollisionModal
+          preset={presetNameCollision}
+          busy={presetSaving}
+          onCancel={() => setPresetNameCollision(null)}
+          onConfirm={() => overwriteConfigurationPreset(presetNameCollision.presetId)}
+        />
+      )}
     </div>
   );
 }
 
-function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, onStageSettings, onSourceSettings, onResumeStage, onOpenReview, busy, stageWorkingState, onStageWorkingStateChange }) {
+function UploadWorkspace({ metadata, setMetadata, configurationPreset, setConfigurationPreset, configurationPresets, onDeleteConfigurationPreset, processingMode, setProcessingMode, inspection, job, createJob, onStageSettings, onSourceSettings, onResumeStage, busy, stageWorkingState, onStageWorkingStateChange, onSaveConfigurationPreset }) {
   return (
     <section className="workspace-panel">
       <div className="workspace-header">
@@ -922,10 +1120,8 @@ function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, on
           <h1>Źródło i processing audio</h1>
         </div>
       </div>
-      {job?.status === "awaiting_review" ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} onOpenReview={onOpenReview} stageWorkingState={stageWorkingState} onStageWorkingStateChange={onStageWorkingStateChange} />
-      ) : job ? (
-        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} stageWorkingState={stageWorkingState} onStageWorkingStateChange={onStageWorkingStateChange} />
+      {job ? (
+        <ProcessingSummary job={job} busy={busy} onSubmit={onStageSettings} onSourceSubmit={onSourceSettings} onResumeStage={onResumeStage} stageWorkingState={stageWorkingState} onStageWorkingStateChange={onStageWorkingStateChange} onSaveConfigurationPreset={onSaveConfigurationPreset} />
       ) : (
         <form onSubmit={(event) => { event.preventDefault(); createJob(); }}>
           <div className="form-grid">
@@ -937,9 +1133,13 @@ function UploadWorkspace({ metadata, setMetadata, inspection, job, createJob, on
             <LanguageSelect label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={WHISPER_LANGUAGE_OPTIONS} />
           </div>
 
-          <button className="button primary import-submit" type="submit" disabled={!inspection || busy}>
-            <Play size={16} /> {busy ? "Przetwarzanie..." : "Przetwarzaj audio"}
-          </button>
+          <div className="initial-processing-actions">
+            <ConfigurationPresetSelect label="Konfiguracja" value={configurationPreset} onChange={setConfigurationPreset} presets={configurationPresets} onDelete={onDeleteConfigurationPreset} />
+            <Select label="Tryb" value={processingMode} onChange={setProcessingMode} options={PROCESSING_MODE_OPTIONS} />
+            <button className="button primary import-submit" type="submit" disabled={!inspection || busy}>
+              <Play size={16} /> {busy ? "Przetwarzanie..." : "Przetwarzaj audio"}
+            </button>
+          </div>
         </form>
       )}
     </section>
@@ -977,6 +1177,10 @@ function settingsFormForStage(stage) {
 function StageFormShell({ title, embedded, children }) {
   const Tag = embedded ? "div" : "section";
   return <Tag className={embedded ? "stage-settings-inline" : "stage-settings-card"}>{!embedded && <h2>{title}</h2>}{children}</Tag>;
+}
+
+function isConfigurationFallback(job, path, editedFields) {
+  return job.processingMode === MANUAL_PROCESSING_MODE && (job.configurationFallbackFields ?? []).includes(path) && !editedFields.has(path);
 }
 
 function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
@@ -1106,13 +1310,18 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, on
 
 function SeparationStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
   const [separationModel, setSeparationModel] = useState(draft.separationModel ?? job.profiles?.separationModel ?? "htdemucs_ft");
-  useEffect(() => onDraftChange?.({ separationModel }), [separationModel]);
+  const [editedFields, setEditedFields] = useState(() => new Set(draft.editedFields ?? []));
+  useEffect(() => onDraftChange?.({ separationModel, editedFields: [...editedFields] }), [separationModel, editedFields]);
+  function changeSeparationModel(value) {
+    setSeparationModel(value);
+    setEditedFields((current) => new Set([...current, "profiles.separationModel"]));
+  }
   return (
     <StageFormShell title="Separacja wokalu" embedded={embedded}>
       <div className="controls-row">
-        <Select label="Mechanizm separacji" tooltip={MODEL_TOOLTIPS.separation} value={separationModel} onChange={setSeparationModel} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
+        <Select label="Mechanizm separacji" tooltip={MODEL_TOOLTIPS.separation} value={separationModel} onChange={changeSeparationModel} fallback={isConfigurationFallback(job, "profiles.separationModel", editedFields)} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
       </div>
-      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("separating_vocals", { profiles: { ...job.profiles, separationModel } })}>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("separating_vocals", { profiles: { ...job.profiles, separationModel }, editedConfigurationFields: [...editedFields] })}>
         <Play size={16} /> Uruchom separację
       </button>
     </StageFormShell>
@@ -1123,32 +1332,38 @@ function TranscriptionStageForm({ job, busy, onSubmit, embedded = false, draft =
   const [transcriptionModel, setTranscriptionModel] = useState(draft.transcriptionModel ?? job.profiles?.transcriptionModel ?? "large-v3");
   const [settings, setSettings] = useState(normalizeTranscriptionSettings(draft.settings ?? job.transcriptionSettings));
   const [syllabification, setSyllabification] = useState({ ...defaultSyllabification, ...(job.syllabificationSettings ?? {}), ...(draft.syllabification ?? {}) });
+  const [editedFields, setEditedFields] = useState(() => new Set(draft.editedFields ?? []));
   const positioningDisabled = syllabification.method === "none";
   const positioningValue = positioningDisabled ? "words_only" : settings.positioning ?? defaultTranscription.positioning;
 
-  useEffect(() => onDraftChange?.({ transcriptionModel, settings, syllabification }), [transcriptionModel, settings, syllabification]);
+  useEffect(() => onDraftChange?.({ transcriptionModel, settings, syllabification, editedFields: [...editedFields] }), [transcriptionModel, settings, syllabification, editedFields]);
+
+  function markEdited(path) {
+    setEditedFields((current) => new Set([...current, path]));
+  }
 
   function changeSyllabification(method) {
     setSyllabification({ method });
+    markEdited("syllabificationSettings.method");
     if (method === "none") setSettings((current) => ({ ...current, positioning: "words_only" }));
   }
 
   return (
     <StageFormShell title="Transkrypcja" embedded={embedded}>
       <div className="controls-row">
-        <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={settings.vadMethod} onChange={(value) => setSettings((current) => ({ ...current, vadMethod: value }))} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
-        <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={transcriptionModel} onChange={setTranscriptionModel} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
-        <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabification.method} onChange={changeSyllabification} options={SYLLABIFICATION_OPTIONS} />
+        <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={settings.vadMethod} fallback={isConfigurationFallback(job, "transcriptionSettings.vadMethod", editedFields)} onChange={(value) => { setSettings((current) => ({ ...current, vadMethod: value })); markEdited("transcriptionSettings.vadMethod"); }} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
+        <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={transcriptionModel} fallback={isConfigurationFallback(job, "profiles.transcriptionModel", editedFields)} onChange={(value) => { setTranscriptionModel(value); markEdited("profiles.transcriptionModel"); }} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
+        <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabification.method} fallback={isConfigurationFallback(job, "syllabificationSettings.method", editedFields)} onChange={changeSyllabification} options={SYLLABIFICATION_OPTIONS} />
       </div>
       <div className="advanced">
         <div className="form-grid compact transcription-settings-grid">
-          <Select label="Pozycjonowanie" helper="return_char_alignments" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} onChange={(value) => setSettings({ ...settings, positioning: value })} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
+          <Select label="Pozycjonowanie" helper="return_char_alignments" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} fallback={isConfigurationFallback(job, "transcriptionSettings.positioning", editedFields)} onChange={(value) => { setSettings({ ...settings, positioning: value }); markEdited("transcriptionSettings.positioning"); }} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
           {TRANSCRIPTION_STAGE_FIELDS.filter(([, field]) => !field.methods || field.methods.includes(settings.vadMethod)).map(([key, field]) => (
-            <TextField key={key} label={field.label} helper={field.helper ?? key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key] ?? ""} onChange={(next) => setSettings((current) => ({ ...current, [key]: Number(next) }))} />
+            <TextField key={key} label={field.label} helper={field.helper ?? key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key] ?? ""} fallback={isConfigurationFallback(job, `transcriptionSettings.${key}`, editedFields)} onChange={(next) => { setSettings((current) => ({ ...current, [key]: Number(next) })); markEdited(`transcriptionSettings.${key}`); }} />
           ))}
         </div>
       </div>
-      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("transcribing", { profiles: { ...job.profiles, transcriptionModel }, transcriptionSettings: serializeTranscriptionSettings(settings, syllabification), syllabificationSettings: syllabification })}>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("transcribing", { profiles: { ...job.profiles, transcriptionModel }, transcriptionSettings: serializeTranscriptionSettings(settings, syllabification), syllabificationSettings: syllabification, editedConfigurationFields: [...editedFields] })}>
         <Play size={16} /> Uruchom transkrypcję
       </button>
     </StageFormShell>
@@ -1157,19 +1372,23 @@ function TranscriptionStageForm({ job, busy, onSubmit, embedded = false, draft =
 
 function PitchStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
   const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}), ...(draft.settings ?? {}) });
-  const [pitchProfile, setPitchProfile] = useState(draft.pitchProfile ?? job.profiles?.pitch ?? "fast");
-  useEffect(() => onDraftChange?.({ settings, pitchProfile }), [settings, pitchProfile]);
+  const [pitchProfile, setPitchProfile] = useState(draft.pitchProfile ?? job.profiles?.pitch ?? "default");
+  const [editedFields, setEditedFields] = useState(() => new Set(draft.editedFields ?? []));
+  useEffect(() => onDraftChange?.({ settings, pitchProfile, editedFields: [...editedFields] }), [settings, pitchProfile, editedFields]);
+  function markEdited(path) {
+    setEditedFields((current) => new Set([...current, path]));
+  }
   return (
     <StageFormShell title="Detekcja tonów" embedded={embedded}>
       <div className="advanced">
         <div className="form-grid compact pitch-settings-grid">
-          <Select label="Profil analizy" helper="torchcrepe" value={pitchProfile} onChange={setPitchProfile} options={PITCH_PROFILE_OPTIONS} />
+          <Select label="Profil analizy" helper="torchcrepe" value={pitchProfile} fallback={isConfigurationFallback(job, "profiles.pitch", editedFields)} onChange={(value) => { setPitchProfile(value); markEdited("profiles.pitch"); }} options={PITCH_PROFILE_OPTIONS} />
           {PITCH_DETECTION_FIELDS.map(([key, field]) => (
-            <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key]} onChange={(next) => setSettings({ ...settings, [key]: Number(next) })} />
+            <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key]} fallback={isConfigurationFallback(job, `pitchSettings.${key}`, editedFields)} onChange={(next) => { setSettings({ ...settings, [key]: Number(next) }); markEdited(`pitchSettings.${key}`); }} />
           ))}
         </div>
       </div>
-      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("detecting_pitch", { profiles: { ...job.profiles, pitch: pitchProfile }, pitchSettings: settings })}>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("detecting_pitch", { profiles: { ...job.profiles, pitch: pitchProfile }, pitchSettings: settings, editedConfigurationFields: [...editedFields] })}>
         <Play size={16} /> Uruchom detekcję tonów
       </button>
     </StageFormShell>
@@ -1179,23 +1398,27 @@ function PitchStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onD
 function AlignmentStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onDraftChange }) {
   const [sentenceGapMs, setSentenceGapMs] = useState(draft.sentenceGapMs ?? job.transcriptionSettings?.sentenceGapMs ?? "");
   const [settings, setSettings] = useState({ ...defaultPitch, ...(job.pitchSettings ?? {}), ...(draft.settings ?? {}) });
-  useEffect(() => onDraftChange?.({ sentenceGapMs, settings }), [sentenceGapMs, settings]);
+  const [editedFields, setEditedFields] = useState(() => new Set(draft.editedFields ?? []));
+  useEffect(() => onDraftChange?.({ sentenceGapMs, settings, editedFields: [...editedFields] }), [sentenceGapMs, settings, editedFields]);
+  function markEdited(path) {
+    setEditedFields((current) => new Set([...current, path]));
+  }
   return (
     <StageFormShell title="Wstępne dopasowanie" embedded={embedded}>
       <div className="form-grid compact pitch-settings-grid">
-        <TextField label="Ms między sentencjami" helper="sentenceGapMs" tooltip="Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Puste pole oznacza tryb auto." type="number" step="1" placeholder="auto" value={sentenceGapMs} onChange={setSentenceGapMs} />
+        <TextField label="Ms między sentencjami" helper="sentenceGapMs" tooltip="Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Puste pole oznacza tryb auto." type="number" step="1" placeholder="auto" value={sentenceGapMs} fallback={isConfigurationFallback(job, "transcriptionSettings.sentenceGapMs", editedFields)} onChange={(value) => { setSentenceGapMs(value); markEdited("transcriptionSettings.sentenceGapMs"); }} />
         {ALIGNMENT_PITCH_FIELDS.map(([key, field]) => (
-          <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} max={field.max} value={settings[key]} onChange={(next) => setSettings({ ...settings, [key]: field.max == null ? Number(next) : Math.min(Number(next), Number(field.max)) })} />
+          <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} max={field.max} value={settings[key]} fallback={isConfigurationFallback(job, `pitchSettings.${key}`, editedFields)} onChange={(next) => { setSettings({ ...settings, [key]: field.max == null ? Number(next) : Math.min(Number(next), Number(field.max)) }); markEdited(`pitchSettings.${key}`); }} />
         ))}
       </div>
-      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("aligning", { transcriptionSettings: { ...job.transcriptionSettings, sentenceGapMs: nullableNumber(sentenceGapMs) }, pitchSettings: settings })}>
+      <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("aligning", { transcriptionSettings: { ...job.transcriptionSettings, sentenceGapMs: nullableNumber(sentenceGapMs) }, pitchSettings: settings, editedConfigurationFields: [...editedFields] })}>
         <Play size={16} /> Wykonaj dopasowanie
       </button>
     </StageFormShell>
   );
 }
 
-function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage, onOpenReview, stageWorkingState = {}, onStageWorkingStateChange }) {
+function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage, stageWorkingState = {}, onStageWorkingStateChange, onSaveConfigurationPreset }) {
   const artifactsById = Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.assetId, asset]));
   const stages = sortedStages(job.processing).filter((stage) => stage.status !== "pending" || stage.actionRequired);
   const jobRunning = sortedStages(job.processing).some((stage) => stage.status === "running");
@@ -1278,8 +1501,8 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
         })}
       </div>
       {job.status === "awaiting_review" && (
-        <button className="button primary summary-editor-button" type="button" onClick={onOpenReview}>
-          <Music2 size={16} /> Edytor dopasowania
+        <button className="button ghost preset-save-button" type="button" disabled={busy} onClick={onSaveConfigurationPreset}>
+          <Save size={16} /> Zapisz bieżącą konfigurację
         </button>
       )}
       {previewAsset && <ArtifactPreviewModal jobId={job.jobId} asset={previewAsset} onClose={() => setPreviewAsset(null)} />}
@@ -1919,7 +2142,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         <div className="editor-actions">
           <button className="icon-button" type="button" title="Undo" aria-label="Undo" disabled={!past.length} onClick={undo}><Undo2 size={16} /></button>
           <button className="icon-button" type="button" title="Redo" aria-label="Redo" disabled={!future.length} onClick={redo}><Redo2 size={16} /></button>
-          <button className="button secondary" type="button" onClick={() => onResetStage("aligning")}><Workflow size={16} /> Wróć do audio</button>
+          <button className="button secondary" type="button" onClick={() => onResetStage("aligning", { forceManualMode: true })}><Workflow size={16} /> Wróć do audio</button>
           <ExportKaraokeButton job={job} saving={saving} onSave={onSave} onJobRefresh={onJobRefresh} onValidationError={setValidationModal} />
         </div>
       </div>
@@ -2621,8 +2844,8 @@ function propertyQualityFlags(tokens, acceptedSongBpm) {
   return [...flags];
 }
 
-function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step, min, max, name, required = false }) {
-  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<input type={type} name={name} required={required} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} min={min} max={max} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
+function TextField({ label, helper, tooltip, value, onChange, type = "text", placeholder = "", step, min, max, name, required = false, fallback = false }) {
+  return <label className={`field ${fallback ? "configuration-fallback-field" : ""}`}><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<input type={type} name={name} required={required} value={value} step={step ?? (type === "number" ? "0.01" : undefined)} min={min} max={max} placeholder={placeholder} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
 function LanguageSelect({ label, value, onChange, options }) {
@@ -2771,8 +2994,140 @@ function LanguageSelect({ label, value, onChange, options }) {
   );
 }
 
-function Select({ label, helper, value, onChange, options, tooltip, disabled = false }) {
-  return <label className="field"><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
+function ConfigurationPresetSelect({ label, value, onChange, presets, onDelete, grouped = true }) {
+  const rootRef = useRef(null);
+  const optionRefs = useRef([]);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const selected = presets.find((preset) => preset.presetId === value) ?? presets[0] ?? DEFAULT_CONFIGURATION_PRESET_SUMMARY;
+  const normalizedQuery = normalizeSearchText(query);
+  const matches = (preset) => !normalizedQuery || normalizeSearchText(preset.name).includes(normalizedQuery) || normalizeSearchText(preset.presetId).includes(normalizedQuery);
+  const builtIn = presets.filter((preset) => preset.presetType === "predefined" && matches(preset));
+  const custom = presets.filter((preset) => preset.presetType === "custom" && matches(preset));
+  const visibleOptions = [...builtIn, ...custom];
+
+  useEffect(() => {
+    function closeOnOutsideClick(event) {
+      if (!rootRef.current?.contains(event.target)) {
+        setOpen(false);
+        setQuery("");
+      }
+    }
+    document.addEventListener("mousedown", closeOnOutsideClick);
+    return () => document.removeEventListener("mousedown", closeOnOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const selectedIndex = visibleOptions.findIndex((preset) => preset.presetId === value);
+    setActiveIndex(selectedIndex >= 0 ? selectedIndex : 0);
+  }, [open, query, value, visibleOptions.length]);
+
+  useEffect(() => {
+    if (open) optionRefs.current[activeIndex]?.scrollIntoView({ block: "nearest" });
+  }, [activeIndex, open]);
+
+  function choosePreset(preset) {
+    onChange(preset.presetId);
+    setOpen(false);
+    setQuery("");
+  }
+
+  function handleKeyDown(event) {
+    if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+      event.preventDefault();
+      if (!open) {
+        setOpen(true);
+        setQuery("");
+        return;
+      }
+      const delta = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) => Math.min(Math.max(current + delta, 0), Math.max(visibleOptions.length - 1, 0)));
+    } else if (event.key === "Home" && open) {
+      event.preventDefault();
+      setActiveIndex(0);
+    } else if (event.key === "End" && open) {
+      event.preventDefault();
+      setActiveIndex(Math.max(visibleOptions.length - 1, 0));
+    } else if (event.key === "Enter" && open) {
+      event.preventDefault();
+      if (visibleOptions[activeIndex]) choosePreset(visibleOptions[activeIndex]);
+    } else if (event.key === "Escape") {
+      setOpen(false);
+      setQuery("");
+    }
+  }
+
+  let optionIndex = 0;
+  function renderGroup(title, group) {
+    if (!group.length) return null;
+    return (
+      <div className="preset-option-group" key={title ?? "presets"}>
+        {title && <div className="preset-option-group-title">{title}</div>}
+        {group.map((preset) => {
+          const index = optionIndex++;
+          return (
+            <div className={`preset-option-row ${preset.canDelete ? "deletable" : ""} ${index === activeIndex ? "active" : ""}`} key={preset.presetId}>
+              <button
+                ref={(node) => { optionRefs.current[index] = node; }}
+                id={`configuration-preset-${preset.presetId}`}
+                className={preset.presetId === value ? "selected" : ""}
+                type="button"
+                role="option"
+                aria-selected={preset.presetId === value}
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => choosePreset(preset)}
+              >
+                <span>{preset.name}</span>
+              </button>
+              {preset.canDelete && (
+                <button
+                  className="preset-delete-button"
+                  type="button"
+                  title={`Usuń preset ${preset.name}`}
+                  aria-label={`Usuń preset ${preset.name}`}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={(event) => { event.stopPropagation(); setOpen(false); setQuery(""); onDelete?.(preset); }}
+                >
+                  <Trash2 size={15} />
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="field language-field configuration-preset-field" ref={rootRef}>
+      <FieldLabel label={label} />
+      <input
+        type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        aria-controls="configuration-preset-options"
+        aria-activedescendant={open && visibleOptions[activeIndex] ? `configuration-preset-${visibleOptions[activeIndex].presetId}` : undefined}
+        value={open ? query : selected.name}
+        onFocus={() => { setOpen(true); setQuery(""); }}
+        onChange={(event) => { setQuery(event.target.value); setOpen(true); setActiveIndex(0); }}
+        onKeyDown={handleKeyDown}
+      />
+      {open && (
+        <div className="language-options configuration-preset-options" id="configuration-preset-options" role="listbox">
+          {grouped ? <>{renderGroup("Wbudowane", builtIn)}{renderGroup("Użytkownika", custom)}</> : renderGroup(null, visibleOptions)}
+          {!visibleOptions.length && <div className="preset-options-empty">Brak pasujących presetów.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Select({ label, helper, value, onChange, options, tooltip, disabled = false, fallback = false }) {
+  return <label className={`field ${fallback ? "configuration-fallback-field" : ""}`}><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
 }
 
 function FieldLabel({ label, tooltip }) {
@@ -2793,9 +3148,9 @@ function InfoTooltip({ text }) {
   );
 }
 
-function ConfirmDialog({ title, message, confirmLabel, busy, onCancel, onConfirm }) {
+function ConfirmDialog({ title, message, confirmLabel, busy, nested = false, onCancel, onConfirm }) {
   return (
-    <div className="modal-backdrop" role="presentation">
+    <div className={`modal-backdrop ${nested ? "modal-backdrop-nested" : ""}`} role="presentation">
       <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
         <div className="modal-header">
           <h2 id="confirm-title">{title}</h2>
@@ -2806,6 +3161,91 @@ function ConfirmDialog({ title, message, confirmLabel, busy, onCancel, onConfirm
           <button className="button ghost danger" type="button" disabled={busy} onClick={onConfirm}>
             <Trash2 size={16} /> {confirmLabel}
           </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ConfigurationFallbackModal({ processingMode, busy, onCancel, onManualConfirm, onAutomaticConfirm }) {
+  const automatic = processingMode === DEFAULT_PROCESSING_MODE;
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirmation-modal configuration-warning-modal" role="dialog" aria-modal="true" aria-labelledby="configuration-warning-title">
+        <div className="modal-header"><h2 id="configuration-warning-title">Niepełna konfiguracja</h2></div>
+        <p>Użyta konfiguracja ma niezdefiniowane wartości dla niektórych pól (w trybie ręcznym będą oznaczone na czerwono). W tych polach zostaną użyte wartości z konfiguracji „Domyślna”.</p>
+        {automatic && <p>Zaleca się uruchomienie w trybie ręcznym i zweryfikowanie ustawień oznaczonych na czerwono.</p>}
+        <div className="modal-actions configuration-warning-actions">
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Anuluj</button>
+          {automatic && <button className="button ghost" type="button" disabled={busy} onClick={onAutomaticConfirm}>Przetwarzaj automatycznie</button>}
+          <span className="modal-action-spacer" />
+          <button className="button primary" type="button" disabled={busy} onClick={onManualConfirm}>{automatic ? "Przełącz na tryb ręczny" : "Ok"}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SaveConfigurationPresetModal({ customPresets, busy, onCancel, onCreate, onOverwrite, onDelete }) {
+  const [mode, setMode] = useState("new");
+  const [name, setName] = useState("");
+  const [selectedPresetId, setSelectedPresetId] = useState(customPresets[0]?.presetId ?? "");
+  const canOverwrite = customPresets.length > 0;
+  const createsNewPreset = mode === "new" || !canOverwrite;
+
+  useEffect(() => {
+    if (!customPresets.some((preset) => preset.presetId === selectedPresetId)) {
+      setSelectedPresetId(customPresets[0]?.presetId ?? "");
+    }
+  }, [customPresets, selectedPresetId]);
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirmation-modal preset-save-modal" role="dialog" aria-modal="true" aria-labelledby="preset-save-title">
+        <div className="modal-header"><h2 id="preset-save-title">Zapisz bieżącą konfigurację</h2></div>
+        {canOverwrite && (
+          <div className="preset-save-mode" role="group" aria-label="Sposób zapisu presetu">
+            <button className={`button ${mode === "new" ? "secondary" : "ghost"}`} type="button" onClick={() => setMode("new")}>Nowy preset</button>
+            <button className={`button ${mode === "overwrite" ? "secondary" : "ghost"}`} type="button" onClick={() => setMode("overwrite")}>Nadpisz istniejący</button>
+          </div>
+        )}
+        {createsNewPreset ? (
+          <TextField label="Nazwa presetu" required value={name} onChange={setName} />
+        ) : (
+          <ConfigurationPresetSelect
+            label="Preset użytkownika"
+            value={selectedPresetId}
+            onChange={setSelectedPresetId}
+            presets={customPresets}
+            onDelete={onDelete}
+            grouped={false}
+          />
+        )}
+        <div className="modal-actions">
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Anuluj</button>
+          <button
+            className="button primary"
+            type="button"
+            disabled={busy || (createsNewPreset ? !name.trim() : !selectedPresetId)}
+            onClick={() => (createsNewPreset ? onCreate(name.trim()) : onOverwrite(selectedPresetId))}
+          >
+            <Save size={16} /> {createsNewPreset ? "Zapisz preset" : "Nadpisz preset"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PresetNameCollisionModal({ preset, busy, onCancel, onConfirm }) {
+  return (
+    <div className="modal-backdrop modal-backdrop-nested" role="presentation">
+      <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="preset-collision-title">
+        <div className="modal-header"><h2 id="preset-collision-title">Preset już istnieje</h2></div>
+        <p>Preset „{preset.name}” już istnieje. Czy go nadpisać?</p>
+        <div className="modal-actions">
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Nie</button>
+          <button className="button primary" type="button" disabled={busy} onClick={onConfirm}>Tak</button>
         </div>
       </section>
     </div>
@@ -2826,6 +3266,13 @@ function MetadataSummary({ job }) {
 
   return (
     <div className="settings-summary-groups">
+      <div className="settings-summary-group">
+        <strong>Konfiguracja</strong>
+        <dl className="summary">
+          <dt>Preset</dt><dd>{job.configurationPresetName ?? (job.configurationPreset === DEFAULT_CONFIGURATION_PRESET ? "Domyślna" : job.configurationPreset)}</dd>
+          <dt>Tryb</dt><dd>{PROCESSING_MODE_LABELS[job.processingMode] ?? job.processingMode}</dd>
+        </dl>
+      </div>
       {confirmedStages.map((stage) => (
         <div className="settings-summary-group" key={stageDomKey(stage)}>
           <strong>{stageLabel(stage)}</strong>
@@ -4349,10 +4796,20 @@ function readPersistedUiState() {
     const raw = window.localStorage.getItem(APP_STORAGE_KEY);
     if (!raw) return initialUiState;
     const parsed = JSON.parse(raw);
+    const persistedJob = parsed.job
+      ? {
+          ...parsed.job,
+          configurationPreset: normalizeConfigurationPreset(parsed.job.configurationPreset),
+          processingMode: resolveProcessingMode({}, parsed.job),
+        }
+      : null;
     return {
       ...initialUiState,
       ...parsed,
+      job: persistedJob,
       metadata: { ...emptyMetadata, ...(parsed.metadata ?? {}) },
+      configurationPreset: normalizeConfigurationPreset(parsed.configurationPreset ?? parsed.job?.configurationPreset),
+      processingMode: resolveProcessingMode(parsed, parsed.job),
       profiles: { ...initialUiState.profiles, ...(parsed.profiles ?? {}) },
       transcriptionSettings: normalizeTranscriptionSettings(parsed.transcriptionSettings),
       pitchSettings: { ...defaultPitch, ...(parsed.pitchSettings ?? {}) },
@@ -4381,6 +4838,8 @@ function persistUiState(state) {
       JSON.stringify({
         inspection: state.inspection,
         metadata: state.metadata,
+        configurationPreset: state.configurationPreset,
+        processingMode: state.processingMode,
         profiles: state.profiles,
         transcriptionSettings: state.transcriptionSettings,
         pitchSettings: state.pitchSettings,
@@ -4396,6 +4855,17 @@ function persistUiState(state) {
   } catch {
     // Brak miejsca lub tryb prywatny nie powinien blokować pracy nad projektem.
   }
+}
+
+function normalizeConfigurationPreset(value) {
+  return !value || value === "manual" ? DEFAULT_CONFIGURATION_PRESET : value;
+}
+
+function resolveProcessingMode(workingState = {}, job = null) {
+  if (workingState.processingMode) return workingState.processingMode;
+  if (job?.processingMode) return job.processingMode;
+  if (workingState.configurationPreset === "manual" || job?.configurationPreset === "manual") return MANUAL_PROCESSING_MODE;
+  return DEFAULT_PROCESSING_MODE;
 }
 
 function hasMeaningfulProjectState({ audioFile, coverFile, inspection, metadata, job, arrangement, reviewOpen }) {
@@ -4814,6 +5284,7 @@ function apiFormWithUploadProgress(path, form, onProgress) {
         return;
       }
       const error = new Error(payload?.error?.message ?? `HTTP ${request.status}`);
+      error.code = payload?.error?.code ?? null;
       error.details = payload?.error?.details ?? {};
       reject(error);
     });
@@ -4832,6 +5303,7 @@ async function parseResponse(response) {
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
     const error = new Error(payload?.error?.message ?? `HTTP ${response.status}`);
+    error.code = payload?.error?.code ?? null;
     error.details = payload?.error?.details ?? {};
     throw error;
   }

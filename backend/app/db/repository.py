@@ -31,6 +31,11 @@ def create_job(
     job_id: str,
     metadata: SourceMetadata,
     profiles: ModelProfiles,
+    configuration_preset: str,
+    configuration_preset_name: str,
+    configuration_preset_type: str,
+    configuration_fallback_fields: list[str],
+    processing_mode: str,
     transcription_settings: TranscriptionSettings,
     pitch_settings: PitchSettings,
     syllabification_settings: SyllabificationSettings,
@@ -41,15 +46,20 @@ def create_job(
         conn.execute(
             """
             INSERT INTO jobs (
-              job_id, status, metadata, profiles, transcription_settings, pitch_settings, syllabification_settings, processing, retention, audio
+              job_id, status, metadata, profiles, configuration_preset, configuration_preset_name, configuration_preset_type, configuration_fallback_fields, processing_mode, transcription_settings, pitch_settings, syllabification_settings, processing, retention, audio
             )
-            VALUES (%s, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb)
+            VALUES (%s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s::jsonb, %s, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb, %s::jsonb)
             """,
             (
                 job_id,
                 JobStatus.uploaded.value,
                 json.dumps(_json(metadata)),
                 json.dumps(_json(profiles)),
+                configuration_preset,
+                configuration_preset_name,
+                configuration_preset_type,
+                json.dumps(configuration_fallback_fields),
+                processing_mode,
                 json.dumps(_json(transcription_settings)),
                 json.dumps(_json(pitch_settings)),
                 json.dumps(_json(syllabification_settings)),
@@ -84,6 +94,11 @@ def _row_to_job(row: dict, artifact_rows: list[dict]) -> Job:
         updatedAt=row["updated_at"],
         metadata=SourceMetadata.model_validate(row["metadata"]),
         profiles=ModelProfiles.model_validate(row["profiles"]),
+        configurationPreset=row.get("configuration_preset") or "default",
+        configurationPresetName=row.get("configuration_preset_name") or "Domyślna",
+        configurationPresetType=row.get("configuration_preset_type") or "predefined",
+        configurationFallbackFields=row.get("configuration_fallback_fields") or [],
+        processingMode=row.get("processing_mode") or "manual",
         transcriptionSettings=TranscriptionSettings.model_validate(row["transcription_settings"] or {}),
         pitchSettings=PitchSettings.model_validate(row["pitch_settings"]),
         syllabificationSettings=SyllabificationSettings.model_validate(row.get("syllabification_settings") or {}),
@@ -132,6 +147,8 @@ def update_job_config(
     *,
     metadata: SourceMetadata | None = None,
     profiles: ModelProfiles | None = None,
+    configuration_preset: str | None = None,
+    processing_mode: str | None = None,
     transcription_settings: TranscriptionSettings | None = None,
     pitch_settings: PitchSettings | None = None,
     syllabification_settings: SyllabificationSettings | None = None,
@@ -145,6 +162,12 @@ def update_job_config(
     if profiles is not None:
         assignments.append("profiles = %s::jsonb")
         values.append(json.dumps(_json(profiles)))
+    if configuration_preset is not None:
+        assignments.append("configuration_preset = %s")
+        values.append(configuration_preset)
+    if processing_mode is not None:
+        assignments.append("processing_mode = %s")
+        values.append(processing_mode)
     if transcription_settings is not None:
         assignments.append("transcription_settings = %s::jsonb")
         values.append(json.dumps(_json(transcription_settings)))
@@ -166,6 +189,75 @@ def update_job_config(
             tuple(values),
         )
         conn.commit()
+
+
+def update_configuration_fallback_fields(job_id: str, fields: list[str]) -> None:
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE jobs SET configuration_fallback_fields = %s::jsonb, updated_at = now() WHERE job_id = %s",
+            (json.dumps(fields), job_id),
+        )
+        conn.commit()
+
+
+def list_configuration_presets() -> list[dict]:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT preset_id, name, preset_type, configuration, created_at, updated_at FROM configuration_presets ORDER BY preset_type, lower(name), preset_id"
+        ).fetchall()
+
+
+def get_configuration_preset(preset_id: str) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT preset_id, name, preset_type, configuration, created_at, updated_at FROM configuration_presets WHERE preset_id = %s",
+            (preset_id,),
+        ).fetchone()
+
+
+def find_custom_configuration_preset_by_name(name: str) -> dict | None:
+    with get_conn() as conn:
+        return conn.execute(
+            "SELECT preset_id, name, preset_type, configuration, created_at, updated_at FROM configuration_presets WHERE preset_type = 'custom' AND lower(btrim(name)) = lower(btrim(%s))",
+            (name,),
+        ).fetchone()
+
+
+def create_configuration_preset(preset_id: str, name: str, preset_type: str, configuration: dict) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            INSERT INTO configuration_presets (preset_id, name, preset_type, configuration)
+            VALUES (%s, %s, %s, %s::jsonb)
+            ON CONFLICT DO NOTHING
+            RETURNING preset_id, name, preset_type, configuration, created_at, updated_at
+            """,
+            (preset_id, name, preset_type, json.dumps(configuration)),
+        ).fetchone()
+        conn.commit()
+    return row
+
+
+def update_configuration_preset(preset_id: str, configuration: dict) -> dict | None:
+    with get_conn() as conn:
+        row = conn.execute(
+            """
+            UPDATE configuration_presets
+            SET configuration = %s::jsonb, updated_at = now()
+            WHERE preset_id = %s
+            RETURNING preset_id, name, preset_type, configuration, created_at, updated_at
+            """,
+            (json.dumps(configuration), preset_id),
+        ).fetchone()
+        conn.commit()
+    return row
+
+
+def delete_configuration_preset(preset_id: str) -> bool:
+    with get_conn() as conn:
+        deleted = conn.execute("DELETE FROM configuration_presets WHERE preset_id = %s", (preset_id,)).rowcount
+        conn.commit()
+    return bool(deleted)
 
 
 def set_tempo(job_id: str, tempo: Tempo) -> None:

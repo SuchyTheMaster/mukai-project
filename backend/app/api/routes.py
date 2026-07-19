@@ -12,6 +12,9 @@ from app.domain.contracts import (
     ApplicationResetResponse,
     Arrangement,
     AudioAsset,
+    ConfigurationPresetCatalog,
+    ConfigurationPresetSummary,
+    MANUAL_PROCESSING_MODE,
     CreateJobUpload,
     EmbeddedCover,
     ExportKaraokeResponse,
@@ -27,6 +30,8 @@ from app.domain.contracts import (
     ResetStageResponse,
     ResegmentArrangementRequest,
     SaveArrangementRequest,
+    SaveConfigurationPresetRequest,
+    OverwriteConfigurationPresetRequest,
     StageSettingsRequest,
     StageStatus,
     TranscriptSegment,
@@ -38,6 +43,12 @@ from app.domain.contracts import (
     utc_now,
 )
 from app.services import audio_probe
+from app.services.configuration_presets import (
+    PresetConfigurationError,
+    configuration_catalog,
+    configuration_from_job,
+    resolve_configuration_preset,
+)
 from app.services.ids import new_id
 from app.services.queue import enqueue_job, enqueue_pitch, enqueue_separation, enqueue_transcription, redis_client
 from app.services.project_archive import generate_draft_archive, generate_job_archive, import_project_archive
@@ -58,10 +69,88 @@ from app.services.ultrastar_export import (
     write_validation_report_artifact,
 )
 from app.workers.pitch import build_arrangement, resolve_syllabification_language
-from app.workers.stages import require_stage_settings
+from app.workers.stages import is_stage_confirmed, require_stage_settings, requires_manual_stage_confirmation
 from app.workers.transcribe import estimate_auto_sentence_gap
 
 router = APIRouter(prefix="/api")
+
+
+@router.get("/configuration-presets", response_model=ConfigurationPresetCatalog)
+def get_configuration_presets() -> ConfigurationPresetCatalog:
+    return configuration_catalog()
+
+
+@router.post("/configuration-presets", response_model=ConfigurationPresetSummary)
+def create_configuration_preset(request: SaveConfigurationPresetRequest) -> ConfigurationPresetSummary:
+    job = _completed_job_for_preset(request.sourceJobId)
+    existing = repository.find_custom_configuration_preset_by_name(request.name)
+    if existing:
+        raise api_error(
+            409,
+            "custom_preset_name_exists",
+            "Preset użytkownika o tej nazwie już istnieje.",
+            {"presetId": existing["preset_id"], "name": existing["name"]},
+        )
+    row = repository.create_configuration_preset(
+        new_id("preset"),
+        request.name,
+        "custom",
+        configuration_from_job(job).model_dump(mode="json"),
+    )
+    if not row:
+        existing = repository.find_custom_configuration_preset_by_name(request.name)
+        if not existing:
+            raise api_error(409, "configuration_preset_create_conflict", "Nie udało się zapisać presetu z powodu równoczesnej zmiany.")
+        raise api_error(
+            409,
+            "custom_preset_name_exists",
+            "Preset użytkownika o tej nazwie już istnieje.",
+            {"presetId": existing["preset_id"], "name": existing["name"]},
+        )
+    return _preset_summary(row)
+
+
+@router.put("/configuration-presets/{preset_id}", response_model=ConfigurationPresetSummary)
+def overwrite_configuration_preset(preset_id: str, request: OverwriteConfigurationPresetRequest) -> ConfigurationPresetSummary:
+    job = _completed_job_for_preset(request.sourceJobId)
+    preset = repository.get_configuration_preset(preset_id)
+    if not preset:
+        raise api_error(404, "configuration_preset_not_found", "Preset konfiguracji nie istnieje.")
+    if preset["preset_type"] != "custom":
+        raise api_error(403, "configuration_preset_read_only", "Presetów wbudowanych nie można nadpisywać.")
+    row = repository.update_configuration_preset(preset_id, configuration_from_job(job).model_dump(mode="json"))
+    return _preset_summary(row)
+
+
+@router.delete("/configuration-presets/{preset_id}")
+def delete_configuration_preset(preset_id: str) -> dict:
+    preset = repository.get_configuration_preset(preset_id)
+    if not preset:
+        raise api_error(404, "configuration_preset_not_found", "Preset konfiguracji nie istnieje.")
+    if preset["preset_type"] != "custom":
+        raise api_error(403, "configuration_preset_read_only", "Presetów wbudowanych nie można usuwać.")
+    repository.delete_configuration_preset(preset_id)
+    return {"deleted": True, "presetId": preset_id}
+
+
+def _completed_job_for_preset(job_id: str):
+    job = repository.get_job(job_id)
+    if not job:
+        raise api_error(404, "job_not_found", "Job nie istnieje.")
+    if job.status != JobStatus.awaiting_review:
+        raise api_error(409, "job_not_ready_for_preset", "Konfigurację można zapisać po ukończeniu pipeline'u.")
+    return job
+
+
+def _preset_summary(row: dict) -> ConfigurationPresetSummary:
+    is_custom = row["preset_type"] == "custom"
+    return ConfigurationPresetSummary(
+        presetId=row["preset_id"],
+        name=row["name"],
+        presetType=row["preset_type"],
+        canDelete=is_custom,
+        canOverwrite=is_custom,
+    )
 
 
 @router.get("/health")
@@ -195,13 +284,27 @@ async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | N
     if not draft_path.exists():
         raise api_error(404, "draft_not_found", "Nie znaleziono zaakceptowanego draftu uploadu.")
     draft = read_json(draft_path)
+    try:
+        resolved_preset = resolve_configuration_preset(request.configurationPreset, request.metadata.language)
+    except KeyError:
+        raise api_error(404, "configuration_preset_not_found", "Wybrany preset konfiguracji nie istnieje.")
+    except PresetConfigurationError as exc:
+        raise api_error(422, "configuration_preset_invalid", str(exc))
+    if resolved_preset.fallback_fields and not request.acknowledgeConfigurationFallback:
+        raise api_error(
+            409,
+            "configuration_preset_fallback_required",
+            "Preset konfiguracji wymaga uzupełnienia wartości z konfiguracji Domyślna.",
+            {"missingFields": resolved_preset.fallback_fields},
+        )
+    resolved_configuration = resolved_preset.configuration
     job_id = new_id("job")
     job_dir = resolve_inside(f"jobs/{job_id}")
     source_src = resolve_inside(draft["sourcePath"])
     source_dst = job_dir / "source" / safe_filename(draft["originalFilename"])
     source_dst.parent.mkdir(parents=True, exist_ok=True)
     source_src.replace(source_dst)
-    transcription_settings = final_transcription_settings(request.transcriptionSettings, request.syllabificationSettings)
+    transcription_settings = final_transcription_settings(resolved_configuration.transcriptionSettings, resolved_configuration.syllabificationSettings)
 
     processing = initial_processing()
     upload_key = stage_key("uploaded", "source")
@@ -214,19 +317,24 @@ async def create_job_from_upload(payload: str = Form(...), cover: UploadFile | N
     processing[upload_key].settingsSummary = _settings_summary_for_config(
         "uploaded",
         request.metadata,
-        request.profiles,
+        resolved_configuration.profiles,
         transcription_settings,
-        request.pitchSettings,
-        request.syllabificationSettings,
+        resolved_configuration.pitchSettings,
+        resolved_configuration.syllabificationSettings,
     )
 
     repository.create_job(
         job_id=job_id,
         metadata=request.metadata,
-        profiles=request.profiles,
+        profiles=resolved_configuration.profiles,
+        configuration_preset=resolved_preset.preset_id,
+        configuration_preset_name=resolved_preset.name,
+        configuration_preset_type=resolved_preset.preset_type,
+        configuration_fallback_fields=resolved_preset.fallback_fields,
+        processing_mode=request.processingMode,
         transcription_settings=transcription_settings,
-        pitch_settings=request.pitchSettings,
-        syllabification_settings=request.syllabificationSettings,
+        pitch_settings=resolved_configuration.pitchSettings,
+        syllabification_settings=resolved_configuration.syllabificationSettings,
         processing=processing,
         audio=draft["audio"],
     )
@@ -382,7 +490,7 @@ async def update_job_source(job_id: str, payload: str = Form(...), cover: Upload
     invalidated = _invalidate_stages(job_id, changed_stages)
     queued = bool(invalidated) and should_queue
     if queued:
-        _enqueue_stage(job_id, invalidated[0])
+        queued = _enqueue_stage(job_id, invalidated[0])
     refreshed = repository.get_job(job_id)
     return {"job": refreshed, "invalidatedStages": invalidated, "queued": queued}
 
@@ -405,19 +513,21 @@ def save_stage_settings(job_id: str, stage: str, request: StageSettingsRequest):
     invalidated = _changed_stages_for_settings(job, stage, request)
     must_queue = _stage_requires_action(job, stage) or _should_queue_invalidated(job, invalidated)
     _apply_stage_settings(job, stage, request)
+    _clear_edited_configuration_fallbacks(job, stage, request.editedConfigurationFields)
     _confirm_stage_settings(job_id, stage)
     if stage == "uploaded":
         invalidated = _invalidate_stages(job_id, invalidated)
         queued = bool(invalidated)
         if queued:
-            _enqueue_stage(job_id, invalidated[0])
+            queued = _enqueue_stage(job_id, invalidated[0])
         return {"job": repository.get_job(job_id), "invalidatedStages": invalidated, "queued": queued}
 
     invalidated = _invalidate_stages(job_id, invalidated)
+    queued = False
     if must_queue:
-        _enqueue_stage(job_id, invalidated[0] if invalidated else stage)
+        queued = _enqueue_stage(job_id, invalidated[0] if invalidated else stage)
     refreshed = repository.get_job(job_id)
-    return {"job": refreshed, "invalidatedStages": invalidated, "queued": must_queue}
+    return {"job": refreshed, "invalidatedStages": invalidated, "queued": queued}
 
 
 @router.get("/jobs/{job_id}/arrangement", response_model=Arrangement)
@@ -574,8 +684,8 @@ def export_job_project(job_id: str, state: ProjectClientState) -> ProjectArchive
 def import_project(file: UploadFile = File(...)) -> ProjectImportResponse:
     result = import_project_archive(file)
     if result.job and result.autoResume and result.resumeStage:
-        _enqueue_stage(result.job.jobId, result.resumeStage)
-        result = result.model_copy(update={"queued": True})
+        queued = _enqueue_stage(result.job.jobId, result.resumeStage)
+        result = result.model_copy(update={"queued": queued})
     return result
 
 
@@ -621,16 +731,16 @@ def resume_stage(job_id: str, stage: str, request: ResetStageRequest):
         raise api_error(400, "invalid_stage", "Nieprawidlowy etap wznowienia.")
     snapshot = _stage_snapshot(job, stage)
     if snapshot and snapshot.status != StageStatus.failed and _stage_has_complete_outputs(job, stage):
-        _enqueue_stage(job_id, stage)
-        return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=[], queued=True)
+        queued = _enqueue_stage(job_id, stage)
+        return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=[], queued=queued)
     start_stage = _resume_start_stage(job, stage)
     invalidated = _invalidate_stages(job_id, _stages_from(start_stage))
     refreshed = repository.get_job(job_id)
-    if start_stage in STAGE_FORMS and refreshed and not _stage_requires_action(refreshed, start_stage) and not any(snapshot.stage == start_stage and snapshot.settingsConfirmedAt for snapshot in refreshed.processing.values()):
+    if start_stage in STAGE_FORMS and refreshed and requires_manual_stage_confirmation(refreshed) and not _stage_requires_action(refreshed, start_stage) and not any(snapshot.stage == start_stage and snapshot.settingsConfirmedAt for snapshot in refreshed.processing.values()):
         require_stage_settings(job_id, start_stage, STAGE_SUBSTEPS[start_stage], STAGE_MESSAGES[start_stage], STAGE_WORKERS[start_stage], STAGE_FORMS[start_stage])
         return ResetStageResponse(jobId=job_id, status=JobStatus(start_stage), resetFromStage=start_stage, invalidatedStages=invalidated, queued=False)
-    _enqueue_stage(job_id, start_stage)
-    return ResetStageResponse(jobId=job_id, status=JobStatus(start_stage), resetFromStage=start_stage, invalidatedStages=invalidated, queued=True)
+    queued = _enqueue_stage(job_id, start_stage)
+    return ResetStageResponse(jobId=job_id, status=JobStatus(start_stage), resetFromStage=start_stage, invalidatedStages=invalidated, queued=queued)
 
 
 STAGE_NAMES = ["preprocessing", "detecting_bpm", "separating_vocals", "transcribing", "detecting_pitch", "aligning"]
@@ -902,6 +1012,48 @@ def _apply_stage_settings(job, stage: str, request: StageSettingsRequest) -> Non
     raise api_error(400, "invalid_stage", "Ten etap nie ma formularza ustawien.")
 
 
+STAGE_CONFIGURATION_FIELDS = {
+    "separating_vocals": {"profiles.separationModel"},
+    "transcribing": {
+        "profiles.transcriptionModel",
+        "transcriptionSettings.vadMethod",
+        "transcriptionSettings.sileroThreshold",
+        "transcriptionSettings.sileroNegThreshold",
+        "transcriptionSettings.sileroMinSpeechDurationMs",
+        "transcriptionSettings.sileroMinSilenceDurationMs",
+        "transcriptionSettings.sileroSpeechPadMs",
+        "transcriptionSettings.pyannoteVadOnset",
+        "transcriptionSettings.pyannoteVadOffset",
+        "transcriptionSettings.vadChunkSizeSec",
+        "transcriptionSettings.sentencePaddingMs",
+        "transcriptionSettings.positioning",
+        "syllabificationSettings.method",
+    },
+    "detecting_pitch": {
+        "profiles.pitch",
+        "pitchSettings.silenceThresholdDb",
+        "pitchSettings.periodicityThreshold",
+        "pitchSettings.frameStepMs",
+    },
+    "aligning": {
+        "transcriptionSettings.sentenceGapMs",
+        "pitchSettings.minNoteLengthMs",
+        "pitchSettings.mergeGapMs",
+        "pitchSettings.checkNoteLongerThan",
+        "pitchSettings.silenceTresholdForNoteChecking",
+    },
+}
+
+
+def _clear_edited_configuration_fallbacks(job, stage: str, edited_fields: list[str]) -> None:
+    removable = set(edited_fields) & STAGE_CONFIGURATION_FIELDS.get(stage, set())
+    if not removable:
+        return
+    remaining = [field for field in job.configurationFallbackFields if field not in removable]
+    if remaining != job.configurationFallbackFields:
+        repository.update_configuration_fallback_fields(job.jobId, remaining)
+
+
 def _invalidate_for_stage(job_id: str, stage: str) -> list[str]:
     invalidated = _stages_from(stage)
     return _invalidate_stages(job_id, invalidated, clear_confirmed_stages=[stage])
@@ -943,7 +1095,19 @@ def _reset_invalidated_snapshot(snapshot, clear_confirmation: bool) -> None:
         snapshot.settingsSummary = {}
 
 
-def _enqueue_stage(job_id: str, stage: str) -> None:
+def _enqueue_stage(job_id: str, stage: str) -> bool:
+    job = repository.get_job(job_id)
+    if stage in STAGE_FORMS and job and not is_stage_confirmed(job, stage):
+        require_stage_settings(
+            job_id,
+            stage,
+            STAGE_SUBSTEPS[stage],
+            STAGE_MESSAGES[stage],
+            STAGE_WORKERS[stage],
+            STAGE_FORMS[stage],
+            _settings_summary_for_job(job, stage),
+        )
+        return False
     if stage in {"preprocessing", "detecting_bpm"}:
         enqueue_job(job_id, start_stage=stage)
     elif stage == "separating_vocals":
@@ -956,6 +1120,7 @@ def _enqueue_stage(job_id: str, stage: str) -> None:
         enqueue_pitch(job_id, start_stage="aligning")
     else:
         raise api_error(400, "invalid_stage", "Nieprawidlowy etap kolejki.")
+    return True
 
 
 @router.post("/jobs/{job_id}/stages/{stage}/reset", response_model=ResetStageResponse)
@@ -966,13 +1131,16 @@ def reset_stage(job_id: str, stage: str, request: ResetStageRequest):
     _ensure_not_running(job)
     if stage not in STAGE_NAMES:
         raise api_error(400, "invalid_stage", "Nieprawidlowy etap resetu.")
+    if request.forceManualMode:
+        repository.update_job_config(job_id, processing_mode=MANUAL_PROCESSING_MODE)
+        job = repository.get_job(job_id)
     invalidated = _invalidate_for_stage(job_id, stage)
-    if stage in {"separating_vocals", "transcribing", "detecting_pitch", "aligning"}:
+    if stage in {"separating_vocals", "transcribing", "detecting_pitch", "aligning"} and job and requires_manual_stage_confirmation(job):
         form = STAGE_FORMS[stage]
         substep = STAGE_SUBSTEPS[stage]
         worker = STAGE_WORKERS[stage]
         message = STAGE_MESSAGES[stage]
         require_stage_settings(job_id, stage, substep, message, worker, form)
         return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=False)
-    _enqueue_stage(job_id, stage)
-    return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=True)
+    queued = _enqueue_stage(job_id, stage)
+    return ResetStageResponse(jobId=job_id, status=JobStatus(stage), resetFromStage=stage, invalidatedStages=invalidated, queued=queued)

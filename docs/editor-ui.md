@@ -12,6 +12,8 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Po utworzeniu zadania ta sekcja zmienia tytuł na `WGRANE AUDIO`, ukrywa obszar uploadu oraz przyciski covera i zostawia dane pliku z nieklikalnym podglądem okładki.
 - Branding zajmuje tylko szerokość lewej kolumny; środkowa i prawa kolumna zaczynają się od góry strony z zachowaniem paddingu.
 - Prawa pływająca kolumna pokazuje aktualny etap oraz wszystkie spodziewane etapy pipeline'u od uploadu do eksportu. Etapy są rozróżnione kolorami na wykonane, przetwarzane, oczekujące i błędne.
+- Po ukończeniu przetwarzania prawa kolumna pokazuje osobną sekcję `Edycja dopasowania` z pełnoszerokim przyciskiem `Przejdź do edycji` w wariancie `primary`; centralne podsumowanie etapów nie zawiera tej akcji.
+- Globalny przycisk `Zapisz` w lewej kolumnie używa niebieskiego wariantu `secondary`, zgodnego z przyciskiem `Wróć do audio`.
 - W widoku `Dopasowanie` prawa kolumna jest domyślnie ukryta, ale użytkownik może ją pokazać i ponownie ukryć.
 - Centralny obszar roboczy pokazuje aktywny widok: upload, status przetwarzania, edytor albo eksport.
 - Na małych ekranach prawa kolumna etapów musi zmienić się w zwijany panel albo poziomy pasek, żeby nie zasłaniać formularzy ani edytora.
@@ -44,7 +46,7 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Wybór modelu transkrypcji pokazuje w selekcie tylko nazwy `large-v3` i `large-v3-turbo`; tooltip wyjaśnia, że `large-v3` jest dokładniejszy, a `large-v3-turbo` szybszy.
 - Zaawansowane ustawienia transkrypcji zawierają select `Pozycjonowanie` z opcjami `słowa i sylaby` oraz `tylko słowa`; `słowa i sylaby` jest domyślne, ale przy sylabizacji `Bez podziału` UI wymusza i blokuje `tylko słowa`.
 - Po wybraniu `Silero` formularz pokazuje wyłącznie aktywne pola `threshold`, `neg_threshold`, `min_speech_duration_ms`, `min_silence_duration_ms`, `speech_pad_ms` i wspólne `chunk_size`; preset startowy to odpowiednio `0.30`, `0.15`, `80 ms`, `100 ms`, `100 ms` i `30 s`.
-- Po wybraniu `pyannote` formularz ukrywa pola Silero i pokazuje wyłącznie `vad_onset`, `vad_offset` oraz wspólne `chunk_size`; preset startowy to `0.45`, `0.25` i `30 s`.
+- Domyślnie wybrany `pyannote` ukrywa pola Silero i pokazuje wyłącznie `vad_onset`, `vad_offset` oraz wspólne `chunk_size`; preset startowy to `0.45`, `0.25` i `30 s`.
 - Przełączenie VAD zachowuje edytowane wartości obu presetów, ale pola nieaktywnego modelu pozostają niewidoczne i nie są stosowane przez backend.
 - Każde pole VAD ma przystępną polską etykietę, ikonę informacji z opisem wpływu parametru oraz techniczną nazwę parametru jako helper pod etykietą.
 - Pole `Ms między sentencjami` edytuje próg przerwy `sentenceGapMs` bezpośrednio w milisekundach; frontend wysyła wpisaną wartość bez przeliczania jednostek, a puste pole oznacza `null` i tryb auto.
@@ -54,6 +56,8 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 - Jeśli preflight nie wykrył covera i użytkownik nie wgra ręcznego covera, eksportowana paczka nie zawiera covera.
 - Informacja, że audio zostanie przekonwertowane lokalnie przez FFmpeg do formatów roboczych.
 - Główna akcja startu w środkowej kolumnie jest podpisana `Przetwarzaj audio`.
+- Na lewo od głównej akcji znajdują się kolejno wyszukiwalny combobox `Konfiguracja` oraz select `Tryb`. Konfiguracje są grupowane jako `Wbudowane` i `Użytkownika`, customowe można usuwać po potwierdzeniu, a `Tryb` ma opcje `Ręczny` i `Automatyczny` z domyślnym `Automatyczny`.
+- Po ukończeniu pipeline'u środkowa kolumna pozwala zapisać bieżące ustawienia jako customowy preset lub nadpisać istniejący. Niekompletne presety pokazują ostrzeżenie przed startem, a ich wartości uzupełnione z `Domyślna` są w formularzach ręcznych czerwone do czasu edycji danego pola.
 
 ### Import Projektu
 

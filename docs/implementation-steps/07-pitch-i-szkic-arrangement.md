@@ -18,7 +18,7 @@ Dodać detekcję wysokości śpiewanych nut oraz pierwszy edytowalny szkic karao
 - Użycie `worker_inputs/torchcrepe.wav` przygotowanego z wokalu.
 - Zapis `pitch.frames.json` z ramkami F0, MIDI, periodicity i voiced.
 - Segmentacja ramek do `pitch.notes.json`.
-- Domyślne parametry pitch: próg ciszy `-42 dBFS`, periodicity `0.55`, krok ramek `10 ms`, minimalna długość nuty `120 ms`, scalanie przerw do `90 ms`, jako praktyczny profil startowy dla typowych piosenek i łączenia tekstu z nutami karaoke.
+- Domyślny dokładny profil pitch używa `torchcrepe full`, progu ciszy `-48 dBFS`, periodicity `0.48`, kroku ramek `10 ms`, minimalnej długości nuty `75 ms` i scalania przerw do `130 ms`, żeby lepiej zachowywać cichy wokal oraz krótkie sylaby.
 - Użycie ustawień pitch zaakceptowanych przy uploadzie lub zmienionych przed resetem etapu.
 - Przechowywanie surowych ramek F0 niezależnie od nut.
 - Worker `worker-aligner` lub lekki moduł alignacji łączący `transcript.aligned.json` i `pitch.notes.json`.

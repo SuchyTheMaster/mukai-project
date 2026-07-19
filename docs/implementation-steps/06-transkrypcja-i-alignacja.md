@@ -19,7 +19,7 @@ Dodać lokalną transkrypcję wokalu z czasami segmentów i słów, tak aby kole
 - Przekazanie języka do WhisperX tylko wtedy, gdy użytkownik go podał.
 - Pozostawienie detekcji języka Whisperowi, gdy użytkownik zostawił język pusty.
 - Zachowanie globalnych czasów dla długich utworów mimo pracy modelu na oknach około 30 sekund.
-- Jawne użycie przypiętego Silero VAD jako domyślnego detektora, z `pyannote` jako obsługiwanym trybem alternatywnym.
+- Jawne użycie `pyannote` jako domyślnego VAD, z przypiętym Silero VAD jako obsługiwanym trybem alternatywnym.
 - Osobne ustawienia Silero (`threshold`, `neg_threshold`, minimalny czas wokalu/ciszy i padding detekcji) oraz pyannote (`vad_onset`, `vad_offset`), wraz ze wspólnymi `vadChunkSizeSec`, `sentenceGapMs` i `sentencePaddingMs`.
 - Zapis `transcript.raw.json` z segmentami ASR.
 - Zapis w `transcript.raw.json` interwałów VAD/Cut & Merge faktycznie przekazanych do ASR.

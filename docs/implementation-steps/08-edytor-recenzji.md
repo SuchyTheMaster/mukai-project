@@ -27,6 +27,7 @@ Zbudować właściwe narzędzie pracy użytkownika nad wynikiem AI: edycję teks
 - Zapis aktualnego `Arrangement` przez `PUT /api/jobs/{jobId}/arrangement`.
 - Kontrola współbieżności zapisu przez `revision`.
 - Akcja resetu aktualnego etapu, jeśli backend pozwala przeliczyć pracę od tego miejsca.
+- Akcja `Wróć do audio` zachowująca ostatnie ustawienia joba, przełączająca konfigurację na `manual` i zatrzymująca pipeline na formularzu wstępnego dopasowania.
 - Responsywne zachowanie prawej kolumny etapów na małych ekranach.
 
 ## Poza zakresem

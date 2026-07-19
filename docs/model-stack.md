@@ -126,7 +126,7 @@ Aktualna decyzja implementacyjna dla etapu 06:
 - Worker zapisuje `transcript.raw.json` z wynikiem ASR oraz `transcript.aligned.json` z liniami forced alignment jako `TranscriptSegment`, słowami, opcjonalnymi czasami znaków, confidence i `requiresReview`.
 - Język jest przekazywany do WhisperX tylko dla `languageMode=forced` i nie jest przekazywany, gdy użytkownik zostawił język pusty.
 - Worker ładuje cały plik `worker_inputs/whisperx.wav` przez `whisperx.load_audio` i przekazuje cały waveform do `model.transcribe`; nie wykonuje własnego obcięcia do pierwszych 30 sekund.
-- Worker domyślnie wstrzykuje Silero VAD `v6.2.1` przypięte do rewizji `7e30209a3e901f9842f81b225f3e93d8199902b1`. `pyannote` pozostaje obsługiwanym trybem alternatywnym przez `TranscriptionSettings.vadMethod`.
+- Worker domyślnie używa `pyannote` przez `TranscriptionSettings.vadMethod`. Silero VAD `v6.2.1`, przypięte do rewizji `7e30209a3e901f9842f81b225f3e93d8199902b1`, pozostaje obsługiwanym trybem alternatywnym.
 - Jeśli uruchomiona wersja WhisperX nie udostępnia parametru `vad_method`, worker nie przerywa transkrypcji. Próbuje użyć `vad_model`, jeśli API go udostępnia, a w przeciwnym razie działa z domyślnym VAD tej wersji i zapisuje tę informację w diagnostyce.
 - Preset Silero używa `threshold=0.30`, `neg_threshold=0.15`, `min_speech_duration_ms=80`, `min_silence_duration_ms=100`, `speech_pad_ms=100` i `chunk_size=30`.
 - Preset pyannote używa `vad_onset=0.45`, `vad_offset=0.25` i `chunk_size=30`. Parametry nieaktywnego VAD nie są przekazywane do modelu.

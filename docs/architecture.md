@@ -34,6 +34,8 @@ Project ZIP Import
 - Pokazuje dane techniczne z preflightu: format/kontener, kodek, kanały, częstotliwość próbkowania i czas trwania.
 - Pokazuje osadzony cover z tagów tak samo jak cover wybrany z dysku, pozwala zastąpić go ręcznie wskazanym plikiem i przywrócić domyślny cover z tagów.
 - Domyślnie wybiera dokładniejsze modele `htdemucs_ft` i `large-v3`, a szybsze profile zostawia jako ręczny wybór użytkownika.
+- Przekazuje rozszerzalny `configurationPreset`, który wybiera wartości domyślne etapów, oraz niezależny `processingMode`, który określa ręczne albo automatyczne przechodzenie pipeline'u.
+- Pobiera globalny katalog presetów z API, rozdziela plikowy preset `default`, bazodanowe `predefined` i bazodanowe `custom`, a po ukończeniu joba pozwala zapisać jego techniczne ustawienia jako pełny preset użytkownika.
 - Pozwala opcjonalnie wskazać język utworu.
 - Pozwala wczytać ZIP projektu utworzony przez globalną akcję `Zapisz` i kontynuować pracę nad utworem.
 - Pokazuje cały stage rail z etapami wykonanymi, przetwarzanymi, oczekującymi i błędnymi.

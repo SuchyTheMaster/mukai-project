@@ -3,11 +3,16 @@ from unittest.mock import patch
 
 from app.api import routes
 from app.domain.contracts import (
+    CreateJobUpload,
+    DEFAULT_CONFIGURATION_PRESET,
+    AUTOMATIC_PROCESSING_MODE,
     Job,
     JobStatus,
+    MANUAL_PROCESSING_MODE,
     ModelProfiles,
     PitchFrame,
     PitchSettings,
+    ResetStageRequest,
     SourceMetadata,
     StageSettingsRequest,
     StageSnapshot,
@@ -18,9 +23,117 @@ from app.domain.contracts import (
     utc_now,
 )
 from app.workers.pitch import segment_notes
+from app.workers.stages import is_stage_confirmed, requires_manual_stage_confirmation
 
 
 class StagedPipelineContractsTest(unittest.TestCase):
+    def test_configuration_and_processing_mode_defaults(self):
+        request = CreateJobUpload(
+            uploadDraftId="draft_test",
+            metadata=SourceMetadata(title="Song", artist="Artist"),
+        )
+
+        self.assertEqual(request.configurationPreset, DEFAULT_CONFIGURATION_PRESET)
+        self.assertEqual(request.processingMode, AUTOMATIC_PROCESSING_MODE)
+        self.assertEqual(self._job().configurationPreset, DEFAULT_CONFIGURATION_PRESET)
+        self.assertEqual(self._job().processingMode, MANUAL_PROCESSING_MODE)
+        self.assertTrue(ResetStageRequest(forceManualMode=True).forceManualMode)
+
+    def test_only_manual_processing_mode_requires_stage_confirmation(self):
+        automatic = self._job(configuration_preset="future_preset", processing_mode=AUTOMATIC_PROCESSING_MODE)
+        manual = self._job(configuration_preset="future_preset", processing_mode=MANUAL_PROCESSING_MODE)
+
+        self.assertFalse(requires_manual_stage_confirmation(automatic))
+        self.assertTrue(is_stage_confirmed(automatic, "separating_vocals"))
+        self.assertTrue(requires_manual_stage_confirmation(manual))
+        self.assertFalse(is_stage_confirmed(manual, "separating_vocals"))
+
+        manual.processing["separating_vocals.demucs"].settingsConfirmedAt = utc_now()
+        self.assertTrue(is_stage_confirmed(manual, "separating_vocals"))
+
+    def test_legacy_manual_preset_is_migrated_to_default_manual_mode(self):
+        request = CreateJobUpload.model_validate({
+            "uploadDraftId": "draft_test",
+            "metadata": {"title": "Song", "artist": "Artist"},
+            "configurationPreset": "manual",
+        })
+        legacy_job = self._job().model_dump(mode="json")
+        legacy_job.pop("processingMode")
+        legacy_job["configurationPreset"] = "manual"
+        job = Job.model_validate(legacy_job)
+
+        self.assertEqual(request.configurationPreset, DEFAULT_CONFIGURATION_PRESET)
+        self.assertEqual(request.processingMode, MANUAL_PROCESSING_MODE)
+        self.assertEqual(job.configurationPreset, DEFAULT_CONFIGURATION_PRESET)
+        self.assertEqual(job.processingMode, MANUAL_PROCESSING_MODE)
+
+    def test_legacy_non_manual_preset_keeps_automatic_behavior(self):
+        legacy_job = self._job().model_dump(mode="json")
+        legacy_job.pop("processingMode")
+        legacy_job["configurationPreset"] = "studio"
+
+        job = Job.model_validate(legacy_job)
+
+        self.assertEqual(job.configurationPreset, "studio")
+        self.assertEqual(job.processingMode, AUTOMATIC_PROCESSING_MODE)
+
+    def test_non_manual_stage_reset_requeues_without_a_form(self):
+        job = self._job(configuration_preset="future_preset", processing_mode=AUTOMATIC_PROCESSING_MODE)
+
+        with patch.object(routes.repository, "get_job", return_value=job), patch.object(routes, "_invalidate_for_stage", return_value=["aligning"]), patch.object(routes, "_enqueue_stage", return_value=True) as enqueue_stage, patch.object(routes, "require_stage_settings") as require_settings:
+            response = routes.reset_stage("job_test", "aligning", ResetStageRequest())
+
+        self.assertTrue(response.queued)
+        enqueue_stage.assert_called_once_with("job_test", "aligning")
+        require_settings.assert_not_called()
+
+    def test_enqueue_guard_uses_mode_independently_of_future_preset(self):
+        manual = self._job(configuration_preset="studio", processing_mode=MANUAL_PROCESSING_MODE)
+        automatic = self._job(configuration_preset="studio", processing_mode=AUTOMATIC_PROCESSING_MODE)
+
+        with patch.object(routes.repository, "get_job", return_value=manual), patch.object(routes, "require_stage_settings") as require_settings, patch.object(routes, "enqueue_pitch") as enqueue_pitch:
+            self.assertFalse(routes._enqueue_stage("job_test", "detecting_pitch"))
+
+        require_settings.assert_called_once()
+        enqueue_pitch.assert_not_called()
+
+        with patch.object(routes.repository, "get_job", return_value=automatic), patch.object(routes, "require_stage_settings") as require_settings, patch.object(routes, "enqueue_pitch") as enqueue_pitch:
+            self.assertTrue(routes._enqueue_stage("job_test", "detecting_pitch"))
+
+        require_settings.assert_not_called()
+        enqueue_pitch.assert_called_once_with("job_test")
+
+    def test_return_to_audio_forces_manual_mode_and_form(self):
+        automatic = self._job(processing_mode=AUTOMATIC_PROCESSING_MODE)
+        manual = self._job(processing_mode=MANUAL_PROCESSING_MODE)
+
+        with patch.object(routes.repository, "get_job", side_effect=[automatic, manual]), patch.object(routes.repository, "update_job_config") as update_job_config, patch.object(routes, "_invalidate_for_stage", return_value=["aligning"]), patch.object(routes, "_enqueue_stage") as enqueue_stage, patch.object(routes, "require_stage_settings") as require_settings:
+            response = routes.reset_stage(
+                "job_test",
+                "aligning",
+                ResetStageRequest(forceManualMode=True, reason="return_to_audio"),
+            )
+
+        self.assertFalse(response.queued)
+        update_job_config.assert_called_once_with("job_test", processing_mode=MANUAL_PROCESSING_MODE)
+        require_settings.assert_called_once()
+        enqueue_stage.assert_not_called()
+
+    def test_new_jobs_use_complete_pitch_defaults(self):
+        self.assertEqual(ModelProfiles().pitch, "default")
+        self.assertEqual(
+            PitchSettings().model_dump(),
+            {
+                "silenceThresholdDb": -48.0,
+                "periodicityThreshold": 0.48,
+                "frameStepMs": 10,
+                "minNoteLengthMs": 75,
+                "mergeGapMs": 130,
+                "checkNoteLongerThan": 400,
+                "silenceTresholdForNoteChecking": -60.0,
+            },
+        )
+
     def test_pending_stage_can_require_settings_form(self):
         snapshot = StageSnapshot(
             stage="separating_vocals",
@@ -180,6 +293,8 @@ class StagedPipelineContractsTest(unittest.TestCase):
     def _job(
         self,
         *,
+        configuration_preset: str = DEFAULT_CONFIGURATION_PRESET,
+        processing_mode: str = MANUAL_PROCESSING_MODE,
         metadata: SourceMetadata | None = None,
         profiles: ModelProfiles | None = None,
         transcription_settings: TranscriptionSettings | None = None,
@@ -193,6 +308,8 @@ class StagedPipelineContractsTest(unittest.TestCase):
             updatedAt=utc_now(),
             metadata=metadata or SourceMetadata(title="Song", artist="Artist"),
             profiles=profiles or ModelProfiles(),
+            configurationPreset=configuration_preset,
+            processingMode=processing_mode,
             transcriptionSettings=transcription_settings or TranscriptionSettings(),
             pitchSettings=pitch_settings or PitchSettings(),
             syllabificationSettings=syllabification_settings or SyllabificationSettings(),

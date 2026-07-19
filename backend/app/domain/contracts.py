@@ -56,16 +56,20 @@ class SourceMetadata(BaseModel):
 class ModelProfiles(BaseModel):
     separationModel: Literal["htdemucs", "htdemucs_ft"] = "htdemucs_ft"
     transcriptionModel: Literal["large-v3", "large-v3-turbo"] = "large-v3"
-    pitch: str = "fast"
+    pitch: str = "default"
 
 
 SyllabificationMethod = Literal["kokosznicka", "pyphen", "heuristic", "none"]
 SyllabificationLanguageSource = Literal["forced", "detected", "alignment", "unknown"]
 TranscriptionPositioning = Literal["words_and_syllables", "words_only"]
+DEFAULT_CONFIGURATION_PRESET = "default"
+AUTOMATIC_PROCESSING_MODE = "automatic"
+MANUAL_PROCESSING_MODE = "manual"
+ConfigurationPresetType = Literal["predefined", "custom"]
 
 
 class TranscriptionSettings(BaseModel):
-    vadMethod: Literal["silero", "pyannote"] = "silero"
+    vadMethod: Literal["silero", "pyannote"] = "pyannote"
     sileroThreshold: float = Field(default=0.3, gt=0.0, lt=1.0)
     sileroNegThreshold: float = Field(default=0.15, gt=0.0, lt=1.0)
     sileroMinSpeechDurationMs: int = Field(default=80, ge=0)
@@ -88,7 +92,7 @@ class TranscriptionSettings(BaseModel):
             migrated["sentenceGapMs"] = migrated.get("sentencePauseMs")
         legacy_onset = migrated.get("vadOnset")
         legacy_offset = migrated.get("vadOffset")
-        if migrated.get("vadMethod", "silero") == "silero":
+        if migrated.get("vadMethod", "pyannote") == "silero":
             if "sileroThreshold" not in migrated and legacy_onset is not None:
                 migrated["sileroThreshold"] = legacy_onset
             if "sileroNegThreshold" not in migrated and legacy_onset is not None:
@@ -110,17 +114,55 @@ class TranscriptionSettings(BaseModel):
 
 
 class PitchSettings(BaseModel):
-    silenceThresholdDb: float = -42.0
-    periodicityThreshold: float = 0.55
+    silenceThresholdDb: float = -48.0
+    periodicityThreshold: float = 0.48
     frameStepMs: int = 10
-    minNoteLengthMs: int = 120
-    mergeGapMs: int = 90
+    minNoteLengthMs: int = 75
+    mergeGapMs: int = 130
     checkNoteLongerThan: int = Field(default=400, ge=0)
     silenceTresholdForNoteChecking: float = Field(default=-60.0, le=0.0)
 
 
 class SyllabificationSettings(BaseModel):
     method: SyllabificationMethod = "pyphen"
+
+
+class PresetConfiguration(BaseModel):
+    profiles: ModelProfiles = Field(default_factory=ModelProfiles)
+    transcriptionSettings: TranscriptionSettings = Field(default_factory=TranscriptionSettings)
+    pitchSettings: PitchSettings = Field(default_factory=PitchSettings)
+    syllabificationSettings: SyllabificationSettings = Field(default_factory=SyllabificationSettings)
+
+
+class ConfigurationPresetSummary(BaseModel):
+    presetId: str
+    name: str
+    presetType: ConfigurationPresetType
+    canDelete: bool = False
+    canOverwrite: bool = False
+    missingFields: list[str] = Field(default_factory=list)
+    invalidReason: str | None = None
+
+
+class ConfigurationPresetCatalog(BaseModel):
+    presets: list[ConfigurationPresetSummary] = Field(default_factory=list)
+
+
+class SaveConfigurationPresetRequest(BaseModel):
+    sourceJobId: str
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        normalized = " ".join(value.split())
+        if not normalized:
+            raise ValueError("name is required")
+        return normalized
+
+
+class OverwriteConfigurationPresetRequest(BaseModel):
+    sourceJobId: str
 
 
 def final_transcription_settings(
@@ -390,6 +432,11 @@ class Job(BaseModel):
     updatedAt: datetime
     metadata: SourceMetadata
     profiles: ModelProfiles
+    configurationPreset: str = Field(default=DEFAULT_CONFIGURATION_PRESET, pattern=r"^[a-z][a-z0-9_-]{0,63}$")
+    configurationPresetName: str = "Domyślna"
+    configurationPresetType: ConfigurationPresetType = "predefined"
+    configurationFallbackFields: list[str] = Field(default_factory=list)
+    processingMode: Literal["manual", "automatic"] = MANUAL_PROCESSING_MODE
     transcriptionSettings: TranscriptionSettings = Field(default_factory=TranscriptionSettings)
     pitchSettings: PitchSettings = Field(default_factory=PitchSettings)
     syllabificationSettings: SyllabificationSettings = Field(default_factory=SyllabificationSettings)
@@ -399,16 +446,43 @@ class Job(BaseModel):
     audio: AudioInfo | None = None
     artifacts: list[AudioAsset] = Field(default_factory=list)
 
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_manual_preset(cls, data):
+        if not isinstance(data, dict):
+            return data
+        migrated = dict(data)
+        preset_was_present = "configurationPreset" in migrated
+        if migrated.get("configurationPreset") == "manual":
+            migrated["configurationPreset"] = DEFAULT_CONFIGURATION_PRESET
+            migrated["processingMode"] = MANUAL_PROCESSING_MODE
+        elif "processingMode" not in migrated and preset_was_present:
+            migrated["processingMode"] = AUTOMATIC_PROCESSING_MODE
+        return migrated
+
 
 class CreateJobUpload(BaseModel):
     uploadDraftId: str
     metadata: SourceMetadata
     profiles: ModelProfiles = Field(default_factory=ModelProfiles)
+    configurationPreset: str = Field(default=DEFAULT_CONFIGURATION_PRESET, pattern=r"^[a-z][a-z0-9_-]{0,63}$")
+    acknowledgeConfigurationFallback: bool = False
+    processingMode: Literal["manual", "automatic"] = AUTOMATIC_PROCESSING_MODE
     transcriptionSettings: TranscriptionSettings = Field(default_factory=TranscriptionSettings)
     pitchSettings: PitchSettings = Field(default_factory=PitchSettings)
     syllabificationSettings: SyllabificationSettings = Field(default_factory=SyllabificationSettings)
     useEmbeddedCover: bool = True
     draftCoverKind: Literal["tag", "manual"] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_manual_preset(cls, data):
+        if not isinstance(data, dict) or data.get("configurationPreset") != "manual":
+            return data
+        migrated = dict(data)
+        migrated["configurationPreset"] = DEFAULT_CONFIGURATION_PRESET
+        migrated["processingMode"] = MANUAL_PROCESSING_MODE
+        return migrated
 
     @model_validator(mode="after")
     def require_title_and_artist(self):
@@ -425,6 +499,7 @@ class StageSettingsRequest(BaseModel):
     transcriptionSettings: TranscriptionSettings | None = None
     pitchSettings: PitchSettings | None = None
     syllabificationSettings: SyllabificationSettings | None = None
+    editedConfigurationFields: list[str] = Field(default_factory=list)
 
 
 class UpdateJobSourceRequest(BaseModel):
@@ -453,6 +528,7 @@ class ResegmentArrangementRequest(BaseModel):
 
 class ResetStageRequest(BaseModel):
     reason: str = "user_requested"
+    forceManualMode: bool = False
 
 
 class ApplicationResetRequest(BaseModel):

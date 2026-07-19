@@ -7,6 +7,8 @@ Wejście:
 - Plik audio: `WAV`, `MP3`, `MP4`, `M4A`, `OGG`, `FLAC`.
 - Metadane: tytuł, artysta, opcjonalny język wybierany z przeszukiwalnej listy języków Whisper `large-v3`, opcjonalny album, rok i gatunek.
 - Profile modeli: domyślnie dokładniejsza separacja `htdemucs_ft` i dokładniejsza transkrypcja `large-v3`; użytkownik może ręcznie wybrać szybsze profile `htdemucs` i `large-v3-turbo`.
+- Konfiguracja pipeline'u: rozszerzalny `configurationPreset` wybiera domyślne wartości ustawień etapów, a niezależny `processingMode` (`manual` lub `automatic`) steruje wymaganiem potwierdzania formularzy.
+- `default` jest pełnym presetem plikowym; globalne presety `predefined` i `custom` znajdują się w PostgreSQL. JSON presetu obejmuje profile modeli, transkrypcję/VAD, sylabizację, pitch i alignment, ale nie zawiera metadanych źródła ani trybu.
 - Sylabizacja: wybór `Kokosznicka`, `Pyphen`, `Heurystyka` albo `Bez podziału`; dla języka `pl` UI domyślnie wybiera Kokosznicką, a dla pozostałych języków Pyphen.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
 - Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
@@ -27,8 +29,9 @@ Preflight uploadu:
 
 Utworzenie zadania:
 
-- Po akceptacji formularza kroku `Źródło` frontend wysyła `POST /api/jobs/uploads` z `uploadDraftId`, finalnymi metadanymi i opcjonalnym ręcznym coverem. Pola `artist` i `title` są wymagane.
-- Profile modeli oraz ustawienia separacji, transkrypcji, detekcji tonów i wstępnego dopasowania są zbierane dopiero wtedy, gdy pipeline dojdzie do powiązanego z nimi kroku.
+- Po akceptacji formularza kroku `Źródło` frontend wysyła `POST /api/jobs/uploads` z `uploadDraftId`, `configurationPreset`, `processingMode`, finalnymi metadanymi i opcjonalnym ręcznym coverem. Pola `artist` i `title` są wymagane.
+- Backend rozwiązuje preset przed przeniesieniem draftu audio. Brakujące pola uzupełnia wartościami `default`, ale bez `acknowledgeConfigurationFallback=true` zwraca konflikt z listą `missingFields`, aby frontend najpierw pokazał ostrzeżenie.
+- W `processingMode="manual"` profile modeli oraz ustawienia separacji, transkrypcji, detekcji tonów i wstępnego dopasowania są potwierdzane dopiero wtedy, gdy pipeline dojdzie do powiązanego z nimi kroku. Tryb `automatic` używa wartości wynikających z wybranego presetu bez wyświetlania formularzy pośrednich.
 - Jeśli użytkownik nie wskaże ręcznie covera, a preflight wykrył osadzony cover, finalny `Job` używa covera z tagów jako covera importu.
 - Jeśli użytkownik wskaże ręczny cover, ręczny plik zastępuje cover z tagów.
 - Utworzenie `Job` zapisuje oryginalny plik jako artefakt niemodyfikowany i ustawia status `uploaded`.
@@ -48,7 +51,10 @@ Walidacja:
 - UI pokazuje od razu wszystkie oczekiwane etapy pipeline'u, także te, które jeszcze nie wystartowały.
 - Etap przetwarzania audio jest w UI rozbity na podetapy: preprocessing/FFmpeg, BPM, Demucs, WhisperX, detekcja tonów i wstępne dopasowanie.
 - Jeśli etap wymaga ustawień użytkownika przed startem, jego `StageSnapshot` pozostaje w statusie `pending`, ale ma `actionRequired=true` i `settingsForm` wskazujące formularz UI.
+- Tylko `processingMode="manual"` wymaga zatrzymywania na formularzach ustawień. `processingMode="automatic"` uznaje bieżące wartości wybranego presetu za zatwierdzone i automatycznie kolejkuje następny etap.
 - Zatwierdzenie formularza etapu zapisuje ustawienia przez `POST /api/jobs/{jobId}/stages/{stage}/settings`, porównuje stare i nowe wartości po polach, unieważnia tylko artefakty etapów zależnych od faktycznie zmienionych danych, a następnie kontynuuje pipeline od pierwszego wymaganego miejsca.
+- Job przechowuje snapshot nazwy i typu presetu oraz `configurationFallbackFields`. Formularz wysyła `editedConfigurationFields`, a backend usuwa oznaczenie fallbacku wyłącznie dla rzeczywiście edytowanych pól właściwych danemu etapowi.
+- Po `awaiting_review` endpointy `POST/PUT/DELETE /api/configuration-presets` tworzą, nadpisują i usuwają wyłącznie presety `custom`; zapis pobiera pełną techniczną konfigurację bezpośrednio z ukończonego joba.
 - Zmiana metadanych źródła poza `language`, np. tytułu, artysty, albumu, roku albo gatunku, nie unieważnia żadnego etapu audio ani AI. Zmiana `language` unieważnia `transcribing` i `aligning`, a podmiana pliku audio unieważnia wszystkie etapy od `preprocessing` do `aligning`.
 - Jeśli etap zależny traci artefakty, ale jego własne ustawienia były już zatwierdzone i nie uległy zmianie, pipeline może przeliczyć go automatycznie bez ponownego pokazywania formularza.
 - Każdy podetap zapisuje `StageSnapshot` w `Job.processing`, jeśli ma postęp, wynik, błąd albo artefakty widoczne dla użytkownika.
@@ -56,8 +62,9 @@ Walidacja:
 - Błędy etapów muszą zawierać krótki komunikat dla użytkownika i kompaktowy log diagnostyczny bez sekretów, tokenów i prywatnych ścieżek.
 - Po zakończeniu podetapu artefakty są przypisywane do `producedByStage` i `producedBySubstep`, żeby UI mogło pokazać przycisk pobrania przy właściwym podetapie.
 - Reset etapu jest operacją planowaną przez `POST /api/jobs/{jobId}/stages/{stage}/reset`; reset unieważnia artefakty wskazanego etapu i dalszych etapów zależnych, zachowując oryginalne audio, metadane i cover.
+- `Wróć do audio` wywołuje reset etapu `aligning` z `forceManualMode=true`: backend zachowuje ostatni `configurationPreset`, profile i wszystkie ustawienia, zmienia tylko `processingMode` na `manual` oraz wystawia formularz wstępnego dopasowania do potwierdzenia.
 - Frontend zapisuje w `localStorage` ostatni snapshot `Job`, aktywny draft uploadu, ustawienia formularzy etapów i informację, czy otwarty był edytor. Po odświeżeniu strony UI pokazuje ostatni znany etap i odświeża `Job` z API, bez wymagania rozpoczynania pracy od nowa.
-- Akcja `Od nowa` wymaga potwierdzenia w dialogu. Po potwierdzeniu natychmiast usuwa `localStorage`, `sessionStorage` i Cache Storage aplikacji, a po stronie API usuwa cały `Job`, jego rekordy zależne, oryginalny upload, wszystkie artefakty, pliki robocze oraz aktywny draft uploadu. Następnie przeładowuje aplikację do pustego stanu początkowego niezależnie od wyniku żądania sieciowego.
+- Akcja `Od nowa` wymaga potwierdzenia w dialogu. Po potwierdzeniu natychmiast usuwa `localStorage`, `sessionStorage` i Cache Storage aplikacji, a po stronie API usuwa cały `Job`, jego rekordy zależne, oryginalny upload, wszystkie artefakty, pliki robocze oraz aktywny draft uploadu. Następnie przeładowuje aplikację do pustego stanu początkowego z `Konfiguracja=Domyślna` i `Tryb=Automatyczny`; zachowanie kolejnego joba wynika z obu niezależnych pól.
 - Reset projektu jest idempotentny i może zostać wykonany także dla brakującego joba, niepełnego draftu albo uszkodzonego snapshotu przeglądarki. Workery po zakończeniu przerwanego zadania ponownie usuwają katalog joba, jeśli jego rekord został już skasowany.
 - Współdzielony cache modeli AI/GPU nie jest częścią danych pojedynczego projektu i nie jest kasowany przez `Od nowa`; reset usuwa wyłącznie cache i pliki należące do bieżącego projektu oraz pamięć aplikacji w przeglądarce.
 - Etapy preprocessingu audio przed edytorem są idempotentne: jeśli po błędzie, odświeżeniu strony albo imporcie projektu istnieją kompletne artefakty etapu, worker oznacza etap jako `completed` i kontynuuje od następnego wymaganego etapu albo formularza ustawień.
@@ -170,7 +177,7 @@ Wymagania:
 - Nie wymuszać języka dla utworów wielojęzycznych ani wtedy, gdy użytkownik zostawi pole języka puste.
 - Uwzględnić, że Whisper pracuje na oknach około 30 sekund; dla długich utworów pipeline musi poprawnie segmentować lub przekazywać audio do WhisperX tak, żeby zachować globalne czasy.
 - Worker nie może przekazywać do ASR tylko pierwszego okna 30 sekund. Do WhisperX trafia cały `worker_inputs/whisperx.wav`, a podział na okna 30 sekund jest realizowany przez VAD/Cut & Merge WhisperX z globalnymi czasami segmentów.
-- Domyślnie wstrzykiwać przypięty model Silero przez WhisperX `vad_model`, z `pyannote` przez `vad_method` jako trybem alternatywnym.
+- Domyślnie używać `pyannote` przez WhisperX `vad_method`; przypięty model Silero przez `vad_model` pozostaje obsługiwanym trybem alternatywnym.
 - Silero przypiąć do wersji `v6.2.1`/rewizji `7e30209a3e901f9842f81b225f3e93d8199902b1`; nie pobierać zmiennego `master`.
 - Używać osobnych presetów: Silero `0.30/0.15`, `80 ms` minimalnego wokalu, `100 ms` minimalnej ciszy i `100 ms` paddingu detekcji; pyannote `0.45/0.25`.
 - Jeśli wersja WhisperX w obrazie nie obsługuje jawnego `vad_method`, worker nie przerywa transkrypcji i zapisuje w diagnostyce, czy metoda VAD została wymuszona, wstrzyknięta przez `vad_model`, czy użyto domyślnego VAD tej wersji.
@@ -189,7 +196,7 @@ Wymagania:
 Model:
 
 - torchcrepe jako implementacja CREPE w PyTorch.
-- Profil domyślny `fast` używa modelu `torchcrepe tiny`, żeby skrócić czas analizy na typowych utworach. Profil `default` używa modelu `torchcrepe full` jako dokładniejszej, ale znacznie wolniejszej opcji.
+- Profil domyślny `default` używa dokładniejszego modelu `torchcrepe full`. Profil `fast` używa modelu `torchcrepe tiny`, żeby skrócić czas analizy.
 
 Wejście:
 
@@ -204,8 +211,8 @@ Wymagania:
 
 - Docelowo wykonywać pitch detection w osobnym workerze Docker `worker-pitch`.
 - Przechowywać ramki F0 niezależnie od nut, żeby edytor mógł pokazać surowy kontur.
-- W ustawieniach detekcji tonów dostępne są parametry analizy F0: próg ciszy `-42 dBFS`, próg periodicity `0.55` i krok ramek `10 ms`.
-- Minimalna długość nuty karaoke `120 ms` i scalanie przerw do `90 ms` należą do kroku `Wstępne dopasowanie`, bo sterują segmentacją ramek F0 do nut karaoke.
+- W ustawieniach detekcji tonów dostępne są parametry analizy F0: domyślny próg ciszy `-48 dBFS`, próg periodicity `0.48` i krok ramek `10 ms`.
+- Domyślna minimalna długość nuty karaoke `75 ms` i scalanie przerw do `130 ms` należą do kroku `Wstępne dopasowanie`, bo sterują segmentacją ramek F0 do nut karaoke.
 - Zapisać wersję torchcrepe, PyTorch/CUDA, progi i parametry analizy w `pitch.frames.json`.
 - Worker zapisuje postęp detekcji F0 po batchach ramek, wraz z szacowanym `etaSec`; pasek UI nie może stać na stałej wartości przez cały czas działania `torchcrepe`.
 

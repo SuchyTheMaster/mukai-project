@@ -70,7 +70,7 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
     def test_transcription_settings_defaults(self):
         settings = TranscriptionSettings()
 
-        self.assertEqual(settings.vadMethod, "silero")
+        self.assertEqual(settings.vadMethod, "pyannote")
         self.assertEqual(settings.sileroThreshold, 0.3)
         self.assertEqual(settings.sileroNegThreshold, 0.15)
         self.assertEqual(settings.sileroMinSpeechDurationMs, 80)
@@ -118,7 +118,7 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
 
     def test_load_asr_model_passes_silero_vad_options(self):
         FakeWhisperX.calls = []
-        settings = TranscriptionSettings()
+        settings = TranscriptionSettings(vadMethod="silero")
 
         pinned_vad = object()
         with patch("app.workers.transcribe.build_manual_vad_model", return_value=(pinned_vad, None)):
@@ -153,6 +153,24 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
         self.assertEqual(vad_diagnostics["modelRevision"], SILERO_VAD_REVISION)
         self.assertEqual(FakeWhisperX.calls[0]["language"], "pl")
 
+    def test_load_asr_model_uses_pyannote_by_default(self):
+        FakeWhisperX.calls = []
+
+        _, _, vad_diagnostics = load_asr_model(
+            whisperx=FakeWhisperX,
+            model_name="large-v3",
+            device="cuda",
+            compute_type="float16",
+            cache_root=Path("model-cache"),
+            language=None,
+            transcription_settings=TranscriptionSettings(),
+        )
+
+        self.assertEqual(vad_diagnostics["methodApplied"], "pyannote")
+        self.assertEqual(vad_diagnostics["options"], {"chunk_size": 30, "vad_onset": 0.45, "vad_offset": 0.25})
+        self.assertEqual(FakeWhisperX.calls[0]["vad_method"], "pyannote")
+        self.assertIsNone(FakeWhisperX.calls[0]["vad_model"])
+
     def test_load_asr_model_does_not_fail_without_vad_method_parameter(self):
         FakeLegacyWhisperX.calls = []
         settings = TranscriptionSettings(vadMethod="pyannote")
@@ -176,9 +194,11 @@ class TranscriptionVadAndSentencesTest(unittest.TestCase):
     def test_legacy_thresholds_are_migrated_for_selected_vad(self):
         silero = TranscriptionSettings.model_validate({"vadMethod": "silero", "vadOnset": 0.31, "vadOffset": 0.28})
         pyannote = TranscriptionSettings.model_validate({"vadMethod": "pyannote", "vadOnset": 0.41, "vadOffset": 0.21})
+        default = TranscriptionSettings.model_validate({"vadOnset": 0.42, "vadOffset": 0.22})
 
         self.assertEqual((silero.sileroThreshold, silero.sileroNegThreshold), (0.31, 0.16))
         self.assertEqual((pyannote.pyannoteVadOnset, pyannote.pyannoteVadOffset), (0.41, 0.21))
+        self.assertEqual((default.vadMethod, default.pyannoteVadOnset, default.pyannoteVadOffset), ("pyannote", 0.42, 0.22))
 
     def test_only_selected_vad_options_are_applied(self):
         settings = TranscriptionSettings(vadMethod="pyannote", sileroThreshold=0.2, pyannoteVadOnset=0.44, pyannoteVadOffset=0.24)
