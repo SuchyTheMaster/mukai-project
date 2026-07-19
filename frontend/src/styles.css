@@ -687,6 +687,8 @@ h1 {
 .dropzone:focus-within,
 .cover-box-button:focus-visible,
 .icon-button:focus-visible,
+.playback-volume-button:focus-visible,
+.playback-volume-slider:focus-visible,
 .info-tooltip:focus-visible,
 .graph-scroll-track:focus-visible,
 summary:focus-visible {
@@ -1065,6 +1067,8 @@ summary:hover {
 .editor-meta,
 .quality-strip,
 .editor-actions,
+.timeline-source-controls,
+.playback-volume-controls,
 .track-switch,
 .timeline-tools,
 .property-actions,
@@ -1083,6 +1087,13 @@ summary:hover {
 
 .editor-actions {
   justify-content: flex-end;
+}
+
+.timeline-source-controls {
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+  gap: 6px;
 }
 
 .transport {
@@ -1161,6 +1172,7 @@ summary:hover {
 }
 
 .timeline-header .track-switch button,
+.timeline-header .playback-volume-button,
 .timeline-tools .button,
 .timeline-tools .icon-button {
   min-height: 30px;
@@ -1176,7 +1188,111 @@ summary:hover {
   font-size: 11px;
 }
 
+.playback-volume-controls {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.playback-volume-control {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.playback-volume-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 auto;
+  width: 38px;
+  min-height: 30px;
+  padding: 3px;
+  color: var(--blue);
+  cursor: pointer;
+}
+
+.playback-volume-icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  color: currentColor;
+}
+
+.playback-volume-detail-icon {
+  margin-left: -2px;
+  transform: translateY(-3px);
+}
+
+.playback-volume-icon.muted {
+  opacity: 0.7;
+}
+
+.playback-volume-icon.muted::after {
+  position: absolute;
+  left: 1px;
+  width: 29px;
+  height: 1.5px;
+  content: "";
+  background: currentColor;
+  border-radius: 999px;
+  transform: rotate(-45deg);
+  box-shadow: 0 0 2px var(--sunken);
+}
+
+.playback-volume-number {
+  position: absolute;
+  right: 7px;
+  bottom: 1px;
+  min-width: 17px;
+  color: currentColor;
+  font: 8px/1 "IBM Plex Mono", monospace;
+  text-align: right;
+}
+
+.playback-volume-popover {
+  position: absolute;
+  z-index: 40;
+  top: 100%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 116px;
+  padding: 8px 6px;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  background: var(--sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.48);
+  transform: translate(-50%, -4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+}
+
+.playback-volume-control:hover .playback-volume-popover,
+.playback-volume-control:focus-within .playback-volume-popover {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+}
+
+.playback-volume-slider {
+  width: 18px;
+  height: 96px;
+  margin: 0;
+  accent-color: var(--hot-pink);
+  cursor: pointer;
+  direction: rtl;
+  writing-mode: vertical-lr;
+}
+
 .timeline-header .track-switch button:hover:not(:disabled),
+.timeline-header .playback-volume-button:hover:not(:disabled),
 .timeline-tools .button:hover:not(:disabled),
 .timeline-tools .icon-button:hover:not(:disabled) {
   color: var(--text);
@@ -1186,6 +1302,7 @@ summary:hover {
 }
 
 .timeline-header .track-switch button.active,
+.timeline-header .playback-volume-button.active,
 .timeline-tools .button.active,
 .timeline-tools .icon-button.active,
 .timeline-tools .toggle-button.active {
@@ -1667,6 +1784,8 @@ summary:hover {
 }
 
 .timeline-header {
+  position: relative;
+  z-index: 8;
   margin-bottom: 10px;
   color: var(--tertiary);
   font-size: 12px;
@@ -2488,6 +2607,7 @@ summary:hover {
   }
 
   .editor-actions,
+  .timeline-source-controls,
   .track-switch,
   .timeline-tools {
     justify-content: flex-start;
@@ -2495,6 +2615,14 @@ summary:hover {
 
   .track-switch {
     width: 100%;
+  }
+
+  .timeline-source-controls .track-switch {
+    flex: 1 1 100%;
+  }
+
+  .timeline-source-controls {
+    flex-wrap: wrap;
   }
 
   .track-switch button {

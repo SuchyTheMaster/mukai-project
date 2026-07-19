@@ -142,6 +142,7 @@ Pasek jakości wylicza te stany ponownie po każdej zmianie arrangementu i stosu
 
 - Odtwarzanie musi być zsynchronizowane z połączonym wykresem waveform/sylaby pitch.
 - Przełączniki `Oryginał`, `Wokal` i `Instrumental` są w nagłówku wykresu, a przyciski poprzedniego/następnego elementu, `Play`, pasek postępu, zoom, kłódka ograniczenia odtwarzania, magnes przyciągania i pole zakresu przyciągania znajdują się po prawej stronie tego samego nagłówka.
+- Po prawej stronie wyboru ścieżki znajdują się niezależne regulatory audio podkładu i MIDI sylab. Ich poziomy `audioVolumePercent` i `midiVolumePercent` mają zakres `0`–`100`, krok `1` i są stosowane podczas odtwarzania bez restartowania transportu; zmiana poziomu automatycznie ustawia odpowiednią flagę aktywności, a ręczny mute nie zeruje poziomu. Audio steruje głośnością WaveSurfera liniowo od `0` do `1`. MIDI używa oscylatora trójkątnego w zakresach `startSec`–`endSec` sylab, gainu maksymalnego `0.12`, attacku `0.008 s` i release'u `0.025 s`; sylaby bez MIDI są pomijane. Pauza, seek, pętla, zmiana ścieżki i mute czyszczą aktywne głosy. Brak obsługi lub błąd Web Audio pokazuje komunikat edytora i wycisza wyłącznie MIDI.
 - Przyciski `poprzedni element` i `następny element` przesuwają playhead do najbliższej krawędzi sylaby odpowiednio przed albo po aktualnej pozycji.
 - Kliknięcie prawym przyciskiem myszy na `poprzedni element` albo `następny element` przesuwa playhead do najbliższej wcześniejszej albo późniejszej krawędzi całej sentencji. Gdy takiej krawędzi nie ma, playhead trafia odpowiednio na początek albo koniec całego audio.
 - Wszystkie przyciski w nagłówku wykresu używają tego samego kompaktowego stylu aktywnego i nieaktywnego co przełącznik magnesu.
@@ -171,7 +172,7 @@ Pasek jakości wylicza te stany ponownie po każdej zmianie arrangementu i stosu
 - Blok sylaby pokazuje tekst w pierwszym wierszu i samą liczbę MIDI w drugim wierszu; przy braku nuty drugi wiersz pokazuje `brak`, a pełna informacja `MIDI {wartość}` jest widoczna w tooltipie.
 - Uchwyty zmiany granic bloku są widoczne na hover, focus i zaznaczeniu.
 - Najczęstsze korekty powinny dać się wykonać bez opuszczania głównego widoku.
-- Aktywny storage utrwala jeden aktualny `Arrangement`; ZIP projektu przechowuje dodatkowo undo/redo, zaznaczenie, viewport, playhead, ścieżkę audio i ustawienia narzędzi edytora.
+- Aktywny storage utrwala jeden aktualny `Arrangement`; ZIP projektu przechowuje dodatkowo undo/redo, zaznaczenie, viewport, playhead, ścieżkę audio, poziomy i flagi aktywności audio/MIDI oraz ustawienia narzędzi edytora.
 - Interfejs powinien obsługiwać długie utwory bez renderowania całej osi czasu naraz.
 - Tekst w przyciskach i panelach nie może nachodzić na inne elementy przy małej szerokości ekranu.
 - MVP nie wymaga widoku porównania oryginalnego wyniku AI z poprawioną wersją.

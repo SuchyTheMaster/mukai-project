@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createRoot } from "react-dom/client";
 import WaveSurfer from "wavesurfer.js";
 import {
+  AudioWaveform,
   Download,
   FileAudio,
   Info,
@@ -24,6 +25,7 @@ import {
   Trash2,
   Undo2,
   UploadCloud,
+  Volume2,
   Workflow,
   X,
   ZoomIn,
@@ -50,6 +52,33 @@ const PITCH_TOP_MAX_PCT = 85;
 const SNAP_MIDI = 1;
 const INSERTED_SENTENCE_LENGTH_SEC = 0.6;
 const MIN_TOKEN_NOTE_SEC = 0.02;
+const MIDI_MASTER_GAIN = 0.12;
+const MIDI_ATTACK_SEC = 0.008;
+const MIDI_RELEASE_SEC = 0.025;
+
+function normalizeVolumePercent(value, fallback) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? Math.max(0, Math.min(100, Math.round(numericValue))) : fallback;
+}
+
+function resolvePlaybackMix(workspace = null) {
+  const legacyMix = {
+    audio: { audioVolumePercent: 100, midiVolumePercent: 100, audioPlaybackEnabled: true, midiPlaybackEnabled: false },
+    audio_midi: { audioVolumePercent: 100, midiVolumePercent: 100, audioPlaybackEnabled: true, midiPlaybackEnabled: true },
+    midi: { audioVolumePercent: 100, midiVolumePercent: 100, audioPlaybackEnabled: false, midiPlaybackEnabled: true },
+  }[workspace?.audioPlaybackMode] ?? {
+    audioVolumePercent: 100,
+    midiVolumePercent: 0,
+    audioPlaybackEnabled: true,
+    midiPlaybackEnabled: true,
+  };
+  return {
+    audioVolumePercent: normalizeVolumePercent(workspace?.audioVolumePercent, legacyMix.audioVolumePercent),
+    midiVolumePercent: normalizeVolumePercent(workspace?.midiVolumePercent, legacyMix.midiVolumePercent),
+    audioPlaybackEnabled: typeof workspace?.audioPlaybackEnabled === "boolean" ? workspace.audioPlaybackEnabled : legacyMix.audioPlaybackEnabled,
+    midiPlaybackEnabled: typeof workspace?.midiPlaybackEnabled === "boolean" ? workspace.midiPlaybackEnabled : legacyMix.midiPlaybackEnabled,
+  };
+}
 
 const emptyMetadata = {
   title: "",
@@ -1680,6 +1709,12 @@ function ArtifactPreviewModal({ jobId, asset, onClose }) {
 function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, saving, onResetStage, onJobRefresh, initialWorkspace = null, onWorkspaceChange }) {
   const waveformRef = useRef(null);
   const waveSurferRef = useRef(null);
+  const midiAudioContextRef = useRef(null);
+  const midiMasterGainRef = useRef(null);
+  const midiVoicesRef = useRef(new Map());
+  const midiSyncFrameRef = useRef(null);
+  const lastMidiPlaybackTimeRef = useRef(null);
+  const arrangementRef = useRef(arrangement);
   const resumeAfterTrackChange = useRef(false);
   const activePlaybackRangeRef = useRef(null);
   const viewportSyncRef = useRef({ viewportStart: 0, zoomSec: EDITOR_WINDOW_SEC });
@@ -1687,6 +1722,9 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const loopPlaybackRef = useRef(false);
   const [waveformReady, setWaveformReady] = useState(false);
   const [track, setTrack] = useState(initialWorkspace?.track ?? "vocals");
+  const [playbackMix, setPlaybackMix] = useState(() => resolvePlaybackMix(initialWorkspace));
+  const playbackMixRef = useRef(playbackMix);
+  const { audioVolumePercent, midiVolumePercent, audioPlaybackEnabled, midiPlaybackEnabled } = playbackMix;
   const [currentTime, setCurrentTime] = useState(initialWorkspace?.currentTime ?? 0);
   const [playing, setPlaying] = useState(false);
   const [playbackCycleStartSec, setPlaybackCycleStartSec] = useState(null);
@@ -1717,6 +1755,10 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       selected,
       currentTime,
       track,
+      audioVolumePercent,
+      midiVolumePercent,
+      audioPlaybackEnabled,
+      midiPlaybackEnabled,
       zoomSec,
       viewportStart,
       snapToExisting,
@@ -1726,7 +1768,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       showNotes,
       timelinePinningEnabled,
     });
-  }, [past, future, selected, currentTime, track, zoomSec, viewportStart, snapToExisting, snapThresholdMs, loopPlayback, limitPlaybackToWindow, showNotes, timelinePinningEnabled]);
+  }, [past, future, selected, currentTime, track, audioVolumePercent, midiVolumePercent, audioPlaybackEnabled, midiPlaybackEnabled, zoomSec, viewportStart, snapToExisting, snapThresholdMs, loopPlayback, limitPlaybackToWindow, showNotes, timelinePinningEnabled]);
 
   const assets = useMemo(() => Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.type, asset])), [job.artifacts]);
   const selectedContext = useMemo(() => selectionContext(arrangement, selected), [arrangement, selected]);
@@ -1748,10 +1790,167 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const effectiveTrack = assets[track] ? track : assets.vocals ? "vocals" : assets.source_audio ? "source_audio" : "mix";
   const audioAsset = assets[effectiveTrack] ?? assets.source_audio ?? assets.mix;
   const audioUrl = audioAsset ? `${API_BASE}/api/jobs/${job.jobId}/artifacts/${audioAsset.assetId}` : null;
+  arrangementRef.current = arrangement;
   const bindWaveform = useCallback((node) => {
     waveformRef.current = node;
     setWaveformReady(Boolean(node));
   }, []);
+
+  function setWaveSurferAudioLevel(mix = playbackMixRef.current) {
+    const volume = mix.audioPlaybackEnabled ? mix.audioVolumePercent / 100 : 0;
+    waveSurferRef.current?.setVolume(volume);
+  }
+
+  function setMidiMasterGain(mix = playbackMixRef.current, immediate = false) {
+    const context = midiAudioContextRef.current;
+    const masterGain = midiMasterGainRef.current;
+    if (!context || !masterGain || context.state === "closed") return;
+    const targetGain = mix.midiPlaybackEnabled ? MIDI_MASTER_GAIN * (mix.midiVolumePercent / 100) : 0;
+    const now = context.currentTime;
+    masterGain.gain.cancelScheduledValues(now);
+    if (immediate) {
+      masterGain.gain.setValueAtTime(targetGain, now);
+    } else {
+      masterGain.gain.setTargetAtTime(targetGain, now, 0.01);
+    }
+  }
+
+  function updatePlaybackMix(update) {
+    const current = playbackMixRef.current;
+    const next = typeof update === "function" ? update(current) : { ...current, ...update };
+    playbackMixRef.current = next;
+    setPlaybackMix(next);
+    setWaveSurferAudioLevel(next);
+    setMidiMasterGain(next);
+    if (!next.midiPlaybackEnabled) {
+      stopAllMidiVoices();
+    } else if (playing) {
+      void prepareMidiPlayback();
+    }
+  }
+
+  function stopMidiVoice(voice) {
+    if (!voice || voice.stopped) return;
+    voice.stopped = true;
+    const context = midiAudioContextRef.current;
+    const now = context?.currentTime ?? 0;
+    try {
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setValueAtTime(Math.max(voice.gain.gain.value, 0.0001), now);
+      voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + MIDI_RELEASE_SEC);
+      voice.oscillator.stop(now + MIDI_RELEASE_SEC);
+    } catch {
+      // Głos mógł już zakończyć się podczas równoległego czyszczenia transportu.
+    }
+  }
+
+  function stopAllMidiVoices() {
+    midiVoicesRef.current.forEach(stopMidiVoice);
+    midiVoicesRef.current.clear();
+    lastMidiPlaybackTimeRef.current = null;
+  }
+
+  function failMidiPlayback() {
+    stopAllMidiVoices();
+    const next = { ...playbackMixRef.current, midiPlaybackEnabled: false };
+    playbackMixRef.current = next;
+    setPlaybackMix(next);
+    setMidiMasterGain(next);
+    setEditorNotice("Odtwarzanie MIDI nie jest dostępne w tej przeglądarce. MIDI zostało wyciszone.");
+  }
+
+  async function prepareMidiPlayback() {
+    try {
+      let context = midiAudioContextRef.current;
+      if (!context || context.state === "closed") {
+        const AudioContextClass = window.AudioContext ?? window.webkitAudioContext;
+        if (!AudioContextClass) throw new Error("Web Audio API is unavailable");
+        context = new AudioContextClass();
+        const masterGain = context.createGain();
+        const mix = playbackMixRef.current;
+        const initialGain = mix.midiPlaybackEnabled ? MIDI_MASTER_GAIN * (mix.midiVolumePercent / 100) : 0;
+        masterGain.gain.setValueAtTime(initialGain, context.currentTime);
+        masterGain.connect(context.destination);
+        midiAudioContextRef.current = context;
+        midiMasterGainRef.current = masterGain;
+      }
+      if (context.state === "suspended") await context.resume();
+      if (context.state !== "running") throw new Error("Web Audio context did not start");
+      setMidiMasterGain(playbackMixRef.current, true);
+      return context;
+    } catch {
+      failMidiPlayback();
+      return null;
+    }
+  }
+
+  function startMidiVoice(token, playbackTimeSec) {
+    const context = midiAudioContextRef.current;
+    const masterGain = midiMasterGainRef.current;
+    if (!context || context.state !== "running" || !masterGain || !Number.isFinite(token.midi)) return;
+    const now = context.currentTime;
+    const remainingSec = Math.max(token.endSec - playbackTimeSec, 0.001);
+    const attackSec = Math.min(MIDI_ATTACK_SEC, remainingSec * 0.25);
+    const releaseSec = Math.min(MIDI_RELEASE_SEC, remainingSec * 0.5);
+    const releaseStart = now + Math.max(attackSec, remainingSec - releaseSec);
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(midiToFrequency(token.midi), now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(1, now + attackSec);
+    gain.gain.setValueAtTime(1, releaseStart);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + remainingSec);
+    oscillator.connect(gain);
+    gain.connect(masterGain);
+    const voice = { oscillator, gain, midi: token.midi, endSec: token.endSec, stopped: false };
+    oscillator.onended = () => {
+      voice.stopped = true;
+      oscillator.disconnect();
+      gain.disconnect();
+      if (midiVoicesRef.current.get(token.tokenId) === voice) midiVoicesRef.current.delete(token.tokenId);
+    };
+    midiVoicesRef.current.set(token.tokenId, voice);
+    oscillator.start(now);
+    oscillator.stop(now + remainingSec + 0.01);
+  }
+
+  function syncMidiVoicesAtTime(timeSec) {
+    const previousTime = lastMidiPlaybackTimeRef.current;
+    if (Number.isFinite(previousTime) && (timeSec < previousTime - 0.02 || timeSec - previousTime > 0.25)) {
+      stopAllMidiVoices();
+    }
+    lastMidiPlaybackTimeRef.current = timeSec;
+    const activeTokens = new Map(
+      (arrangementRef.current?.tokens ?? [])
+        .filter((token) => Number.isFinite(token.midi) && token.startSec <= timeSec + 0.005 && token.endSec > timeSec + 0.005)
+        .map((token) => [token.tokenId, token]),
+    );
+    midiVoicesRef.current.forEach((voice, tokenId) => {
+      const token = activeTokens.get(tokenId);
+      if (!token || token.midi !== voice.midi || token.endSec !== voice.endSec) {
+        stopMidiVoice(voice);
+        midiVoicesRef.current.delete(tokenId);
+      }
+    });
+    activeTokens.forEach((token, tokenId) => {
+      if (!midiVoicesRef.current.has(tokenId)) startMidiVoice(token, timeSec);
+    });
+  }
+
+  function setPlaybackVolume(source, value) {
+    const volumeKey = source === "audio" ? "audioVolumePercent" : "midiVolumePercent";
+    const enabledKey = source === "audio" ? "audioPlaybackEnabled" : "midiPlaybackEnabled";
+    updatePlaybackMix({
+      [volumeKey]: normalizeVolumePercent(value, playbackMixRef.current[volumeKey]),
+      [enabledKey]: true,
+    });
+  }
+
+  function togglePlaybackSource(source) {
+    const key = source === "audio" ? "audioPlaybackEnabled" : "midiPlaybackEnabled";
+    updatePlaybackMix((current) => ({ ...current, [key]: !current[key] }));
+  }
 
   useEffect(() => {
     viewportSyncRef.current = { viewportStart: windowStart, zoomSec };
@@ -1760,6 +1959,51 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   useEffect(() => {
     loopPlaybackRef.current = loopPlayback;
   }, [loopPlayback]);
+
+  useEffect(() => {
+    playbackMixRef.current = playbackMix;
+    setWaveSurferAudioLevel(playbackMix);
+    setMidiMasterGain(playbackMix);
+    if (!playbackMix.midiPlaybackEnabled) stopAllMidiVoices();
+  }, [playbackMix]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!playing || !midiPlaybackEnabled) {
+      stopAllMidiVoices();
+      return undefined;
+    }
+    void prepareMidiPlayback().then((context) => {
+      if (cancelled || !context) return;
+      const synchronize = () => {
+        if (cancelled) return;
+        const waveSurfer = waveSurferRef.current;
+        if (!waveSurfer?.isPlaying()) {
+          stopAllMidiVoices();
+          return;
+        }
+        syncMidiVoicesAtTime(waveSurfer.getCurrentTime());
+        midiSyncFrameRef.current = window.requestAnimationFrame(synchronize);
+      };
+      synchronize();
+    });
+    return () => {
+      cancelled = true;
+      if (midiSyncFrameRef.current != null) window.cancelAnimationFrame(midiSyncFrameRef.current);
+      midiSyncFrameRef.current = null;
+      stopAllMidiVoices();
+    };
+  }, [playing, midiPlaybackEnabled]);
+
+  useEffect(() => () => {
+    if (midiSyncFrameRef.current != null) window.cancelAnimationFrame(midiSyncFrameRef.current);
+    stopAllMidiVoices();
+    midiMasterGainRef.current?.disconnect();
+    midiMasterGainRef.current = null;
+    const context = midiAudioContextRef.current;
+    midiAudioContextRef.current = null;
+    if (context && context.state !== "closed") void context.close();
+  }, []);
 
   useEffect(() => {
     if (!selected.id && arrangement?.lines[0]) setSelected({ type: "line", id: arrangement.lines[0].lineId });
@@ -1807,6 +2051,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       cursorWidth: 0,
     });
     waveSurferRef.current = waveSurfer;
+    setWaveSurferAudioLevel();
     const syncWaveformHeight = () => {
       const height = Math.max(1, waveformRef.current?.clientHeight ?? 1);
       waveSurfer.setOptions({ height });
@@ -1836,6 +2081,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     });
     const unsubInteraction = waveSurfer.on("interaction", (time) => {
       activePlaybackRangeRef.current = null;
+      stopAllMidiVoices();
       setCurrentTime(time);
       if (waveSurfer.isPlaying()) setPlaybackCycleStartSec(time);
     });
@@ -1844,10 +2090,12 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       setPlaybackCycleStartSec((current) => Number.isFinite(current) ? current : waveSurfer.getCurrentTime());
     });
     const unsubPause = waveSurfer.on("pause", () => {
+      stopAllMidiVoices();
       setPlaying(false);
       setPlaybackCycleStartSec(null);
     });
     const unsubFinish = waveSurfer.on("finish", () => {
+      stopAllMidiVoices();
       if (!completeActivePlaybackRange(waveSurfer)) {
         setPlaying(false);
         setPlaybackCycleStartSec(null);
@@ -1861,6 +2109,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       unsubPause();
       unsubFinish();
       waveformResizeObserver.disconnect();
+      stopAllMidiVoices();
       waveSurfer.destroy();
       if (waveSurferRef.current === waveSurfer) waveSurferRef.current = null;
     };
@@ -1921,6 +2170,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       waveSurfer.pause();
       return;
     }
+    if (playbackMixRef.current.midiPlaybackEnabled) void prepareMidiPlayback();
     if (limitPlaybackToWindow) {
       const startSec = currentTime >= windowStart && currentTime < windowEnd ? currentTime : windowStart;
       playRange(startSec, windowEnd, { lockViewport: true, returnToStart: true });
@@ -1940,6 +2190,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
 
   function seek(nextTime, { preservePlaybackRange = false } = {}) {
     if (!preservePlaybackRange) activePlaybackRangeRef.current = null;
+    stopAllMidiVoices();
     const bounded = Math.max(0, Math.min(Number(nextTime), duration || 0));
     setCurrentTime(bounded);
     if (waveSurferRef.current?.isPlaying()) setPlaybackCycleStartSec(bounded);
@@ -1973,6 +2224,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       seek(safeStart);
       return;
     }
+    stopAllMidiVoices();
+    if (playbackMixRef.current.midiPlaybackEnabled) void prepareMidiPlayback();
     activePlaybackRangeRef.current = { startSec: safeStart, endSec: safeEnd, lockViewport, returnToStart, allowLoop };
     setCurrentTime(safeStart);
     setPlaybackCycleStartSec(safeStart);
@@ -1988,6 +2241,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     const range = activePlaybackRangeRef.current;
     if (!range) return false;
     if (range.allowLoop && loopPlaybackRef.current && waveSurfer) {
+      stopAllMidiVoices();
       setCurrentTime(range.startSec);
       setPlaybackCycleStartSec(range.startSec);
       waveSurfer.setTime(range.startSec);
@@ -1998,6 +2252,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       return true;
     }
     activePlaybackRangeRef.current = null;
+    stopAllMidiVoices();
     const nextTime = range.returnToStart ? range.startSec : range.endSec;
     if (waveSurfer?.isPlaying()) waveSurfer.pause();
     if (waveSurfer) waveSurfer.setTime(nextTime);
@@ -2088,6 +2343,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     const waveSurfer = waveSurferRef.current;
     const nextTime = waveSurfer ? waveSurfer.getCurrentTime() : currentTime;
     resumeAfterTrackChange.current = waveSurfer ? waveSurfer.isPlaying() : playing;
+    stopAllMidiVoices();
     setCurrentTime(nextTime);
     setTrack(nextTrack);
   }
@@ -2277,7 +2533,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} playingTokenId={playheadContext.tokenId} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} zoomToFullTrack={zoomToFullTrack} zoomToPlayheadTarget={zoomToPlayheadTarget} restorePreviousGraphWindow={restorePreviousGraphWindow} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} playingTokenId={playheadContext.tokenId} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} audioVolumePercent={audioVolumePercent} midiVolumePercent={midiVolumePercent} audioPlaybackEnabled={audioPlaybackEnabled} midiPlaybackEnabled={midiPlaybackEnabled} setPlaybackVolume={setPlaybackVolume} togglePlaybackSource={togglePlaybackSource} zoomToLine={zoomToLine} zoomToToken={zoomToToken} zoomToFullTrack={zoomToFullTrack} zoomToPlayheadTarget={zoomToPlayheadTarget} restorePreviousGraphWindow={restorePreviousGraphWindow} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
 
       <div className="quality-strip">
         <SyllabificationBadge
@@ -2420,7 +2676,56 @@ function formatValidationDuration(value) {
   return Number.isFinite(milliseconds) ? `${Math.round(milliseconds)} ms` : "—";
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playingTokenId, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, zoomToFullTrack, zoomToPlayheadTarget, restorePreviousGraphWindow, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
+function PlaybackVolumeControl({ source, label, volumePercent, enabled, onVolumeChange, onToggle }) {
+  const DetailIcon = source === "audio" ? AudioWaveform : Music2;
+  const stateLabel = enabled ? "aktywny" : "wyciszony";
+
+  function toggleFromContextMenu(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    onToggle();
+  }
+
+  function toggleFromKeyboard(event) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    onToggle();
+  }
+
+  return (
+    <div className="playback-volume-control">
+      <button
+        className={`playback-volume-button ${enabled ? "active" : ""}`}
+        type="button"
+        aria-label={`${label}: ${volumePercent}%, ${stateLabel}. Prawy klik, Enter lub Spacja przełącza wyciszenie.`}
+        aria-pressed={enabled}
+        onKeyDown={toggleFromKeyboard}
+        onContextMenu={toggleFromContextMenu}
+      >
+        <span className={`playback-volume-icon ${enabled ? "" : "muted"}`} aria-hidden="true">
+          <Volume2 size={16} />
+          <DetailIcon className="playback-volume-detail-icon" size={12} />
+        </span>
+        <span className="playback-volume-number" aria-hidden="true">{volumePercent}</span>
+      </button>
+      <div className="playback-volume-popover">
+        <input
+          className="playback-volume-slider"
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={volumePercent}
+          aria-label={`Głośność: ${label}`}
+          aria-valuetext={`${volumePercent}%`}
+          onChange={(event) => onVolumeChange(event.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playingTokenId, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, audioVolumePercent, midiVolumePercent, audioPlaybackEnabled, midiPlaybackEnabled, setPlaybackVolume, togglePlaybackSource, zoomToLine, zoomToToken, zoomToFullTrack, zoomToPlayheadTarget, restorePreviousGraphWindow, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
   const timelinePanelRef = useRef(null);
   const cursorGuideRef = useRef(null);
   const pendingRightClickRef = useRef(null);
@@ -2539,14 +2844,34 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
   return (
     <div ref={timelinePanelRef} className={`timeline-panel ${timelinePinningEnabled && isSticky ? "is-sticky" : ""}`}>
       <div className="timeline-header">
-        <div className="track-switch subtle" role="group" aria-label="Źródło audio">
-          {[
-            ["source_audio", "Oryginał"],
-            ["vocals", "Wokal"],
-            ["instrumental", "Instrumental"],
-          ].map(([key, label]) => (
-            <button key={key} className={effectiveTrack === key ? "active" : ""} type="button" disabled={!assets[key]} onClick={() => changeTrack(key)}>{label}</button>
-          ))}
+        <div className="timeline-source-controls">
+          <div className="track-switch subtle" role="group" aria-label="Źródło audio">
+            {[
+              ["source_audio", "Oryginał"],
+              ["vocals", "Wokal"],
+              ["instrumental", "Instrumental"],
+            ].map(([key, label]) => (
+              <button key={key} className={effectiveTrack === key ? "active" : ""} type="button" disabled={!assets[key]} onClick={() => changeTrack(key)}>{label}</button>
+            ))}
+          </div>
+          <div className="playback-volume-controls" role="group" aria-label="Głośność odtwarzania">
+            <PlaybackVolumeControl
+              source="audio"
+              label="Audio podkładu"
+              volumePercent={audioVolumePercent}
+              enabled={audioPlaybackEnabled}
+              onVolumeChange={(value) => setPlaybackVolume("audio", value)}
+              onToggle={() => togglePlaybackSource("audio")}
+            />
+            <PlaybackVolumeControl
+              source="midi"
+              label="MIDI sylab"
+              volumePercent={midiVolumePercent}
+              enabled={midiPlaybackEnabled}
+              onVolumeChange={(value) => setPlaybackVolume("midi", value)}
+              onToggle={() => togglePlaybackSource("midi")}
+            />
+          </div>
         </div>
         <div className="timeline-tools">
           <button className="icon-button" type="button" title="poprzedni element" aria-label="poprzedni element" onClick={seekPreviousTokenEdge} onContextMenu={(event) => { event.preventDefault(); seekPreviousSentenceEdge(); }}><SkipBack size={14} /></button>

@@ -696,7 +696,7 @@ Zasady:
 
 - `ProjectSave` odpowiada globalnej akcji `Zapisz`, niezależnej od `ExportSelection` i eksportu karaoke.
 - ZIP może opisywać fazę `draft`, `processing` albo `review` i zawsze zapisuje `appliedState` oraz `workingState`.
-- `editorWorkspace` przechowuje undo/redo, zaznaczenie, viewport, playhead, ścieżkę audio i ustawienia narzędzi.
+- `editorWorkspace` przechowuje undo/redo, zaznaczenie, viewport, playhead, ścieżkę audio oraz `audioVolumePercent`, `midiVolumePercent`, `audioPlaybackEnabled` i `midiPlaybackEnabled`. Poziomy są liczbami całkowitymi `0`–`100`, a flagi realizują mute bez zmiany poziomu. Domyślne wartości to odpowiednio `100`, `0`, `true`, `true`. Starsze `audioPlaybackMode` jest migrowane przy odczycie: `audio` wycisza MIDI, `audio_midi` aktywuje oba źródła, a `midi` wycisza audio; poziomy migrowanych źródeł wynoszą `100`.
 - Zapis nie ustawia pól retencji ani TTL; nullable `Retention` pozostaje pustym kontraktem zgodnościowym.
 
 ## MukaiProject
