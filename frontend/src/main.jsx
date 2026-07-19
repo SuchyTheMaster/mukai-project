@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import WaveSurfer from "wavesurfer.js";
 import {
@@ -39,6 +39,9 @@ const MIN_EDITOR_WINDOW_SEC = 0.1;
 const MAX_EDITOR_WINDOW_SEC = 120;
 const DEFAULT_SNAP_MS = 20;
 const GRAPH_PAN_THRESHOLD_PX = 4;
+const RIGHT_DOUBLE_CLICK_MS = 300;
+const RIGHT_DOUBLE_CLICK_DISTANCE_PX = 8;
+const MAX_VIEWPORT_HISTORY = 50;
 const DEFAULT_TOKEN_MIDI = 60;
 const MIN_EDITOR_MIDI = 24;
 const MAX_EDITOR_MIDI = 96;
@@ -369,7 +372,9 @@ class AppErrorBoundary extends React.Component {
 function App() {
   const persisted = useMemo(readPersistedUiState, []);
   const [audioFile, setAudioFile] = useState(null);
+  const [sourceDragActive, setSourceDragActive] = useState(false);
   const [coverFile, setCoverFile] = useState(null);
+  const sourceDragDepth = useRef(0);
   const coverInputRef = useRef(null);
   const [inspection, setInspection] = useState(persisted.inspection);
   const [metadata, setMetadata] = useState(persisted.metadata);
@@ -523,6 +528,34 @@ function App() {
       return;
     }
     await inspect(file);
+  }
+
+  function handleSourceDragEnter(event) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    sourceDragDepth.current += 1;
+    setSourceDragActive(true);
+  }
+
+  function handleSourceDragOver(event) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleSourceDragLeave(event) {
+    if (!event.dataTransfer.types.includes("Files")) return;
+    event.preventDefault();
+    sourceDragDepth.current = Math.max(0, sourceDragDepth.current - 1);
+    if (sourceDragDepth.current === 0) setSourceDragActive(false);
+  }
+
+  function handleSourceDrop(event) {
+    event.preventDefault();
+    sourceDragDepth.current = 0;
+    setSourceDragActive(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) selectSourceFile(file);
   }
 
   async function inspect(file) {
@@ -952,9 +985,15 @@ function App() {
         <section>
           <div className="section-title">{jobCreated ? "WGRANE AUDIO" : "UPLOAD AUDIO/PROJEKTU"}</div>
           {!jobCreated && (
-            <label className="dropzone">
+            <label
+              className={`dropzone ${sourceDragActive ? "is-dragging" : ""}`}
+              onDragEnter={handleSourceDragEnter}
+              onDragOver={handleSourceDragOver}
+              onDragLeave={handleSourceDragLeave}
+              onDrop={handleSourceDrop}
+            >
               <UploadCloud size={22} />
-              <span>{audioFile?.name ?? inspection?.originalFilename ?? "Wybierz WAV, MP3, MP4, M4A, OGG, FLAC lub wgraj ZIP z projektem"}</span>
+              <span aria-live="polite">{sourceDragActive ? "Upuść plik audio lub ZIP z projektem" : audioFile?.name ?? inspection?.originalFilename ?? "Wybierz WAV, MP3, MP4, M4A, OGG, FLAC lub wgraj ZIP z projektem"}</span>
               <input type="file" accept=".wav,.mp3,.mp4,.m4a,.ogg,.flac,.zip,audio/*,video/mp4,application/zip" onChange={(event) => event.target.files?.[0] && selectSourceFile(event.target.files[0])} />
             </label>
           )}
@@ -1644,11 +1683,13 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const resumeAfterTrackChange = useRef(false);
   const activePlaybackRangeRef = useRef(null);
   const viewportSyncRef = useRef({ viewportStart: 0, zoomSec: EDITOR_WINDOW_SEC });
+  const viewportHistoryRef = useRef([]);
   const loopPlaybackRef = useRef(false);
   const [waveformReady, setWaveformReady] = useState(false);
   const [track, setTrack] = useState(initialWorkspace?.track ?? "vocals");
   const [currentTime, setCurrentTime] = useState(initialWorkspace?.currentTime ?? 0);
   const [playing, setPlaying] = useState(false);
+  const [playbackCycleStartSec, setPlaybackCycleStartSec] = useState(null);
   const [selected, setSelected] = useState(initialWorkspace?.selected ?? { type: "line", id: null });
   const [zoomSec, setZoomSec] = useState(initialWorkspace?.zoomSec ?? EDITOR_WINDOW_SEC);
   const [viewportStart, setViewportStart] = useState(initialWorkspace?.viewportStart ?? 0);
@@ -1658,12 +1699,16 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const [loopPlayback, setLoopPlayback] = useState(initialWorkspace?.loopPlayback ?? false);
   const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(initialWorkspace?.limitPlaybackToWindow ?? false);
   const [showNotes, setShowNotes] = useState(initialWorkspace?.showNotes ?? false);
-  const [timelinePinningEnabled, setTimelinePinningEnabled] = useState(initialWorkspace?.timelinePinningEnabled ?? true);
+  const [timelinePinningEnabled, setTimelinePinningEnabled] = useState(initialWorkspace?.timelinePinningEnabled ?? false);
   const [editorNotice, setEditorNotice] = useState(null);
   const [validationModal, setValidationModal] = useState(null);
   const [activeQualityFlag, setActiveQualityFlag] = useState(null);
   const [past, setPast] = useState(initialWorkspace?.past ?? []);
   const [future, setFuture] = useState(initialWorkspace?.future ?? []);
+
+  useLayoutEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   useEffect(() => {
     onWorkspaceChange?.({
@@ -1685,6 +1730,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
 
   const assets = useMemo(() => Object.fromEntries((job.artifacts ?? []).map((asset) => [asset.type, asset])), [job.artifacts]);
   const selectedContext = useMemo(() => selectionContext(arrangement, selected), [arrangement, selected]);
+  const playheadContext = useMemo(() => playing ? playbackContextAtTime(arrangement, currentTime) : emptyPlaybackContext(), [arrangement, currentTime, playing]);
   const selectedLineId = selected.type === "line" ? selected.id : selectedContext.lineIds[0];
   const selectedLine = arrangement?.lines.find((line) => line.lineId === selectedLineId) ?? arrangement?.lines[0] ?? null;
   const selectedWord = selected.type === "word" ? findWordById(arrangement, selected.id)?.word ?? null : null;
@@ -1718,6 +1764,10 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   useEffect(() => {
     if (!selected.id && arrangement?.lines[0]) setSelected({ type: "line", id: arrangement.lines[0].lineId });
   }, [arrangement?.arrangementId, selected.id]);
+
+  useEffect(() => {
+    viewportHistoryRef.current = [];
+  }, [arrangement?.arrangementId]);
 
   useEffect(() => {
     if (activeQualityFlag && !activeQualityIssue) setActiveQualityFlag(null);
@@ -1769,7 +1819,11 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       waveSurfer.setOptions({ minPxPerSec: waveformPixelsPerSecond(waveformRef.current, viewport.zoomSec) });
       syncWaveformViewport(waveSurfer, waveformRef.current, viewport.viewportStart, viewport.zoomSec);
       if (resume) {
-        waveSurfer.play().catch(() => setPlaying(false));
+        setPlaybackCycleStartSec(targetTime);
+        waveSurfer.play().catch(() => {
+          setPlaying(false);
+          setPlaybackCycleStartSec(null);
+        });
       }
     });
     const unsubTime = waveSurfer.on("timeupdate", (time) => {
@@ -1783,11 +1837,21 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     const unsubInteraction = waveSurfer.on("interaction", (time) => {
       activePlaybackRangeRef.current = null;
       setCurrentTime(time);
+      if (waveSurfer.isPlaying()) setPlaybackCycleStartSec(time);
     });
-    const unsubPlay = waveSurfer.on("play", () => setPlaying(true));
-    const unsubPause = waveSurfer.on("pause", () => setPlaying(false));
+    const unsubPlay = waveSurfer.on("play", () => {
+      setPlaying(true);
+      setPlaybackCycleStartSec((current) => Number.isFinite(current) ? current : waveSurfer.getCurrentTime());
+    });
+    const unsubPause = waveSurfer.on("pause", () => {
+      setPlaying(false);
+      setPlaybackCycleStartSec(null);
+    });
     const unsubFinish = waveSurfer.on("finish", () => {
-      if (!completeActivePlaybackRange(waveSurfer)) setPlaying(false);
+      if (!completeActivePlaybackRange(waveSurfer)) {
+        setPlaying(false);
+        setPlaybackCycleStartSec(null);
+      }
     });
     return () => {
       unsubReady();
@@ -1867,13 +1931,18 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       playRange(startSec, duration, { returnToStart: false });
       return;
     }
-    waveSurfer.play().catch(() => setPlaying(false));
+    setPlaybackCycleStartSec(currentTime);
+    waveSurfer.play().catch(() => {
+      setPlaying(false);
+      setPlaybackCycleStartSec(null);
+    });
   }
 
   function seek(nextTime, { preservePlaybackRange = false } = {}) {
     if (!preservePlaybackRange) activePlaybackRangeRef.current = null;
     const bounded = Math.max(0, Math.min(Number(nextTime), duration || 0));
     setCurrentTime(bounded);
+    if (waveSurferRef.current?.isPlaying()) setPlaybackCycleStartSec(bounded);
     if (waveSurferRef.current) waveSurferRef.current.setTime(bounded);
     if (bounded < windowStart || bounded > windowEnd) {
       setGraphViewport(Math.max(0, Math.min(bounded - zoomSec * 0.2, maxViewportStart)));
@@ -1906,10 +1975,12 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     }
     activePlaybackRangeRef.current = { startSec: safeStart, endSec: safeEnd, lockViewport, returnToStart, allowLoop };
     setCurrentTime(safeStart);
+    setPlaybackCycleStartSec(safeStart);
     waveSurfer.setTime(safeStart);
     waveSurfer.play().catch(() => {
       activePlaybackRangeRef.current = null;
       setPlaying(false);
+      setPlaybackCycleStartSec(null);
     });
   }
 
@@ -1918,8 +1989,12 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     if (!range) return false;
     if (range.allowLoop && loopPlaybackRef.current && waveSurfer) {
       setCurrentTime(range.startSec);
+      setPlaybackCycleStartSec(range.startSec);
       waveSurfer.setTime(range.startSec);
-      waveSurfer.play().catch(() => setPlaying(false));
+      waveSurfer.play().catch(() => {
+        setPlaying(false);
+        setPlaybackCycleStartSec(null);
+      });
       return true;
     }
     activePlaybackRangeRef.current = null;
@@ -1927,6 +2002,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     if (waveSurfer?.isPlaying()) waveSurfer.pause();
     if (waveSurfer) waveSurfer.setTime(nextTime);
     setCurrentTime(nextTime);
+    setPlaybackCycleStartSec(null);
     return true;
   }
 
@@ -1948,6 +2024,25 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     playRange(line.startSec, line.endSec, { returnToStart: true });
   }
 
+  function applyGraphWindow(nextStart, nextZoomSec, { remember = false } = {}) {
+    const maximumZoomSec = Math.max(duration || MIN_EDITOR_WINDOW_SEC, MIN_EDITOR_WINDOW_SEC);
+    const boundedZoomSec = Math.max(MIN_EDITOR_WINDOW_SEC, Math.min(Number(nextZoomSec) || MIN_EDITOR_WINDOW_SEC, maximumZoomSec));
+    const nextMaxStart = Math.max((duration || boundedZoomSec) - boundedZoomSec, 0);
+    const boundedStart = Math.max(0, Math.min(Number(nextStart) || 0, nextMaxStart));
+    const unchanged = Math.abs(boundedZoomSec - zoomSec) < 0.0005 && Math.abs(boundedStart - windowStart) < 0.0005;
+    if (unchanged) return false;
+    if (remember) {
+      viewportHistoryRef.current = [
+        ...viewportHistoryRef.current.slice(-(MAX_VIEWPORT_HISTORY - 1)),
+        { zoomSec, viewportStart: windowStart },
+      ];
+    }
+    setZoomSec(boundedZoomSec);
+    setViewportStart(boundedStart);
+    syncWaveformViewport(waveSurferRef.current, waveformRef.current, boundedStart, boundedZoomSec);
+    return true;
+  }
+
   function zoomToRange(item) {
     if (!item) return;
     const length = Math.max(item.endSec - item.startSec, 0.02);
@@ -1955,9 +2050,27 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     const nextZoom = Math.max(MIN_EDITOR_WINDOW_SEC, Math.min(MAX_EDITOR_WINDOW_SEC, length + margin * 2));
     const nextMaxStart = Math.max((duration || nextZoom) - nextZoom, 0);
     const nextStart = Math.max(0, Math.min(item.startSec - margin, nextMaxStart));
-    setZoomSec(nextZoom);
-    setViewportStart(nextStart);
-    syncWaveformViewport(waveSurferRef.current, waveformRef.current, nextStart, nextZoom);
+    applyGraphWindow(nextStart, nextZoom, { remember: true });
+  }
+
+  function zoomToFullTrack() {
+    applyGraphWindow(0, Math.max(duration || MIN_EDITOR_WINDOW_SEC, MIN_EDITOR_WINDOW_SEC), { remember: true });
+  }
+
+  function zoomToPlayheadTarget() {
+    const token = playbackItemAtTime(arrangement?.tokens, currentTime);
+    if (token) {
+      zoomToToken(token);
+      return;
+    }
+    const line = playbackItemAtTime(arrangement?.lines, currentTime);
+    if (line) zoomToLine(line);
+  }
+
+  function restorePreviousGraphWindow() {
+    const previous = viewportHistoryRef.current.pop();
+    if (!previous) return;
+    applyGraphWindow(previous.viewportStart, previous.zoomSec);
   }
 
   function splitSelectedLineAtPlayhead() {
@@ -1984,6 +2097,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   }
 
   function zoomFromPointer(event, factor) {
+    if (event.button !== 0) return;
     event.preventDefault();
     zoom(factor);
   }
@@ -2042,6 +2156,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   }
 
   function startGraphDrag(kind, id, mode, event, windowStart, windowEnd, pitchRange = null) {
+    if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     const graph = event.currentTarget.closest(".combined-editor-overlay");
@@ -2054,16 +2169,24 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     const before = clone(arrangement);
     const snapThresholdSec = Math.max(0, Number(snapThresholdMs) || 0) / 1000;
     let moved = false;
+    let lockedDragAxis = null;
     let finalTime = graphItemStart(arrangement, kind, id);
     selectAndSeek(kind === "note" ? "note" : "token", id, graphItemStart(arrangement, kind, id));
     if (kind === "token") setDragGuideTime(graphGuideTime(arrangement, kind, id, mode));
 
     const onMove = (moveEvent) => {
-      const deltaSec = ((moveEvent.clientX - startX) / graphWidth) * range;
-      const deltaMidi = pitchRange ? -((moveEvent.clientY - startY) / pitchHeight) * Math.max(pitchRange.maxMidi - pitchRange.minMidi, 1) : 0;
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+      if (mode === "move" && moveEvent.shiftKey && !lockedDragAxis) {
+        if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < GRAPH_PAN_THRESHOLD_PX) return;
+        lockedDragAxis = Math.abs(deltaX) >= Math.abs(deltaY) ? "horizontal" : "vertical";
+      }
+      const deltaSec = lockedDragAxis === "vertical" ? 0 : (deltaX / graphWidth) * range;
+      const deltaMidi = lockedDragAxis === "horizontal" || !pitchRange ? 0 : -(deltaY / pitchHeight) * Math.max(pitchRange.maxMidi - pitchRange.minMidi, 1);
       if (Math.abs(deltaSec) < 0.001 && Math.abs(deltaMidi) < 0.1) return;
       moved = true;
-      const next = normalizeArrangement(updateGraphItem(clone(before), kind, id, mode, deltaSec, deltaMidi, { snapToExisting, snapThresholdSec }));
+      const effectiveSnapThresholdSec = lockedDragAxis === "vertical" ? 0 : snapThresholdSec;
+      const next = normalizeArrangement(updateGraphItem(clone(before), kind, id, mode, deltaSec, deltaMidi, { snapToExisting, snapThresholdSec: effectiveSnapThresholdSec }));
       finalTime = graphItemStart(next, kind, id);
       if (kind === "token") setDragGuideTime(graphGuideTime(next, kind, id, mode));
       setArrangement(next);
@@ -2154,7 +2277,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} playingTokenId={playheadContext.tokenId} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} zoomToLine={zoomToLine} zoomToToken={zoomToToken} zoomToFullTrack={zoomToFullTrack} zoomToPlayheadTarget={zoomToPlayheadTarget} restorePreviousGraphWindow={restorePreviousGraphWindow} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
 
       <div className="quality-strip">
         <SyllabificationBadge
@@ -2176,7 +2299,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       </div>
 
       <div className="editor-grid">
-        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} highlightedWordIds={activeQualityIssue?.wordIds ?? []} acceptedSongBpm={job.tempo?.acceptedSongBpm} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playWordRange={playWordRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
+        <PhraseList arrangement={arrangement} selected={selected} selectedContext={selectedContext} playing={playing} playbackCycleStartSec={playbackCycleStartSec} currentTime={currentTime} playingLineId={playheadContext.lineId} playingWordId={playheadContext.wordId} timelinePinningEnabled={timelinePinningEnabled} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} highlightedWordIds={activeQualityIssue?.wordIds ?? []} acceptedSongBpm={job.tempo?.acceptedSongBpm} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playWordRange={playWordRange} playLineRange={playLineRange} commit={commit} zoomToLine={zoomToLine} zoomToToken={zoomToToken} />
         <PropertiesPanel
           arrangement={arrangement}
           selected={selected}
@@ -2297,8 +2420,10 @@ function formatValidationDuration(value) {
   return Number.isFinite(milliseconds) ? `${Math.round(milliseconds)} ms` : "—";
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playingTokenId, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, zoomToLine, zoomToToken, zoomToFullTrack, zoomToPlayheadTarget, restorePreviousGraphWindow, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
   const timelinePanelRef = useRef(null);
+  const cursorGuideRef = useRef(null);
+  const pendingRightClickRef = useRef(null);
   const [isSticky, setIsSticky] = useState(false);
   const range = Math.max(windowEnd - windowStart, 0.001);
   const visibleLines = arrangement.lines.filter((line) => line.endSec >= windowStart && line.startSec <= windowEnd);
@@ -2307,14 +2432,76 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
   const noteById = new Map(arrangement.noteEvents.map((note) => [note.noteId, note]));
   const pitchRange = pitchRangeForWindow(arrangement, visibleTokens, visibleGhostNotes, noteById);
 
+  useEffect(() => () => {
+    if (pendingRightClickRef.current?.timer) window.clearTimeout(pendingRightClickRef.current.timer);
+  }, []);
+
+  function handleGraphContextMenu(event, action = null) {
+    event.preventDefault();
+    event.stopPropagation();
+    const now = Date.now();
+    const pending = pendingRightClickRef.current;
+    const isDoubleClick = pending
+      && now - pending.time <= RIGHT_DOUBLE_CLICK_MS
+      && Math.hypot(event.clientX - pending.clientX, event.clientY - pending.clientY) <= RIGHT_DOUBLE_CLICK_DISTANCE_PX;
+
+    if (isDoubleClick) {
+      window.clearTimeout(pending.timer);
+      pendingRightClickRef.current = null;
+      restorePreviousGraphWindow();
+      return;
+    }
+
+    if (pending) {
+      window.clearTimeout(pending.timer);
+      pending.action?.();
+    }
+
+    const nextPending = {
+      action,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      time: now,
+      timer: null,
+    };
+    nextPending.timer = window.setTimeout(() => {
+      if (pendingRightClickRef.current !== nextPending) return;
+      pendingRightClickRef.current = null;
+      nextPending.action?.();
+    }, RIGHT_DOUBLE_CLICK_MS);
+    pendingRightClickRef.current = nextPending;
+  }
+
+  function graphTimeAtClientX(clientX, graph) {
+    const rect = graph?.getBoundingClientRect();
+    if (!rect?.width) return windowStart;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    return windowStart + ratio * Math.max(windowEnd - windowStart, 0);
+  }
+
+  function moveCursorGuide(event) {
+    const guide = cursorGuideRef.current;
+    if (!guide) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    guide.style.left = `${Math.max(0, Math.min(rect.width, event.clientX - rect.left))}px`;
+    guide.style.opacity = "1";
+  }
+
+  function hideCursorGuide() {
+    if (cursorGuideRef.current) cursorGuideRef.current.style.opacity = "0";
+  }
+
   useEffect(() => {
     let animationFrame = null;
+    let stickyActive = false;
     const panel = timelinePanelRef.current;
     const editorShell = panel?.closest(".editor-shell");
 
     const syncTimelinePanelHeight = () => {
       if (!panel || !editorShell) return;
-      editorShell.style.setProperty("--timeline-panel-height", `${panel.getBoundingClientRect().height}px`);
+      const panelHeight = panel.getBoundingClientRect().height;
+      editorShell.style.setProperty("--timeline-panel-height", `${panelHeight}px`);
+      editorShell.style.setProperty("--timeline-sticky-offset", stickyActive ? `${panelHeight + 18}px` : "18px");
     };
 
     const updateStickyState = () => {
@@ -2322,7 +2509,9 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
       if (!panel) return;
       const panelTop = panel.getBoundingClientRect().top;
       const nextIsSticky = timelinePinningEnabled && panelTop <= 1;
+      stickyActive = nextIsSticky;
       setIsSticky((current) => current === nextIsSticky ? current : nextIsSticky);
+      syncTimelinePanelHeight();
     };
 
     const scheduleStickyUpdate = () => {
@@ -2340,6 +2529,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
     return () => {
       resizeObserver?.disconnect();
       editorShell?.style.removeProperty("--timeline-panel-height");
+      editorShell?.style.removeProperty("--timeline-sticky-offset");
       window.removeEventListener("scroll", scheduleStickyUpdate, true);
       window.removeEventListener("resize", scheduleStickyUpdate);
       if (animationFrame != null) window.cancelAnimationFrame(animationFrame);
@@ -2367,8 +2557,8 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
           <button className={`icon-button toggle-button ${loopPlayback ? "active" : ""}`} type="button" title="Zapętl odtwarzanie" aria-label="Zapętl odtwarzanie" aria-pressed={loopPlayback} onClick={() => setLoopPlayback((value) => !value)}><RefreshCcw size={14} /></button>
           <input className="time-slider" type="range" min="0" max={duration || 0} step="0.01" value={currentTime} onChange={(event) => seek(event.target.value)} />
           <span className="time-readout">{formatTime(currentTime)} / {formatTime(duration)}</span>
-          <button className="icon-button" type="button" title="Oddal" aria-label="Oddal" onPointerDown={(event) => zoomFromPointer(event, 1.25)} onClick={(event) => zoomFromClick(event, 1.25)}><ZoomOut size={14} /></button>
-          <button className="icon-button" type="button" title="Przybliż" aria-label="Przybliż" onPointerDown={(event) => zoomFromPointer(event, 0.75)} onClick={(event) => zoomFromClick(event, 0.75)}><ZoomIn size={14} /></button>
+          <button className="icon-button" type="button" title="Oddal" aria-label="Oddal" onPointerDown={(event) => zoomFromPointer(event, 1.25)} onClick={(event) => zoomFromClick(event, 1.25)} onContextMenu={(event) => { event.preventDefault(); zoomToFullTrack(); }}><ZoomOut size={14} /></button>
+          <button className="icon-button" type="button" title="Przybliż" aria-label="Przybliż" onPointerDown={(event) => zoomFromPointer(event, 0.75)} onClick={(event) => zoomFromClick(event, 0.75)} onContextMenu={(event) => { event.preventDefault(); zoomToPlayheadTarget(); }}><ZoomIn size={14} /></button>
           <button className={`icon-button toggle-button ${limitPlaybackToWindow ? "active" : ""}`} type="button" title="ogranicz odtwarzanie do widocznego zakresu" aria-label="ogranicz odtwarzanie do widocznego zakresu" aria-pressed={limitPlaybackToWindow} onClick={() => setLimitPlaybackToWindow((value) => !value)}><Lock size={14} /></button>
           <button className={`icon-button toggle-button ${showNotes ? "active" : ""}`} type="button" title="pokaż nuty diagnostyczne" aria-label="pokaż nuty diagnostyczne" aria-pressed={showNotes} onClick={() => setShowNotes((value) => !value)}><Music2 size={14} /></button>
           <button className={`icon-button toggle-button ${snapToExisting ? "active" : ""}`} type="button" title="przyciągaj elementy na wykresie" aria-label="przyciągaj elementy na wykresie" aria-pressed={snapToExisting} onClick={() => setSnapToExisting((value) => !value)}><Magnet size={14} /></button>
@@ -2383,7 +2573,8 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
       </div>
       <div className="combined-editor-shell" onWheel={zoomFromWheel}>
         <div ref={bindWaveform} className="waveform-canvas" />
-        <div className="combined-editor-overlay" onPointerDown={(event) => startGraphBackgroundDrag(event, windowStart, windowEnd)}>
+        <div className="combined-editor-overlay" onPointerDown={(event) => startGraphBackgroundDrag(event, windowStart, windowEnd)} onPointerMove={moveCursorGuide} onPointerLeave={hideCursorGuide} onContextMenu={(event) => handleGraphContextMenu(event)}>
+          <div ref={cursorGuideRef} className="cursor-guide-line" />
           <div className="playhead" style={{ left: `${percent(currentTime, windowStart, windowEnd)}%` }} />
           {Number.isFinite(dragGuideTime) && dragGuideTime >= windowStart && dragGuideTime <= windowEnd && (
             <div className="drag-guide-line" style={{ left: `${percent(dragGuideTime, windowStart, windowEnd)}%` }} />
@@ -2398,16 +2589,15 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
               onPointerDown={(event) => event.stopPropagation()}
               onClick={(event) => {
                 event.stopPropagation();
-                selectAndSeek("line", line.lineId, line.startSec);
+                const clickedTime = graphTimeAtClientX(event.clientX, event.currentTarget.closest(".combined-editor-overlay"));
+                selectAndSeek("line", line.lineId, Math.max(line.startSec, Math.min(line.endSec, clickedTime)));
               }}
               onDoubleClick={(event) => {
                 event.stopPropagation();
                 zoomToLine(line);
               }}
               onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                playLineRange(line);
+                handleGraphContextMenu(event, () => playLineRange(line));
               }}
             />
           ))}
@@ -2429,7 +2619,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
             return (
               <div
                 key={token.tokenId}
-                className={`syllable-block note-type-${token.noteType ?? "normal"} ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${token.requiresReview ? "review" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""}`}
+                className={`syllable-block note-type-${token.noteType ?? "normal"} ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${playingTokenId === token.tokenId ? "playback-active" : ""} ${token.requiresReview ? "review" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""}`}
                 style={{
                   left: `${percent(token.startSec, windowStart, windowEnd)}%`,
                   width: `${spanPercent(token.startSec, token.endSec, windowStart, windowEnd)}%`,
@@ -2447,10 +2637,8 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, highl
                   event.stopPropagation();
                   zoomToToken(token);
                 }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  playTokenRange(token);
+              onContextMenu={(event) => {
+                  handleGraphContextMenu(event, () => playTokenRange(token));
                 }}
               >
                 <span className="drag-handle start" onPointerDown={(event) => startGraphDrag("token", token.tokenId, "resize-start", event, windowStart, windowEnd)} />
@@ -2530,10 +2718,26 @@ function GraphScrollbar({ duration, windowStart, zoomSec, onChange }) {
   );
 }
 
-function PhraseList({ arrangement, selected, selectedContext, highlightedTokenIds, highlightedWordIds, acceptedSongBpm, selectAndSeek, playTokenRange, playWordRange, playLineRange, commit, zoomToLine, zoomToToken }) {
+function PhraseList({ arrangement, selected, selectedContext, playing, playbackCycleStartSec, currentTime, playingLineId, playingWordId, timelinePinningEnabled, highlightedTokenIds, highlightedWordIds, acceptedSongBpm, selectAndSeek, playTokenRange, playWordRange, playLineRange, commit, zoomToLine, zoomToToken }) {
+  const lineRowsRef = useRef(new Map());
   const [insertIndex, setInsertIndex] = useState(null);
   const [insertText, setInsertText] = useState("");
   const trimmedInsertText = insertText.trim();
+
+  useEffect(() => {
+    if (!playing || !timelinePinningEnabled || !playingLineId) return undefined;
+    const row = lineRowsRef.current.get(playingLineId);
+    if (!row) return undefined;
+    const animationFrame = window.requestAnimationFrame(() => {
+      row.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+    });
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [playing, playingLineId, timelinePinningEnabled]);
+
+  function bindLineRow(lineId, node) {
+    if (node) lineRowsRef.current.set(lineId, node);
+    else lineRowsRef.current.delete(lineId);
+  }
 
   function openInsert(index) {
     setInsertIndex(index);
@@ -2580,7 +2784,7 @@ function PhraseList({ arrangement, selected, selectedContext, highlightedTokenId
       {renderInsertControl(0)}
       {arrangement.lines.map((line, index) => (
         <React.Fragment key={line.lineId}>
-          <article className={`phrase-row ${selectedContext.lineIds.includes(line.lineId) ? "selected" : ""}`}>
+          <article ref={(node) => bindLineRow(line.lineId, node)} className={`phrase-row ${selectedContext.lineIds.includes(line.lineId) ? "selected" : ""} ${playingLineId === line.lineId ? "playback-active" : ""}`}>
             <button
               type="button"
               onClick={() => selectAndSeek("line", line.lineId, line.startSec)}
@@ -2598,7 +2802,7 @@ function PhraseList({ arrangement, selected, selectedContext, highlightedTokenId
                 return (
                   <div
                     key={word.wordId}
-                    className={`word-block ${hasWarnings ? "review" : ""} ${selectedContext.wordIds.includes(word.wordId) ? "selected" : ""} ${highlightedWordIds.includes(word.wordId) ? "quality-highlight" : ""}`}
+                    className={`word-block ${hasWarnings ? "review" : ""} ${selectedContext.wordIds.includes(word.wordId) ? "selected" : ""} ${playingWordId === word.wordId ? "playback-active" : ""} ${highlightedWordIds.includes(word.wordId) ? "quality-highlight" : ""}`}
                     draggable
                     onDragStart={(event) => startWordDrag(event, word.wordId)}
                     onDragOver={(event) => event.preventDefault()}
@@ -2617,32 +2821,46 @@ function PhraseList({ arrangement, selected, selectedContext, highlightedTokenId
                       {word.text || "..."}
                     </button>
                     <div className="syllable-chip-list">
-                      {word.tokens.map((token) => (
-                        <input
-                          key={token.tokenId}
-                          className={`token-chip syllable-inline-input note-type-${token.noteType ?? "normal"} ${token.midi == null ? "missing-note" : ""} ${token.requiresReview ? "review" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""}`}
-                          draggable
-                          value={token.text || ""}
-                          aria-label="Treść sylaby"
-                          onDragStart={(event) => startSyllableDrag(event, token.tokenId)}
-                          onDragOver={(event) => event.preventDefault()}
-                          onDrop={(event) => dropSyllable(event, commit, token.tokenId)}
-                          onFocus={() => selectAndSeek("token", token.tokenId, token.startSec)}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            selectAndSeek("token", token.tokenId, token.startSec);
-                          }}
-                          onChange={(event) => commit((draft) => updateToken(draft, token.tokenId, { text: event.target.value || "~", isExtension: false, extendsTokenId: null }))}
-                          onDoubleClick={(event) => {
-                            event.stopPropagation();
-                            zoomToToken(token);
-                          }}
-                          onContextMenu={(event) => {
-                            event.preventDefault();
-                            playTokenRange(token);
-                          }}
-                        />
-                      ))}
+                      {word.tokens.map((token) => {
+                        const tokenClassName = `token-chip syllable-inline-input note-type-${token.noteType ?? "normal"} ${token.midi == null ? "missing-note" : ""} ${token.requiresReview ? "review" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""}`;
+                        const playbackProgress = playing ? syllablePlaybackProgress(token, currentTime, playbackCycleStartSec) : null;
+                        return (
+                          <span className="syllable-playback-shell" key={token.tokenId}>
+                            <input
+                              className={tokenClassName}
+                              draggable
+                              value={token.text || ""}
+                              aria-label="Treść sylaby"
+                              onDragStart={(event) => startSyllableDrag(event, token.tokenId)}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={(event) => dropSyllable(event, commit, token.tokenId)}
+                              onFocus={() => selectAndSeek("token", token.tokenId, token.startSec)}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                selectAndSeek("token", token.tokenId, token.startSec);
+                              }}
+                              onChange={(event) => commit((draft) => updateToken(draft, token.tokenId, { text: event.target.value || "~", isExtension: false, extendsTokenId: null }))}
+                              onDoubleClick={(event) => {
+                                event.stopPropagation();
+                                zoomToToken(token);
+                              }}
+                              onContextMenu={(event) => {
+                                event.preventDefault();
+                                playTokenRange(token);
+                              }}
+                            />
+                            {playbackProgress > 0 && (
+                              <span
+                                aria-hidden="true"
+                                className={`${tokenClassName} syllable-playback-fill`}
+                                style={{ "--syllable-playback-progress": `${playbackProgress * 100}%` }}
+                              >
+                                {token.text || ""}
+                              </span>
+                            )}
+                          </span>
+                        );
+                      })}
                       <button
                         className="mini-add"
                         type="button"
@@ -4733,6 +4951,37 @@ function sentenceGapLabel(arrangement) {
   if (Number.isFinite(requested)) return `${requested} ms`;
   if (Number.isFinite(effective)) return `${effective} ms auto`;
   return "auto";
+}
+
+function emptyPlaybackContext() {
+  return { lineId: null, wordId: null, tokenId: null };
+}
+
+function playbackContextAtTime(arrangement, timeSec) {
+  if (!arrangement || !Number.isFinite(timeSec)) return emptyPlaybackContext();
+  const token = playbackItemAtTime(arrangement.tokens, timeSec);
+  const tokenLine = token ? arrangement.lines.find((line) => line.tokenIds.includes(token.tokenId)) : null;
+  const line = tokenLine ?? playbackItemAtTime(arrangement.lines, timeSec);
+  return {
+    lineId: line?.lineId ?? null,
+    wordId: token ? token.wordId || token.tokenId : null,
+    tokenId: token?.tokenId ?? null,
+  };
+}
+
+function playbackItemAtTime(items = [], timeSec) {
+  return items.reduce((active, item) => {
+    if (!Number.isFinite(item.startSec) || !Number.isFinite(item.endSec) || timeSec < item.startSec || timeSec >= item.endSec) return active;
+    return !active || item.startSec > active.startSec ? item : active;
+  }, null);
+}
+
+function syllablePlaybackProgress(token, currentTime, playbackCycleStartSec) {
+  if (!token || !Number.isFinite(currentTime) || !Number.isFinite(playbackCycleStartSec)) return null;
+  if (!Number.isFinite(token.startSec) || !Number.isFinite(token.endSec) || token.endSec <= token.startSec) return null;
+  if (currentTime < playbackCycleStartSec || token.endSec <= playbackCycleStartSec || currentTime <= token.startSec) return null;
+  if (currentTime >= token.endSec) return 1;
+  return Math.max(0, Math.min(1, (currentTime - token.startSec) / (token.endSec - token.startSec)));
 }
 
 function selectionContext(arrangement, selected) {

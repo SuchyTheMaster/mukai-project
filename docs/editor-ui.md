@@ -155,12 +155,19 @@ Pasek jakości wylicza te stany ponownie po każdej zmianie arrangementu i stosu
 - Nagłówek wykresu nie pokazuje czasów początku i końca widocznego zakresu.
 - Pasek pozycji okna wykresu znajduje się bezpośrednio pod wykresem i pokazuje widoczny zakres jako uchwyt o szerokości zależnej od zoomu. Na styku wykresu i paska nie ma podwójnej ramki ani zaokrągleń.
 - Kliknięcie pustego miejsca na wykresie ustawia playhead, a przeciągnięcie pustego miejsca przesuwa widoczny zakres osi czasu bez tworzenia wpisu undo.
+- Lewy dwuklik powiększający element oraz prawe kliknięcia ikon `Zoom In` i `Zoom Out` zapisują do `50` poprzednich viewportów. Prawy dwuklik na polu wykresu, rozpoznawany jako dwa kliknięcia w ciągu `300 ms` i w promieniu `8px`, przywraca ostatni z nich bez uruchamiania pojedynczej akcji prawego kliknięcia; pusty stos nie wykonuje akcji. Ciągły zoom, `Shift+scroll`, pan, scrollbar i auto-follow nie trafiają do historii.
+- Prawy klik `Zoom Out` pokazuje cały utwór od początku bez limitu `120 s`. Prawy klik `Zoom In` wybiera sylabę pod playheadem, następnie sentencję, a poza nimi nie zmienia viewportu.
+- Pojedynczy lewy klik markera sentencji na wykresie zaznacza sentencję i ustawia playhead w czasie odpowiadającym poziomej pozycji kliknięcia w jej zakresie. Klik sylaby nadal przenosi playhead na początek sylaby.
+- Nad polem wykresu kursorowi towarzyszy cienka pionowa, biała, półprzezroczysta i przerywana prowadnica przez całą wysokość wykresu. Prowadnica znika po opuszczeniu pola i nie przechwytuje zdarzeń myszy.
+- Podczas odtwarzania z włączonym przypinaniem zmiana aktywnej sentencji minimalnie przewija jej wiersz do widocznego obszaru listy z uwzględnieniem wysokości sticky wykresu. Pauza, brak aktywnej sentencji albo wyłączenie przypinania nie uruchamia przewijania.
 - Lista `Sentencje` pokazuje separator z przyciskiem `+` przed, między i po blokach; dodanie nowej sentencji odbywa się przez inline pole tekstowe, żeby nie tworzyć pustych tokenów.
 - Dwuklik na bloku sentencji w liście albo na markerze sentencji na wykresie zoomuje wykres tak, żeby objąć całą sentencję.
 - Dwuklik na sylabie na wykresie albo w liście `Sentencje` zaznacza sylabę i zoomuje wykres do jej zakresu.
 - Prawy klik na sentencji, wyrazie albo sylabie zaznacza element i odtwarza jego zakres.
 - `ArrangementSyllable` jest podstawowym blokiem edycji na wykresie; `NoteEvent` pozostaje niezależnym źródłem pitch i diagnostyki, domyślnie ukrytym.
 - Podczas przesuwania sylaby albo zmiany jej początku lub końca wykres pokazuje cienką pionową przerywaną prowadnicę przez całą wysokość wykresu. Prowadnica nie pojawia się przy przesuwaniu nut diagnostycznych.
+- Zaznaczona sylaba jest renderowana nad niezaznaczonymi sylabami, aby jej uchwyty początku i końca pozostawały dostępne. Przeciąganie z wciśniętym `Shift` wybiera na podstawie dominującego pierwszego ruchu i zachowuje do końca operacji tylko jedną oś: poziomą zmianę czasu albo pionową zmianę tonu.
+- Podczas odtwarzania sylaba pod playheadem na wykresie ma `opacity: 1`; na liście `Sentencje` ten sam stan otrzymują sentencja pod playheadem oraz wyraz aktualnie śpiewanej sylaby. Sylaba na liście jest wypełniana od lewej warstwą `opacity: 1` dokładnie do procentowej pozycji playheada w jej zakresie. Sylaby ukończone od początku bieżącego cyklu pozostają wypełnione, natomiast sylaby sprzed miejsca uruchomienia i przyszłe zachowują bazową przezroczystość. Pauza, koniec odtwarzania i restart pętli przywracają bazowe wartości przed rozpoczęciem nowego cyklu animacji.
 - Blok sylaby pokazuje tekst w pierwszym wierszu i samą liczbę MIDI w drugim wierszu; przy braku nuty drugi wiersz pokazuje `brak`, a pełna informacja `MIDI {wartość}` jest widoczna w tooltipie.
 - Uchwyty zmiany granic bloku są widoczne na hover, focus i zaznaczeniu.
 - Najczęstsze korekty powinny dać się wykonać bez opuszczania głównego widoku.

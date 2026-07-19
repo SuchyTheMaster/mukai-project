@@ -185,11 +185,16 @@ h1 {
   transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
 }
 
-.dropzone:hover {
+.dropzone:hover,
+.dropzone.is-dragging {
   color: var(--text);
   border-color: var(--hot-pink);
   background: rgba(255, 0, 110, 0.08);
   box-shadow: 0 0 8px rgba(255, 0, 110, 0.35);
+}
+
+.dropzone.is-dragging {
+  border-style: solid;
 }
 
 .dropzone input,
@@ -1740,7 +1745,7 @@ summary:hover {
 
 .playhead {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   top: 0;
   bottom: 0;
   width: 2px;
@@ -1751,12 +1756,24 @@ summary:hover {
 
 .drag-guide-line {
   position: absolute;
-  z-index: 4;
+  z-index: 5;
   top: 0;
   bottom: 0;
   width: 1px;
   border-left: 1px dashed rgba(255, 255, 255, 0.82);
   filter: drop-shadow(0 0 5px rgba(58, 134, 255, 0.55));
+  pointer-events: none;
+}
+
+.cursor-guide-line {
+  position: absolute;
+  z-index: 6;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.45);
+  opacity: 0;
+  transform: translateX(-50%);
   pointer-events: none;
 }
 
@@ -1885,6 +1902,14 @@ summary:hover {
 .token-chip.selected {
   opacity: 1;
   box-shadow: var(--syllable-inner-glow, none);
+}
+
+.syllable-block.selected {
+  z-index: 3;
+}
+
+.syllable-block.playback-active {
+  opacity: 1;
 }
 
 .phrase-span:hover,
@@ -2056,10 +2081,18 @@ summary:hover {
   border: 1px solid var(--border);
   border-radius: 8px;
   background: rgba(18, 18, 58, 0.72);
+  opacity: 0.5;
+  scroll-margin-top: var(--timeline-sticky-offset, 18px);
+  scroll-margin-bottom: 18px;
 }
 
 .phrase-row.selected {
   border-color: var(--hot-pink);
+}
+
+.phrase-row.selected,
+.phrase-row.playback-active {
+  opacity: 1;
 }
 
 .phrase-row > button {
@@ -2096,7 +2129,8 @@ summary:hover {
   opacity: 0.5;
 }
 
-.word-block.selected {
+.word-block.selected,
+.word-block.playback-active {
   border-color: var(--border);
   opacity: 1;
 }
@@ -2122,6 +2156,32 @@ summary:hover {
   flex-wrap: wrap;
   gap: 3px;
   align-items: center;
+}
+
+.syllable-playback-shell {
+  position: relative;
+  display: inline-grid;
+  width: 48px;
+  max-width: 9ch;
+  min-height: 26px;
+}
+
+.syllable-playback-shell > .syllable-inline-input {
+  width: 100%;
+  max-width: none;
+}
+
+.syllable-inline-input.syllable-playback-fill {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  clip-path: polygon(0 0, var(--syllable-playback-progress) 0, var(--syllable-playback-progress) 100%, 0 100%);
+  pointer-events: none;
 }
 
 .token-chip {
