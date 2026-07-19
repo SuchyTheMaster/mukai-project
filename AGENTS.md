@@ -17,7 +17,7 @@
 
 ## Bezpieczeństwo operacji
 
-- Nie uruchamiaj `docker`, `docker compose`, `sudo`, `rm`, `rm -rf`, `chmod -R`, `chown -R` bez wcześniejszego wyjaśnienia celu.
+- Nie uruchamiaj `docker`, `docker compose` (za wyjątkiem `docker compose logs`, `docker compose build` i `docker compose ls`), `sudo`, `rm`, `rm -rf`, `chmod -R`, `chown -R` bez wcześniejszego wyjaśnienia celu.
 - Nie instaluj nowych zależności bez uzasadnienia i bez wskazania, który dokument lub moduł tego wymaga.
 - Nie cofaj zmian użytkownika bez wyraźnej prośby.
 - Nie zapisuj w repozytorium sekretów, tokenów, kluczy API, prywatnych danych ani plików audio użytkownika.
