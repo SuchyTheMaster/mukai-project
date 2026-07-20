@@ -2680,27 +2680,14 @@ function PlaybackVolumeControl({ source, label, volumePercent, enabled, onVolume
   const DetailIcon = source === "audio" ? AudioWaveform : Music2;
   const stateLabel = enabled ? "aktywny" : "wyciszony";
 
-  function toggleFromContextMenu(event) {
-    event.preventDefault();
-    event.stopPropagation();
-    onToggle();
-  }
-
-  function toggleFromKeyboard(event) {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    onToggle();
-  }
-
   return (
     <div className="playback-volume-control">
       <button
         className={`playback-volume-button ${enabled ? "active" : ""}`}
         type="button"
-        aria-label={`${label}: ${volumePercent}%, ${stateLabel}. Prawy klik, Enter lub Spacja przełącza wyciszenie.`}
+        aria-label={`${label}: ${volumePercent}%, ${stateLabel}. Kliknięcie, Enter lub Spacja przełącza wyciszenie.`}
         aria-pressed={enabled}
-        onKeyDown={toggleFromKeyboard}
-        onContextMenu={toggleFromContextMenu}
+        onClick={onToggle}
       >
         <span className={`playback-volume-icon ${enabled ? "" : "muted"}`} aria-hidden="true">
           <Volume2 size={16} />
