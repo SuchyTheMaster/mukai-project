@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from enum import StrEnum
 from typing import Literal
@@ -461,6 +462,35 @@ class Job(BaseModel):
         return migrated
 
 
+class JobSummary(BaseModel):
+    jobId: str
+    sourceFilename: str | None = None
+    createdAt: datetime
+    updatedAt: datetime
+    furthestCompletedStage: str | None = None
+
+
+class JobCatalog(BaseModel):
+    jobs: list[JobSummary] = Field(default_factory=list)
+
+
+class DeleteJobsRequest(BaseModel):
+    jobIds: list[str] = Field(min_length=1, max_length=500)
+    activeJobId: str | None = Field(pattern=r"^job_[0-9a-f]{32}$")
+
+    @field_validator("jobIds")
+    @classmethod
+    def normalize_job_ids(cls, values: list[str]) -> list[str]:
+        normalized = list(dict.fromkeys(values))
+        if any(not re.fullmatch(r"job_[0-9a-f]{32}", value) for value in normalized):
+            raise ValueError("jobIds contains an invalid job identifier")
+        return normalized
+
+
+class DeleteJobsResponse(BaseModel):
+    deletedJobIds: list[str] = Field(default_factory=list)
+
+
 class CreateJobUpload(BaseModel):
     uploadDraftId: str
     metadata: SourceMetadata
@@ -534,6 +564,7 @@ class ResetStageRequest(BaseModel):
 class ApplicationResetRequest(BaseModel):
     jobId: str | None = Field(default=None, pattern=r"^job_[0-9a-f]{32}$")
     uploadDraftId: str | None = Field(default=None, pattern=r"^draft_[0-9a-f]{32}$")
+    deleteJob: bool = True
 
 
 class ApplicationResetResponse(BaseModel):

@@ -14,6 +14,10 @@ from app.domain.contracts import (
     AudioAsset,
     ConfigurationPresetCatalog,
     ConfigurationPresetSummary,
+    DeleteJobsRequest,
+    DeleteJobsResponse,
+    JobCatalog,
+    JobSummary,
     MANUAL_PROCESSING_MODE,
     CreateJobUpload,
     EmbeddedCover,
@@ -34,6 +38,7 @@ from app.domain.contracts import (
     OverwriteConfigurationPresetRequest,
     StageSettingsRequest,
     StageStatus,
+    STAGE_ORDER,
     TranscriptSegment,
     UpdateJobSourceRequest,
     UploadInspection,
@@ -50,7 +55,7 @@ from app.services.configuration_presets import (
     resolve_configuration_preset,
 )
 from app.services.ids import new_id
-from app.services.queue import enqueue_job, enqueue_pitch, enqueue_separation, enqueue_transcription, redis_client
+from app.services.queue import enqueue_job, enqueue_pitch, enqueue_separation, enqueue_transcription, redis_client, remove_jobs_from_queues
 from app.services.project_archive import generate_draft_archive, generate_job_archive, import_project_archive
 from app.services.storage import (
     purge_tree,
@@ -168,6 +173,52 @@ def health() -> dict:
     except Exception as exc:  # pragma: no cover
         checks["redis"] = f"error: {type(exc).__name__}"
     return checks
+
+
+@router.get("/jobs", response_model=JobCatalog)
+def get_jobs() -> JobCatalog:
+    summaries = []
+    for row in repository.list_jobs():
+        processing = row.get("processing") or {}
+        furthest_completed_stage = None
+        for stage, _, _, _ in STAGE_ORDER:
+            if any(
+                snapshot.get("stage") == stage and snapshot.get("status") == StageStatus.completed.value
+                for snapshot in processing.values()
+            ):
+                furthest_completed_stage = stage
+        if row.get("has_arrangement"):
+            furthest_completed_stage = "aligning"
+        summaries.append(
+            JobSummary(
+                jobId=row["job_id"],
+                sourceFilename=row.get("source_filename"),
+                createdAt=row["created_at"],
+                updatedAt=row["updated_at"],
+                furthestCompletedStage=furthest_completed_stage,
+            )
+        )
+    return JobCatalog(jobs=summaries)
+
+
+@router.delete("/jobs", response_model=DeleteJobsResponse)
+def delete_jobs(request: DeleteJobsRequest) -> DeleteJobsResponse:
+    if request.activeJobId and request.activeJobId in request.jobIds:
+        raise api_error(
+            409,
+            "active_job_delete_forbidden",
+            'Nie można usunąć aktualnie używanego/przetwarzanego projektu. Najpierw zresetuj projekt przyciskiem "od nowa", a dopiero potem spróbuj usunąć ten projekt.',
+        )
+    return DeleteJobsResponse(deletedJobIds=_delete_job_data(request.jobIds))
+
+
+def _delete_job_data(job_ids: list[str]) -> list[str]:
+    normalized = list(dict.fromkeys(job_ids))
+    deleted = repository.delete_jobs(normalized)
+    remove_jobs_from_queues(normalized)
+    for job_id in normalized:
+        purge_tree(f"jobs/{job_id}")
+    return deleted
 
 
 @router.post("/uploads/inspect", response_model=UploadInspection)
@@ -713,9 +764,8 @@ def restart_job(job_id: str, request: ResetStageRequest):
 
 @router.post("/reset", response_model=ApplicationResetResponse)
 def reset_application(request: ApplicationResetRequest) -> ApplicationResetResponse:
-    if request.jobId:
-        repository.delete_job(request.jobId)
-        purge_tree(f"jobs/{request.jobId}")
+    if request.jobId and request.deleteJob:
+        _delete_job_data([request.jobId])
     if request.uploadDraftId:
         purge_tree(f"drafts/{request.uploadDraftId}")
     return ApplicationResetResponse()

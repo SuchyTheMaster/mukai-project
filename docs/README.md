@@ -17,7 +17,7 @@ Mukai ma być aplikacją uruchamianą w Dockerze do przygotowywania plików kara
 - Transkrypcja wokalu z czasami fraz oraz słów z wyborem profilu WhisperX.
 - Detekcja wysokości dźwięku z wokalu i segmentacja do nut.
 - Edytor tekstu, sylab, timingów, typów nut i pitch.
-- Import i kontynuacja pracy z ZIP-em projektu utworzonym przez globalną akcję `Zapisz`.
+- Import i kontynuacja pracy z ZIP-em projektu utworzonym przez globalną akcję `EKSPORT PROJEKTU`.
 - Eksport jednej paczki ZIP zgodnej z aktualnymi wersjami wspieranych odtwarzaczy, bez danych projektu w tej paczce.
 - Osobny eksport pełnego projektu jako ZIP zawierający `Job`, artefakty, oryginalny plik i manifesty JSON potrzebne do odtworzenia stanu.
 - Pełny zapis draftu, processingu lub edytora bez automatycznej retencji i usuwania lokalnego `Job`.

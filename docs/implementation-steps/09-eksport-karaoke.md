@@ -29,7 +29,7 @@ Zamienić zatwierdzony `Arrangement` na jedną paczkę karaoke ZIP zgodną z akt
 
 ## Poza zakresem
 
-- Zapis ZIP-a projektu globalnym przyciskiem `Zapisz`.
+- Zapis ZIP-a projektu globalnym przyciskiem `EKSPORT PROJEKTU`.
 - Import projektu.
 - Automatyczna publikacja do baz piosenek.
 

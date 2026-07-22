@@ -120,7 +120,7 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Zapis projektu nie ustawia TTL; automatyczna retencja pozostaje wyłączona.
 - Eksport powinien być odtwarzalny z zatwierdzonego `Arrangement` w Postgresie oraz jego serializacji w `mukai-project.json`.
 - Paczki karaoke ZIP nie mogą zawierać `mukai-project.json` ani innych danych projektu.
-- ZIP projektu z akcji `Zapisz` musi zawierać draft albo pełny `Job`, oryginalny plik, artefakty, zastosowane ustawienia, robocze formularze i stan edytora.
+- ZIP projektu z akcji `EKSPORT PROJEKTU` musi zawierać draft albo pełny `Job`, oryginalny plik, artefakty, zastosowane ustawienia, robocze formularze i stan edytora.
 - Po pomyślnym eksporcie projektu lokalny rekord `Job`, oryginalny plik i artefakty tego zadania mogą zostać usunięte dopiero po upływie TTL.
 - Import ZIP-a projektu nie może ponownie uruchamiać normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.
 - W logach nie zapisywać pełnych ścieżek użytkownika, jeśli mogą ujawniać dane prywatne.
@@ -209,7 +209,7 @@ Testy eksportu karaoke oraz round-trip zapisu/importu projektu są wymagane dla 
 - Weryfikacja, że `#BPM` zawiera zaakceptowane muzyczne BPM bez mnożnika `4`, a pozycje nut używają czterech jednostek siatki na beat.
 - Weryfikacja, że po udanym eksporcie karaoke `Job` wraca do `awaiting_review`.
 - Weryfikacja, że paczka karaoke nie zawiera `mukai-project.json`.
-- Zapis ZIP-a projektu przez globalne `Zapisz`.
+- Zapis ZIP-a projektu przez globalne `EKSPORT PROJEKTU`.
 - Weryfikacja, że po udanym eksporcie projektu `Job` wraca do `awaiting_review`.
 - Weryfikacja, że zapis projektu nie ustawia pól retencji.
 - Weryfikacja, że mechanizm czyszczenia usuwa lokalny `Job` i artefakty dopiero po upływie TTL.
@@ -249,6 +249,6 @@ Testy eksportu karaoke oraz round-trip zapisu/importu projektu są wymagane dla 
 - Użytkownik może wybrać profile `htdemucs`/`htdemucs_ft` oraz `large-v3`/`large-v3-turbo`, a domyślnie ustawione są dokładniejsze `htdemucs_ft` i `large-v3`.
 - Eksportowana paczka karaoke ZIP zawiera katalog z `.txt` i MP3 bez JSON-a projektu; cover jest dodawany tylko wtedy, gdy został ustawiony.
 - Jeśli cover nie został ustawiony, eksportowana paczka ZIP nie zawiera covera.
-- Globalna akcja `Zapisz` tworzy ZIP projektu pozwalający kontynuować draft, processing albo ręczną edycję.
+- Globalna akcja `EKSPORT PROJEKTU` tworzy ZIP projektu pozwalający kontynuować draft, processing albo ręczną edycję.
 - Lokalny `Job` i artefakty nie dostają TTL po zapisie.
 - Wynik można ręcznie wczytać w wybranym kompatybilnym programie karaoke.

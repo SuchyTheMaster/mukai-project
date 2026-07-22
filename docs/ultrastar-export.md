@@ -4,7 +4,7 @@
 
 Eksporter karaoke zamienia zatwierdzony `Arrangement` na jedną paczkę ZIP zgodną z aktualnymi wersjami UltraStar Deluxe, UltraStar Play i Vocaluxe. Paczka karaoke zawiera katalog z plikiem `.txt`, oryginalnym audio, instrumentalem i wokalem/a capella w MP3. Cover jest dodawany tylko wtedy, gdy użytkownik go ustawił. Paczka karaoke nie zawiera `mukai-project.json` ani innych danych projektu.
 
-Zapis projektu jest globalną akcją `Zapisz`. Generuje oddzielny ZIP projektu do późniejszego importu w Mukai; przycisk `Eksportuj` w edytorze dotyczy wyłącznie paczki karaoke.
+Zapis projektu jest globalną akcją `EKSPORT PROJEKTU`. Generuje oddzielny ZIP projektu do późniejszego importu w Mukai; przycisk `ZAPISZ DLA GRY` w edytorze dotyczy wyłącznie paczki karaoke.
 
 Użytkownik wybiera:
 

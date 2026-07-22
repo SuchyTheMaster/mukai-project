@@ -6,7 +6,7 @@ Dodać pełny ZIP projektu Mukai pozwalający wznowić draft uploadu, processing
 
 ## Zakres
 
-- Globalna akcja `Zapisz` obok `Od nowa`.
+- Globalna akcja `EKSPORT PROJEKTU` obok `LISTA PROJEKTÓW` i `OD NOWA`.
 - Eksport draftu przez `POST /api/projects/drafts/{uploadDraftId}/export`.
 - Eksport `Job` przez `POST /api/jobs/{jobId}/exports/project`.
 - Import przez `POST /api/projects/import`.
@@ -32,7 +32,7 @@ Dodać pełny ZIP projektu Mukai pozwalający wznowić draft uploadu, processing
 - Draft wraca do formularza, processing do właściwego etapu, a faza `review` do edytora.
 - Ukończone etapy nie są ponownie wykonywane po imporcie checkpointu.
 - Brak lub zmiana wymaganego pliku kończy import błędem bez częściowego utworzenia projektu.
-- Paczka karaoke nie zawiera `mukai-project.json`, a przycisk edytora `Eksportuj` nie zapisuje projektu.
+- Paczka karaoke nie zawiera `mukai-project.json`, a przycisk edytora `ZAPISZ DLA GRY` nie zapisuje projektu Mukai.
 - Pola `Retention` pozostają puste.
 
 ## Testy

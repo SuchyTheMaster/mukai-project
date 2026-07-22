@@ -12,7 +12,7 @@ Wejście:
 - Sylabizacja: wybór `Kokosznicka`, `Pyphen`, `Heurystyka` albo `Bez podziału`; dla języka `pl` UI domyślnie wybiera Kokosznicką, a dla pozostałych języków Pyphen.
 - Opcjonalny cover, który może zostać użyty w eksporcie.
 - Osadzony cover z tagów pliku źródłowego może zostać użyty jako wstępny cover, jeśli użytkownik nie wybierze innego pliku.
-- Opcjonalny import ZIP-a projektu utworzonego przez globalną akcję `Zapisz` jako kontynuacja wcześniejszej pracy.
+- Opcjonalny import ZIP-a projektu utworzonego przez globalną akcję `EKSPORT PROJEKTU` jako kontynuacja wcześniejszej pracy.
 
 Preflight uploadu:
 
@@ -277,7 +277,7 @@ Eksporter karaoke generuje:
 - Tagi `#AUDIO` i `#MP3` wskazują ten sam główny plik `[FULL]`; `#INSTRUMENTAL` i `#VOCALS` wskazują odpowiednio pliki `[INSTR]` i `[VOC]`.
 - Raport walidacji eksportu.
 
-Globalna akcja `Zapisz` generuje ZIP projektu:
+Globalna akcja `EKSPORT PROJEKTU` generuje ZIP projektu:
 
 - ZIP projektu zawiera cały `Job`: oryginalny plik, artefakty wszystkich wykonanych etapów, zapis edycji, ustawienia modeli, metadane, raporty walidacji i pliki JSON potrzebne do odtworzenia projektu.
 - ZIP projektu musi zawierać wszystkie składowe wymagane do odtworzenia stanu bez ponownego uruchamiania przetwarzania.
@@ -288,7 +288,7 @@ Globalna akcja `Zapisz` generuje ZIP projektu:
 
 Wejście:
 
-- ZIP projektu utworzony przez globalną akcję `Zapisz`.
+- ZIP projektu utworzony przez globalną akcję `EKSPORT PROJEKTU`.
 
 Zasady:
 

@@ -753,23 +753,39 @@ h1 {
   margin-top: 14px;
 }
 
-.restart-section .button.full {
+.project-actions .button.full {
   margin-top: 0;
 }
 
 .project-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
 .project-actions .button {
+  flex-direction: column;
+  gap: 6px;
+  min-height: 76px;
   min-width: 0;
+  padding: 10px 6px;
+  font-size: x-small;
+  text-align: center;
 }
 
-.restart-section .restart-button {
+.project-actions .button span {
+  max-width: 100%;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.project-actions .button svg {
+  flex: 0 0 auto;
+}
+
+.project-actions .restart-button {
   padding-inline: 10px;
-  white-space: nowrap;
 }
 
 .reset-fallback-shell {
@@ -1726,6 +1742,273 @@ summary:hover {
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: 0 20px 48px rgba(0, 0, 0, 0.52);
+}
+
+.projects-modal {
+  display: grid;
+  grid-template-areas: "header" "error" "table";
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 14px;
+  width: min(1400px, 100%);
+  max-height: calc(100vh - 36px);
+  padding: 18px;
+  overflow: hidden;
+  background: var(--raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.52);
+}
+
+.projects-modal > .modal-header {
+  grid-area: header;
+}
+
+.projects-modal h2 {
+  margin: 0;
+}
+
+.project-modal-error {
+  grid-area: error;
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--error);
+  background: rgba(255, 51, 102, 0.12);
+  border: 1px solid var(--error);
+  border-radius: 8px;
+}
+
+.projects-table-scroll {
+  grid-area: table;
+  min-height: 180px;
+  overflow: auto;
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.projects-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--secondary);
+  font-size: 13px;
+}
+
+.projects-table th,
+.projects-table td {
+  padding: 10px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+.projects-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-width: 150px;
+  vertical-align: bottom;
+  color: var(--text);
+  background: var(--overlay);
+}
+
+.project-header-cell {
+  display: grid;
+  grid-template-rows: minmax(34px, auto) 34px;
+  gap: 8px;
+  align-content: end;
+}
+
+.project-header-cell > input,
+.project-header-cell > .project-date-filters,
+.project-header-cell > .project-delete-selected {
+  align-self: end;
+  height: 34px;
+  margin-top: 0;
+}
+
+.projects-table tbody tr:hover {
+  background: rgba(255, 0, 110, 0.06);
+}
+
+.projects-table tbody tr.is-active {
+  background: rgba(0, 245, 160, 0.12);
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+.projects-table tbody tr.is-active:hover {
+  background: rgba(0, 245, 160, 0.16);
+}
+
+.projects-table input[type="search"],
+.projects-table input[type="datetime-local"] {
+  width: 100%;
+  min-width: 0;
+  margin-top: 8px;
+  padding: 7px 8px;
+  color: var(--text);
+  background: var(--sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.projects-table input:focus-visible {
+  border-color: var(--hot-pink);
+  box-shadow: 0 0 8px rgba(255, 0, 110, 0.4);
+  outline: none;
+}
+
+.projects-table input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  accent-color: var(--hot-pink);
+}
+
+.project-checkbox-column {
+  width: 48px;
+  min-width: 48px !important;
+  text-align: center !important;
+  vertical-align: bottom !important;
+}
+
+.project-checkbox-cell {
+  text-align: center !important;
+}
+
+.project-actions-column {
+  min-width: 220px !important;
+}
+
+.project-actions-heading {
+  display: flex;
+  align-items: flex-start;
+  min-height: 34px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.project-sort-button {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 34px;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.project-sort-button:hover,
+.project-sort-button:focus-visible {
+  color: var(--hot-pink);
+  outline: none;
+}
+
+.project-date-filters {
+  display: grid;
+  grid-template-columns: repeat(2, 146px);
+  gap: 6px;
+}
+
+.project-date-column {
+  width: 318px;
+  min-width: 318px !important;
+  max-width: 318px;
+}
+
+.project-date-filters input[type="datetime-local"] {
+  height: 34px;
+  margin-top: 0;
+}
+
+.project-date-filters input[type="datetime-local"]::-webkit-datetime-edit {
+  min-width: 0;
+  padding: 0;
+}
+
+.project-date-filters input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.project-id-column,
+.project-id-cell {
+  width: 164px;
+  min-width: 164px !important;
+  max-width: 164px;
+}
+
+.project-id-cell code {
+  display: block;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+
+.project-active-chip {
+  display: inline-flex;
+  margin-top: 6px;
+  padding: 3px 8px;
+  color: var(--success);
+  background: rgba(0, 245, 160, 0.15);
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.project-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.project-row-actions .button,
+.project-delete-selected {
+  min-height: 34px;
+  padding: 7px 10px;
+  font-size: 11px;
+}
+
+.project-delete-selected {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.projects-empty {
+  margin: 0;
+  padding: 28px;
+  color: var(--tertiary);
+  text-align: center;
+}
+
+.project-load-modal,
+.restart-choice-modal {
+  width: min(720px, 100%);
+}
+
+.project-load-actions,
+.restart-choice-actions {
+  flex-wrap: wrap;
+}
+
+.project-load-actions .button,
+.restart-choice-actions .button {
+  flex: 1 1 180px;
 }
 
 .configuration-warning-modal,

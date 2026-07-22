@@ -52,7 +52,7 @@ Domknąć MVP przez testy przekrojowe, diagnostykę, powtarzalne buildy, benchma
 - Draft pokazuje tekst, czasy i nuty w zsynchronizowanym widoku.
 - Użytkownik może poprawić tekst, sylaby, typ nuty i pitch.
 - Eksportowana paczka karaoke ZIP zawiera katalog z `.txt`, oryginalnym audio, instrumentalem i wokalem/a capella w MP3 bez danych projektu.
-- Globalna akcja `Zapisz` tworzy ZIP pozwalający kontynuować draft, processing albo edycję.
+- Globalna akcja `EKSPORT PROJEKTU` tworzy ZIP pozwalający kontynuować draft, processing albo edycję.
 - Zapis projektu nie ustawia TTL.
 - Wynik da się ręcznie wczytać w aktualnych wersjach UltraStar Deluxe, UltraStar Play i Vocaluxe albo odnotowano jawne założenie o braku testu manualnego.
 

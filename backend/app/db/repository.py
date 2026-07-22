@@ -80,10 +80,51 @@ def get_job(job_id: str) -> Job | None:
     return _row_to_job(row, artifacts)
 
 
-def delete_job(job_id: str) -> None:
+def list_jobs() -> list[dict]:
     with get_conn() as conn:
-        conn.execute("DELETE FROM jobs WHERE job_id = %s", (job_id,))
+        rows = conn.execute(
+            """
+            SELECT
+              jobs.job_id,
+              jobs.created_at,
+              GREATEST(
+                jobs.updated_at,
+                COALESCE((SELECT MAX(created_at) FROM artifacts WHERE artifacts.job_id = jobs.job_id), jobs.updated_at),
+                COALESCE((SELECT updated_at FROM arrangements WHERE arrangements.job_id = jobs.job_id), jobs.updated_at),
+                COALESCE((SELECT updated_at FROM export_selections WHERE export_selections.job_id = jobs.job_id), jobs.updated_at)
+              ) AS updated_at,
+              jobs.processing,
+              EXISTS(SELECT 1 FROM arrangements WHERE arrangements.job_id = jobs.job_id) AS has_arrangement,
+              source.original_filename AS source_filename
+            FROM jobs
+            LEFT JOIN LATERAL (
+              SELECT original_filename
+              FROM artifacts
+              WHERE artifacts.job_id = jobs.job_id AND artifacts.type = 'source_audio'
+              ORDER BY artifacts.created_at ASC
+              LIMIT 1
+            ) AS source ON TRUE
+            ORDER BY jobs.updated_at DESC, jobs.job_id ASC
+            """
+        ).fetchall()
+    return list(rows)
+
+
+def delete_jobs(job_ids: list[str]) -> list[str]:
+    if not job_ids:
+        return []
+    with get_conn() as conn:
+        rows = conn.execute(
+            "DELETE FROM jobs WHERE job_id = ANY(%s) RETURNING job_id",
+            (job_ids,),
+        ).fetchall()
         conn.commit()
+    deleted = {row["job_id"] for row in rows}
+    return [job_id for job_id in job_ids if job_id in deleted]
+
+
+def delete_job(job_id: str) -> None:
+    delete_jobs([job_id])
 
 
 def _row_to_job(row: dict, artifact_rows: list[dict]) -> Job:

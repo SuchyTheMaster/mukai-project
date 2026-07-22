@@ -37,7 +37,7 @@ Project ZIP Import
 - Przekazuje rozszerzalny `configurationPreset`, który wybiera wartości domyślne etapów, oraz niezależny `processingMode`, który określa ręczne albo automatyczne przechodzenie pipeline'u.
 - Pobiera globalny katalog presetów z API, rozdziela plikowy preset `default`, bazodanowe `predefined` i bazodanowe `custom`, a po ukończeniu joba pozwala zapisać jego techniczne ustawienia jako pełny preset użytkownika.
 - Pozwala opcjonalnie wskazać język utworu.
-- Pozwala wczytać ZIP projektu utworzony przez globalną akcję `Zapisz` i kontynuować pracę nad utworem.
+- Pozwala wczytać ZIP projektu utworzony przez globalną akcję `EKSPORT PROJEKTU` i kontynuować pracę nad utworem.
 - Pokazuje cały stage rail z etapami wykonanymi, przetwarzanymi, oczekującymi i błędnymi.
 - Pokazuje postęp, ETA albo stan indeterminate dla czasochłonnych etapów.
 - Pokazuje błędy jako krótki komunikat oraz kompaktowy rozwijany log diagnostyczny.
@@ -46,7 +46,7 @@ Project ZIP Import
 - Udostępnia edytor tekstu, sylab, fraz, nut i timingów.
 - Pozwala odsłuchać oryginał, wokal i instrumental.
 - Uruchamia eksport jednej paczki karaoke ZIP po zatwierdzeniu aktualnego stanu edycji.
-- Udostępnia globalną akcję `Zapisz`, która pakuje draft albo pełny `Job` do ZIP-a projektu.
+- Udostępnia globalną akcję `EKSPORT PROJEKTU`, która pakuje draft albo pełny `Job` do ZIP-a projektu.
 - Stosuje design system RetroWave opisany w [UI.md](UI.md) dla kolorów, typografii, komponentów i stanów.
 
 ### Backend API
@@ -73,13 +73,15 @@ Obecnie zaimplementowane:
 - `POST /api/uploads/inspect`: preflight wybranego pliku audio, odczyt tagów, technicznych danych audio i osadzonego covera bez tworzenia `Job`.
 - `GET /api/uploads/drafts/{draftId}/cover`: podgląd osadzonego covera wykrytego podczas preflightu.
 - `POST /api/jobs/uploads`: utworzenie `Job` z `uploadDraftId`, zaakceptowanych metadanych, covera i profili modeli.
+- `GET /api/jobs`: katalog wszystkich jobów z nazwą źródła, datami i najdalszym etapem; istniejący `Arrangement` potwierdza ukończenie `aligning` także przy niepełnym historycznym snapshocie.
+- `DELETE /api/jobs`: idempotentne usunięcie jednego lub wielu nieaktywnych jobów wraz z danymi zależnymi, wpisami kolejek Redis i artefaktami.
 - `GET /api/jobs/{jobId}`: status, metadane, błędy i aktualny etap pipeline'u.
 - `GET /api/jobs/{jobId}/arrangement`: pobranie aktualnego `Arrangement`.
 - `PUT /api/jobs/{jobId}/arrangement`: zapis aktualnego `Arrangement`.
 - `POST /api/jobs/{jobId}/arrangement/resegment`: ponowna agregacja aligned words do sentencji z nowym `sentenceGapMs`, bez uruchamiania przetwarzania audio.
 - `GET /api/jobs/{jobId}/artifacts/{assetId}`: pobranie albo streaming dozwolonego artefaktu.
 - `POST /api/jobs/{jobId}/stages/{stage}/reset`: reset wskazanego etapu i ponowne kolejkowanie zależnych etapów.
-- `POST /api/reset`: idempotentne usunięcie wskazanego joba, aktywnego draftu uploadu, rekordów zależnych i wszystkich plików bieżącego projektu.
+- `POST /api/reset`: wyczyszczenie bieżącego draftu i stanu interfejsu; jawne `deleteJob=true` dodatkowo trwale usuwa wskazany job, a `deleteJob=false` pozostawia go do późniejszego wczytania.
 
 Planowane, ale wymagane w MVP:
 
@@ -116,6 +118,7 @@ Planowane, ale wymagane w MVP:
 - Pliki audio użytkownika nie powinny trafiać do repozytorium.
 - Zapis projektu nie ustawia retencji; pola retencji pozostają puste do czasu zaprojektowania osobnego mechanizmu zarządzania jobami.
 - Zwykły eksport karaoke nie usuwa automatycznie `Job` ani artefaktów.
+- Ręczne usunięcie projektu kasuje rekord `Job` i rekordy zależne, usuwa oczekujące komunikaty ze wszystkich kolejek Redis oraz katalog joba. Worker, który był już uruchomiony, rozpoznaje brak rekordu i wykonuje końcowe sprzątanie plików.
 
 ### Warstwa trwałości
 

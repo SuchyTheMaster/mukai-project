@@ -109,6 +109,38 @@ Domyślne wartości w UI:
 - `automatic`: automatycznie uruchamia kolejne etapy z wartościami wynikającymi z presetu.
 - Starszy `configurationPreset="manual"` jest migrowany do `configurationPreset="default"` i `processingMode="manual"`; pozostałe zapisane presety bez pola `processingMode` zachowują wcześniejsze zachowanie automatyczne. Job bez obu pól przyjmuje bezpieczny tryb `manual`.
 
+## Katalog i usuwanie projektów
+
+`GET /api/jobs` zwraca lekki katalog bez dokumentów arrangementu i pełnej listy artefaktów:
+
+```json
+{
+  "jobs": [{
+    "jobId": "job_0123456789abcdef0123456789abcdef",
+    "sourceFilename": "song.flac",
+    "createdAt": "2026-07-22T10:00:00Z",
+    "updatedAt": "2026-07-22T10:05:00Z",
+    "furthestCompletedStage": "preprocessing"
+  }]
+}
+```
+
+`furthestCompletedStage` jest ostatnim etapem w kolejności pipeline'u, którego snapshot ma `status="completed"`. Istniejący `Arrangement` jest dodatkowym dowodem ukończenia etapu `aligning`, także dla starszego joba bez kompletnego snapshotu; przy braku ukończonego etapu pole ma wartość `null`.
+Katalogowe `updatedAt` oznacza najnowszą modyfikację rekordu joba, jego artefaktów, arrangementu albo wyboru eksportu, dzięki czemu edycja i zapis projektu wpływają na kolejność listy.
+
+`DELETE /api/jobs` przyjmuje znormalizowaną listę maksymalnie `500` identyfikatorów i jawny identyfikator joba aktywnego w interfejsie:
+
+```json
+{
+  "jobIds": ["job_0123456789abcdef0123456789abcdef"],
+  "activeJobId": null
+}
+```
+
+Odpowiedź zawiera faktycznie usunięte `deletedJobIds`. Powtórzenie żądania jest bezpieczne. Jeśli `activeJobId` należy do `jobIds`, cała operacja kończy się `409 active_job_delete_forbidden` bez częściowego usunięcia. Trwałe usunięcie obejmuje kaskadowe dane Postgresa, oczekujące komunikaty Redis i katalog artefaktów joba.
+
+`POST /api/reset` rozszerza istniejący kontrakt o `deleteJob: boolean` z wartością domyślną `true` dla zgodności wstecznej. Interfejs przekazuje `false` przy odłączeniu zachowanego joba i `true` przy jawnym trwałym usunięciu; draft wskazany przez `uploadDraftId` jest czyszczony w obu wariantach.
+
 `pitch`:
 
 - `fast`: szybszy profil torchcrepe `tiny`.
@@ -694,7 +726,7 @@ Szczegóły `ExportValidationIssue` odnoszącego się do sylaby mają wspólny k
 
 Zasady:
 
-- `ProjectSave` odpowiada globalnej akcji `Zapisz`, niezależnej od `ExportSelection` i eksportu karaoke.
+- `ProjectSave` odpowiada globalnej akcji `EKSPORT PROJEKTU`, niezależnej od `ExportSelection` i eksportu karaoke.
 - ZIP może opisywać fazę `draft`, `processing` albo `review` i zawsze zapisuje `appliedState` oraz `workingState`.
 - `editorWorkspace` przechowuje undo/redo, zaznaczenie, viewport, playhead, ścieżkę audio oraz `audioVolumePercent`, `midiVolumePercent`, `audioPlaybackEnabled` i `midiPlaybackEnabled`. Poziomy są liczbami całkowitymi `0`–`100`, a flagi realizują mute bez zmiany poziomu. Domyślne wartości to odpowiednio `100`, `0`, `true`, `true`. Starsze `audioPlaybackMode` jest migrowane przy odczycie: `audio` wycisza MIDI, `audio_midi` aktywuje oba źródła, a `midi` wycisza audio; poziomy migrowanych źródeł wynoszą `100`.
 - Zapis nie ustawia pól retencji ani TTL; nullable `Retention` pozostaje pustym kontraktem zgodnościowym.
@@ -750,7 +782,7 @@ W `MukaiProject` pola najwyższego poziomu `pitchFrames` i `noteEvents` przechow
 
 Import:
 
-- Import przyjmuje ZIP projektu utworzony przez globalną akcję `Zapisz`.
+- Import przyjmuje ZIP projektu utworzony przez globalną akcję `EKSPORT PROJEKTU`.
 - Import waliduje, że każdy wpis z `sourceAudio` i `artifacts` istnieje w archiwum i ma zgodny hash.
 - Import odtwarza `Job` i artefakty tak, jakby odpowiednie etapy pipeline'u były już zakończone.
 - Import nie uruchamia ponownie normalizacji audio, separacji, BPM, ASR, alignacji ani pitch detection.

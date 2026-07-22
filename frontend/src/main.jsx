@@ -7,6 +7,7 @@ import {
   Download,
   FileAudio,
   Info,
+  List,
   Lock,
   Magnet,
   Merge,
@@ -33,8 +34,9 @@ import {
   ZoomOut,
 } from "lucide-react";
 import "./styles.css";
-import { localizedLanguageOptions, translateApiError, tx, txp } from "./i18n/core.js";
+import { localeFor, localizedLanguageOptions, translateApiError, tx, txp } from "./i18n/core.js";
 import { I18nContext, I18nProvider, useI18n } from "./i18n/react.jsx";
+import { filterProjects, selectableProjectIds, sortProjects } from "./project-table.js";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const APP_STORAGE_KEY = "mukai.processingState.v1";
@@ -201,6 +203,16 @@ const STAGE_LABEL_KEYS = {
   "aligning.draft": "stage.alignment",
 };
 
+const PROJECT_STAGE_LABEL_KEYS = {
+  uploaded: "stage.source",
+  preprocessing: "stage.preprocessing",
+  detecting_bpm: "stage.bpm",
+  separating_vocals: "stage.separation",
+  transcribing: "stage.transcription",
+  detecting_pitch: "stage.pitch",
+  aligning: "project.stageAlignment",
+};
+
 const PREPROCESSING_DISPLAY_ARTIFACT_TYPES = new Set(["whisperx_input", "torchcrepe_input"]);
 
 const FLAG_LABEL_KEYS = {
@@ -312,6 +324,7 @@ function App() {
   const [stageWorkingState, setStageWorkingState] = useState(persisted.stageWorkingState ?? {});
   const [editorWorkspace, setEditorWorkspace] = useState(persisted.editorWorkspace ?? null);
   const [savingProject, setSavingProject] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [fallbackWarning, setFallbackWarning] = useState(null);
@@ -666,7 +679,7 @@ function App() {
   }
 
   async function saveProjectArchive() {
-    if (!inspection && !job) return;
+    if (!inspection && !job) return false;
     setError(null);
     setSavingProject(true);
     try {
@@ -686,11 +699,34 @@ function App() {
         result = await apiForm(`/api/projects/drafts/${inspection.uploadDraftId}/export`, form);
       }
       triggerUrlDownload(result.archive.downloadUrl, result.archive.filename);
+      return true;
     } catch (err) {
       setError(err);
+      return false;
     } finally {
       setSavingProject(false);
     }
+  }
+
+  async function loadStoredProject(jobId, { saveCurrent = false } = {}) {
+    if (saveCurrent && !(await saveProjectArchive())) return false;
+    const loaded = await apiJson(`/api/jobs/${jobId}`);
+    const resetContext = { ...latestResetContext };
+    if (showRestart) await resetApplicationData(resetContext, { deleteJob: false });
+    clearLocalProjectState();
+    setSourceUpload({ status: "completed", progressPercent: 100 });
+    setMetadata({ ...emptyMetadata, ...(loaded.metadata ?? {}) });
+    setConfigurationPreset(normalizeConfigurationPreset(loaded.configurationPreset));
+    setProcessingMode(resolveProcessingMode({}, loaded));
+    setProfiles({ ...initialUiState.profiles, ...(loaded.profiles ?? {}) });
+    setTranscriptionSettings(normalizeTranscriptionSettings(loaded.transcriptionSettings));
+    setPitchSettings({ ...defaultPitch, ...(loaded.pitchSettings ?? {}) });
+    setSyllabificationSettings({ ...defaultSyllabification, ...(loaded.syllabificationSettings ?? {}) });
+    setSyllabificationTouched(false);
+    setUseEmbeddedCover(true);
+    setJob(loaded);
+    setReviewOpen(loaded.status === "awaiting_review");
+    return true;
   }
 
   async function resetStage(stage, { forceManualMode = false } = {}) {
@@ -857,14 +893,14 @@ function App() {
     clearBrowserProjectState();
   }
 
-  async function restartProject() {
+  async function restartProject(deleteJob) {
     const resetContext = { ...latestResetContext };
     resetInProgress.current = true;
     setResetting(true);
     setRestartOpen(false);
     clearLocalProjectState();
     try {
-      await resetApplicationData(resetContext);
+      await resetApplicationData(resetContext, { deleteJob });
     } finally {
       reloadInitialApplication();
     }
@@ -884,16 +920,17 @@ function App() {
           </div>
         </section>
 
-        {showRestart && (
-          <section className="restart-section project-actions">
-            <button className="button ghost danger full restart-button" type="button" onClick={() => setRestartOpen(true)}>
-              <RotateCcw size={16} /> {tx("app.restart")}
+        <section className="project-actions">
+            <button className="button ghost full" type="button" disabled={resetting} onClick={() => setProjectsOpen(true)}>
+              <List size={18} /> <span>{tx("project.projects")}</span>
             </button>
             <button className="button secondary full" type="button" disabled={savingProject || busy || (!inspection && !job)} onClick={saveProjectArchive}>
-              <Save size={16} /> {savingProject ? tx("upload.saving") : tx("common.save")}
+              <Save size={18} /> <span>{savingProject ? tx("project.exporting") : tx("project.exportAction")}</span>
             </button>
-          </section>
-        )}
+            <button className="button ghost danger full restart-button" type="button" disabled={resetting || !showRestart} onClick={() => setRestartOpen(true)}>
+              <RotateCcw size={18} /> <span>{tx("app.restart")}</span>
+            </button>
+        </section>
 
         <section>
           <div className="section-title">{jobCreated ? tx("rail.uploadedAudio") : tx("rail.uploadAudioProject")}</div>
@@ -1012,14 +1049,22 @@ function App() {
           )}
         </aside>
       )}
+      {projectsOpen && (
+        <ProjectsModal
+          activeJobId={job?.jobId ?? null}
+          hasCurrentProject={showRestart}
+          language={language}
+          onClose={() => setProjectsOpen(false)}
+          onLoadProject={loadStoredProject}
+        />
+      )}
       {restartOpen && (
-        <ConfirmDialog
-          title={tx("app.restartTitle")}
-          message={tx("app.restartMessage")}
-          confirmLabel={tx("app.restart")}
+        <RestartProjectDialog
+          hasJob={Boolean(job)}
           busy={resetting}
           onCancel={() => setRestartOpen(false)}
-          onConfirm={restartProject}
+          onDetach={() => restartProject(false)}
+          onDelete={() => restartProject(true)}
         />
       )}
       {fallbackWarning && (
@@ -3686,6 +3731,330 @@ function ConfirmDialog({ title, message, confirmLabel, busy, nested = false, onC
   );
 }
 
+function ProjectsModal({ activeJobId, hasCurrentProject, language, onClose, onLoadProject }) {
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [operationBusy, setOperationBusy] = useState(false);
+  const [requestError, setRequestError] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
+  const [deleteTargets, setDeleteTargets] = useState(null);
+  const [loadTarget, setLoadTarget] = useState(null);
+  const [sort, setSort] = useState({ key: "updatedAt", direction: "desc" });
+  const [filters, setFilters] = useState({
+    jobId: "",
+    sourceFilename: "",
+    createdFrom: "",
+    createdTo: "",
+    updatedFrom: "",
+    updatedTo: "",
+    furthestCompletedStage: "",
+  });
+  const selectAllRef = useRef(null);
+
+  const refreshProjects = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
+    try {
+      const catalog = await apiJson("/api/jobs");
+      setProjects(catalog.jobs ?? []);
+      setSelected((current) => {
+        const existing = new Set((catalog.jobs ?? []).map((project) => project.jobId));
+        return new Set([...current].filter((jobId) => existing.has(jobId) && jobId !== activeJobId));
+      });
+      setRequestError(null);
+    } catch (err) {
+      setRequestError(err);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [activeJobId]);
+
+  useEffect(() => {
+    refreshProjects();
+    const timer = window.setInterval(() => refreshProjects({ silent: true }), 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshProjects]);
+
+  const visibleProjects = useMemo(() => {
+    const filtered = filterProjects(projects, filters, projectStageLabel);
+    return sortProjects(filtered, sort, localeFor(language));
+  }, [projects, filters, sort, language]);
+  const selectableIds = useMemo(() => selectableProjectIds(visibleProjects, activeJobId), [visibleProjects, activeJobId]);
+  const selectedVisibleCount = selectableIds.filter((jobId) => selected.has(jobId)).length;
+  const allVisibleSelected = selectableIds.length > 0 && selectedVisibleCount === selectableIds.length;
+
+  useEffect(() => {
+    const visible = new Set(selectableIds);
+    setSelected((current) => {
+      const next = new Set([...current].filter((jobId) => visible.has(jobId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [selectableIds]);
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = selectedVisibleCount > 0 && !allVisibleSelected;
+  }, [selectedVisibleCount, allVisibleSelected]);
+
+  function updateFilter(key, value) {
+    const next = { ...filters, [key]: value };
+    const visibleIds = new Set(selectableProjectIds(filterProjects(projects, next, projectStageLabel), activeJobId));
+    setFilters(next);
+    setSelected((current) => new Set([...current].filter((jobId) => visibleIds.has(jobId))));
+  }
+
+  function toggleSort(key) {
+    setSort((current) => current.key === key
+      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+      : { key, direction: "asc" });
+  }
+
+  function toggleSelectAll() {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allVisibleSelected) selectableIds.forEach((jobId) => next.delete(jobId));
+      else selectableIds.forEach((jobId) => next.add(jobId));
+      return next;
+    });
+  }
+
+  function toggleProject(jobId) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  }
+
+  async function performLoad(project, saveCurrent) {
+    setOperationBusy(true);
+    setRequestError(null);
+    try {
+      const loaded = await onLoadProject(project.jobId, { saveCurrent });
+      if (loaded) onClose();
+      else setRequestError({ userMessage: tx("project.saveBeforeLoadFailed") });
+    } catch (err) {
+      setRequestError(err);
+    } finally {
+      setOperationBusy(false);
+      setLoadTarget(null);
+    }
+  }
+
+  function requestLoad(project) {
+    if (project.jobId === activeJobId) return;
+    if (hasCurrentProject) setLoadTarget(project);
+    else performLoad(project, false);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTargets?.length) return;
+    setOperationBusy(true);
+    setRequestError(null);
+    try {
+      const response = await apiJson("/api/jobs", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobIds: deleteTargets, activeJobId }),
+      });
+      const removed = new Set(response.deletedJobIds ?? deleteTargets);
+      setProjects((current) => current.filter((project) => !removed.has(project.jobId)));
+      setSelected((current) => new Set([...current].filter((jobId) => !removed.has(jobId))));
+      setDeleteTargets(null);
+      await refreshProjects({ silent: true });
+    } catch (err) {
+      setRequestError(err);
+      setDeleteTargets(null);
+    } finally {
+      setOperationBusy(false);
+    }
+  }
+
+  function sortHeader(key, label) {
+    const active = sort.key === key;
+    return (
+      <button className="project-sort-button" type="button" onClick={() => toggleSort(key)} aria-label={tx("project.sortBy", { column: label })}>
+        <span>{label}</span><span aria-hidden="true">{active ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="projects-modal" role="dialog" aria-modal="true" aria-labelledby="projects-modal-title">
+        <div className="modal-header">
+          <h2 id="projects-modal-title">{tx("project.managerTitle")}</h2>
+          <button className="icon-button" type="button" disabled={operationBusy} aria-label={tx("common.close")} onClick={onClose}><X size={18} /></button>
+        </div>
+        {requestError && <p className="project-modal-error" role="alert">{requestError.userMessage ?? formatUiError(requestError)}</p>}
+        <div className="projects-table-scroll">
+          <table className="projects-table">
+            <thead>
+              <tr>
+                <th className="project-checkbox-column" scope="col">
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    disabled={!selectableIds.length || operationBusy}
+                    aria-label={tx("project.selectAll")}
+                    onChange={toggleSelectAll}
+                  />
+                </th>
+                <th className="project-id-column" scope="col" aria-sort={sort.key === "jobId" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <div className="project-header-cell">
+                    {sortHeader("jobId", tx("project.id"))}
+                    <input type="search" value={filters.jobId} placeholder={tx("project.filter")} aria-label={tx("project.filterColumn", { column: tx("project.id") })} onChange={(event) => updateFilter("jobId", event.target.value)} />
+                  </div>
+                </th>
+                <th scope="col" aria-sort={sort.key === "sourceFilename" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <div className="project-header-cell">
+                    {sortHeader("sourceFilename", tx("project.sourceFilename"))}
+                    <input type="search" value={filters.sourceFilename} placeholder={tx("project.filter")} aria-label={tx("project.filterColumn", { column: tx("project.sourceFilename") })} onChange={(event) => updateFilter("sourceFilename", event.target.value)} />
+                  </div>
+                </th>
+                <th className="project-date-column" scope="col" aria-sort={sort.key === "createdAt" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <div className="project-header-cell">
+                    {sortHeader("createdAt", tx("project.createdRange"))}
+                    <div className="project-date-filters">
+                      <input type="datetime-local" value={filters.createdFrom} aria-label={`${tx("project.createdAt")} (${tx("project.from")})`} onChange={(event) => updateFilter("createdFrom", event.target.value)} />
+                      <input type="datetime-local" value={filters.createdTo} aria-label={`${tx("project.createdAt")} (${tx("project.to")})`} onChange={(event) => updateFilter("createdTo", event.target.value)} />
+                    </div>
+                  </div>
+                </th>
+                <th className="project-date-column" scope="col" aria-sort={sort.key === "updatedAt" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <div className="project-header-cell">
+                    {sortHeader("updatedAt", tx("project.updatedRange"))}
+                    <div className="project-date-filters">
+                      <input type="datetime-local" value={filters.updatedFrom} aria-label={`${tx("project.updatedAt")} (${tx("project.from")})`} onChange={(event) => updateFilter("updatedFrom", event.target.value)} />
+                      <input type="datetime-local" value={filters.updatedTo} aria-label={`${tx("project.updatedAt")} (${tx("project.to")})`} onChange={(event) => updateFilter("updatedTo", event.target.value)} />
+                    </div>
+                  </div>
+                </th>
+                <th scope="col" aria-sort={sort.key === "furthestCompletedStage" ? (sort.direction === "asc" ? "ascending" : "descending") : "none"}>
+                  <div className="project-header-cell">
+                    {sortHeader("furthestCompletedStage", tx("project.furthestStage"))}
+                    <input type="search" value={filters.furthestCompletedStage} placeholder={tx("project.filter")} aria-label={tx("project.filterColumn", { column: tx("project.furthestStage") })} onChange={(event) => updateFilter("furthestCompletedStage", event.target.value)} />
+                  </div>
+                </th>
+                <th className="project-actions-column" scope="col">
+                  <div className="project-header-cell">
+                    <span className="project-actions-heading">{tx("project.actions")}</span>
+                    <button className="button ghost danger project-delete-selected" type="button" disabled={!selected.size || operationBusy} onClick={() => setDeleteTargets([...selected])}>
+                      <Trash2 size={14} /> {tx("project.deleteSelected")}
+                    </button>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleProjects.map((project) => {
+                const active = project.jobId === activeJobId;
+                return (
+                  <tr className={active ? "is-active" : ""} key={project.jobId}>
+                    <td className="project-checkbox-cell">
+                      {!active && (
+                        <input type="checkbox" checked={selected.has(project.jobId)} disabled={operationBusy} aria-label={tx("project.select", { id: project.jobId })} onChange={() => toggleProject(project.jobId)} />
+                      )}
+                    </td>
+                    <td className="project-id-cell"><code>{project.jobId}</code>{active && <span className="project-active-chip">{tx("project.active")}</span>}</td>
+                    <td>{project.sourceFilename || "—"}</td>
+                    <td>{formatProjectDate(project.createdAt, language)}</td>
+                    <td>{formatProjectDate(project.updatedAt, language)}</td>
+                    <td>{projectStageLabel(project.furthestCompletedStage) || "—"}</td>
+                    <td>
+                      {!active && (
+                        <div className="project-row-actions">
+                          <button className="button ghost danger" type="button" disabled={operationBusy} onClick={() => setDeleteTargets([project.jobId])}><Trash2 size={14} /> {tx("common.delete")}</button>
+                          <button className="button secondary" type="button" disabled={operationBusy} onClick={() => requestLoad(project)}>{tx("project.load")}</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {!loading && !visibleProjects.length && <p className="projects-empty">{projects.length ? tx("project.noMatches") : tx("project.noProjects")}</p>}
+          {loading && <p className="projects-empty">{tx("project.loading")}</p>}
+        </div>
+      </section>
+      {deleteTargets && (
+        <ConfirmDialog
+          title={tx("project.deleteTitle")}
+          message={tx("project.deleteMessage", { count: deleteTargets.length })}
+          confirmLabel={tx("common.delete")}
+          busy={operationBusy}
+          nested
+          onCancel={() => setDeleteTargets(null)}
+          onConfirm={confirmDelete}
+        />
+      )}
+      {loadTarget && (
+        <LoadProjectDialog
+          busy={operationBusy}
+          onCancel={() => setLoadTarget(null)}
+          onLoadWithoutSaving={() => performLoad(loadTarget, false)}
+          onSaveAndLoad={() => performLoad(loadTarget, true)}
+        />
+      )}
+    </div>
+  );
+}
+
+function LoadProjectDialog({ busy, onCancel, onLoadWithoutSaving, onSaveAndLoad }) {
+  return (
+    <div className="modal-backdrop modal-backdrop-nested" role="presentation">
+      <section className="confirmation-modal project-load-modal" role="dialog" aria-modal="true" aria-labelledby="project-load-title">
+        <div className="modal-header"><h2 id="project-load-title">{tx("project.loadTitle")}</h2></div>
+        <p>{tx("project.loadWarning")}</p>
+        <div className="modal-actions project-load-actions">
+          <button className="button secondary" type="button" disabled={busy} onClick={onCancel}>{tx("common.cancel")}</button>
+          <button className="button ghost danger" type="button" disabled={busy} onClick={onLoadWithoutSaving}>{tx("project.loadWithoutSaving")}</button>
+          <button className="button primary" type="button" disabled={busy} onClick={onSaveAndLoad}><Save size={16} /> {tx("project.saveAndLoad")}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function RestartProjectDialog({ hasJob, busy, onCancel, onDetach, onDelete }) {
+  if (!hasJob) {
+    return (
+      <ConfirmDialog
+        title={tx("app.restartTitle")}
+        message={tx("app.restartDraftMessage")}
+        confirmLabel={tx("app.restart")}
+        busy={busy}
+        onCancel={onCancel}
+        onConfirm={onDelete}
+      />
+    );
+  }
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirmation-modal restart-choice-modal" role="dialog" aria-modal="true" aria-labelledby="restart-choice-title">
+        <div className="modal-header"><h2 id="restart-choice-title">{tx("app.restartTitle")}</h2></div>
+        <p>{tx("app.restartChoiceMessage")}</p>
+        <div className="modal-actions restart-choice-actions">
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>{tx("common.cancel")}</button>
+          <button className="button secondary" type="button" disabled={busy} onClick={onDetach}>{tx("app.restartDetach")}</button>
+          <button className="button ghost danger" type="button" disabled={busy} onClick={onDelete}>{tx("app.restartDelete")}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function projectStageLabel(stage) {
+  return stage ? tx(PROJECT_STAGE_LABEL_KEYS[stage] ?? stage) : "";
+}
+
+function formatProjectDate(value, language) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return new Intl.DateTimeFormat(localeFor(language), { dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
 function ConfigurationFallbackModal({ processingMode, busy, onCancel, onManualConfirm, onAutomaticConfirm }) {
   const automatic = processingMode === DEFAULT_PROCESSING_MODE;
   return (
@@ -5467,7 +5836,7 @@ function clearBrowserProjectState() {
   }
 }
 
-async function resetApplicationData(context = {}) {
+async function resetApplicationData(context = {}, { deleteJob = true } = {}) {
   const stored = storedResetContext();
   const resetContext = {
     jobId: context.jobId ?? stored.jobId ?? null,
@@ -5477,19 +5846,19 @@ async function resetApplicationData(context = {}) {
 
   const cleanupTasks = [clearApplicationCaches()];
   if (resetContext.jobId || resetContext.uploadDraftId) {
-    cleanupTasks.push(requestServerReset(resetContext));
+    cleanupTasks.push(requestServerReset(resetContext, deleteJob));
   }
   await Promise.allSettled(cleanupTasks);
 }
 
-async function requestServerReset(context) {
+async function requestServerReset(context, deleteJob) {
   const controller = new AbortController();
   const timeout = window.setTimeout(() => controller.abort(), 5000);
   try {
     await fetch(`${API_BASE}/api/reset`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobId: context.jobId, uploadDraftId: context.uploadDraftId }),
+      body: JSON.stringify({ jobId: context.jobId, uploadDraftId: context.uploadDraftId, deleteJob }),
       keepalive: true,
       signal: controller.signal,
     });
@@ -5510,7 +5879,7 @@ function reloadInitialApplication() {
 
 function confirmAndResetApplication(context) {
   if (!window.confirm(tx("app.restartConfirm"))) return;
-  resetApplicationData(context).finally(reloadInitialApplication);
+  resetApplicationData(context, { deleteJob: false }).finally(reloadInitialApplication);
 }
 
 function defaultStages(sourceUpload = { status: "pending", progressPercent: 0 }) {

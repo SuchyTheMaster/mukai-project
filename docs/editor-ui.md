@@ -61,7 +61,7 @@ Warstwa wizualna całego interfejsu musi być zgodna z design systemem RetroWave
 
 ### Import Projektu
 
-- Użytkownik może wczytać ZIP projektu utworzony przez globalną akcję `Zapisz`.
+- Użytkownik może wczytać ZIP projektu utworzony przez globalną akcję `EKSPORT PROJEKTU`.
 - UI pokazuje błąd, jeśli archiwum nie ma wymaganej struktury, brakuje w nim artefaktów albo hashe nie zgadzają się z manifestem.
 - Import odtwarza stan tak, jakby pliki były już wgrane i przetworzone przez pipeline.
 - Import nie uruchamia ponownie normalizacji audio, BPM, separacji, transkrypcji, alignacji ani pitch detection.
@@ -122,7 +122,7 @@ Akcje globalne:
 - Reset aktualnego etapu pracy, jeśli status zadania pozwala na przeliczenie od tego etapu.
 - Walidacja przed eksportem.
 - Eksport po zatwierdzeniu.
-- Eksport paczki karaoke przez przycisk `Eksportuj` w prawym górnym rogu edytora.
+- Eksport paczki karaoke przez przycisk `ZAPISZ DLA GRY` w prawym górnym rogu edytora.
 - Skróty klawiaturowe nie są wymagane w MVP.
 
 ## Stany jakości
@@ -189,7 +189,7 @@ Pasek jakości wylicza te stany ponownie po każdej zmianie arrangementu i stosu
 - Nazwy plików audio są generowane z bazowej nazwy utworu jako `[FULL]`, `[INSTR]` i `[VOC]`; tagi w pliku `.txt` muszą wskazywać te same nazwy.
 - Użytkownik może wybrać cover z importu, jeśli jest dostępny, albo wgrać inny cover przed eksportem.
 - Jeśli cover nie jest ustawiony, eksport przebiega bez covera.
-- Globalna akcja `Zapisz` generuje ZIP zawierający draft albo cały `Job`, oryginalny plik, artefakty, zastosowane ustawienia, robocze formularze i stan edytora.
+- Globalna akcja `EKSPORT PROJEKTU` generuje ZIP zawierający draft albo cały `Job`, oryginalny plik, artefakty, zastosowane ustawienia, robocze formularze i stan edytora.
 - Zapis projektu nie ustawia TTL i nie uruchamia automatycznego usuwania lokalnego `Job`.
 
 ## Minimalna walidacja przed eksportem
