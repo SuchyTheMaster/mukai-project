@@ -36,6 +36,7 @@ import {
 import "./styles.css";
 import { localeFor, localizedLanguageOptions, translateApiError, tx, txp } from "./i18n/core.js";
 import { I18nContext, I18nProvider, useI18n } from "./i18n/react.jsx";
+import { evaluateSplitPoint } from "./editor-split.js";
 import { filterProjects, selectableProjectIds, sortProjects } from "./project-table.js";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
@@ -1758,11 +1759,13 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const [snapToExisting, setSnapToExisting] = useState(initialWorkspace?.snapToExisting ?? true);
   const [snapThresholdMs, setSnapThresholdMs] = useState(initialWorkspace?.snapThresholdMs ?? DEFAULT_SNAP_MS);
   const [dragGuideTime, setDragGuideTime] = useState(null);
+  const [tokenEdgeDragging, setTokenEdgeDragging] = useState(false);
   const [loopPlayback, setLoopPlayback] = useState(initialWorkspace?.loopPlayback ?? false);
   const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(initialWorkspace?.limitPlaybackToWindow ?? false);
   const [showNotes, setShowNotes] = useState(initialWorkspace?.showNotes ?? false);
   const [timelinePinningEnabled, setTimelinePinningEnabled] = useState(initialWorkspace?.timelinePinningEnabled ?? false);
   const [editorNotice, setEditorNotice] = useState(null);
+  const [splitNotice, setSplitNotice] = useState(null);
   const [validationModal, setValidationModal] = useState(null);
   const [activeQualityFlag, setActiveQualityFlag] = useState(null);
   const [past, setPast] = useState(initialWorkspace?.past ?? []);
@@ -2352,14 +2355,33 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     applyGraphWindow(previous.viewportStart, previous.zoomSec);
   }
 
-  function splitSelectedLineAtPlayhead() {
-    if (!selectedLine || !arrangement) return;
-    if (!canSplitLineAtTime(arrangement, selectedLine, currentTime)) {
-      setEditorNotice("editor.noticeSplit");
+  function splitSelectedItemAtPlayhead(item, updater) {
+    const splitPoint = evaluateSplitPoint(item, currentTime);
+    if (splitPoint.status === "outside") {
+      setSplitNotice("editor.noticeSplitPosition");
       return;
     }
-    setEditorNotice(null);
-    commit((draft) => splitLine(draft, selectedLine.lineId, currentTime));
+    if (splitPoint.status === "near_edge") {
+      setSplitNotice("editor.noticeSplitEdge");
+      return;
+    }
+    setSplitNotice(null);
+    commit((draft) => updater(draft, splitPoint.splitSec));
+  }
+
+  function splitSelectedLineAtPlayhead() {
+    if (!selectedLine) return;
+    splitSelectedItemAtPlayhead(selectedLine, (draft, splitSec) => splitLine(draft, selectedLine.lineId, splitSec));
+  }
+
+  function splitSelectedWordAtPlayhead() {
+    if (!selectedWord) return;
+    splitSelectedItemAtPlayhead(selectedWord, (draft, splitSec) => splitWord(draft, selectedWord.wordId, splitSec));
+  }
+
+  function splitSelectedTokenAtPlayhead() {
+    if (!selectedToken) return;
+    splitSelectedItemAtPlayhead(selectedToken, (draft, splitSec) => splitToken(draft, selectedToken.tokenId, splitSec));
   }
 
   function changeTrack(nextTrack) {
@@ -2451,7 +2473,9 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     let moved = false;
     let lockedDragAxis = null;
     let finalTime = graphItemStart(arrangement, kind, id);
+    const draggingTokenEdge = kind === "token" && (mode === "resize-start" || mode === "resize-end");
     selectAndSeek(kind === "note" ? "note" : "token", id, graphItemStart(arrangement, kind, id));
+    if (draggingTokenEdge) setTokenEdgeDragging(true);
     if (kind === "token") setDragGuideTime(graphGuideTime(arrangement, kind, id, mode));
 
     const onMove = (moveEvent) => {
@@ -2476,6 +2500,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", stopDrag);
       window.removeEventListener("pointercancel", stopDrag);
+      if (draggingTokenEdge) setTokenEdgeDragging(false);
       if (kind === "token") setDragGuideTime(null);
       if (moved) {
         setPast((items) => [...items.slice(-49), before]);
@@ -2557,7 +2582,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} playingTokenId={playheadContext.tokenId} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} audioVolumePercent={audioVolumePercent} midiVolumePercent={midiVolumePercent} audioPlaybackEnabled={audioPlaybackEnabled} midiPlaybackEnabled={midiPlaybackEnabled} setPlaybackVolume={setPlaybackVolume} togglePlaybackSource={togglePlaybackSource} zoomToLine={zoomToLine} zoomToToken={zoomToToken} zoomToFullTrack={zoomToFullTrack} zoomToPlayheadTarget={zoomToPlayheadTarget} restorePreviousGraphWindow={restorePreviousGraphWindow} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} playingTokenId={playheadContext.tokenId} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} cursorGuideSuppressed={tokenEdgeDragging} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} audioVolumePercent={audioVolumePercent} midiVolumePercent={midiVolumePercent} audioPlaybackEnabled={audioPlaybackEnabled} midiPlaybackEnabled={midiPlaybackEnabled} setPlaybackVolume={setPlaybackVolume} togglePlaybackSource={togglePlaybackSource} zoomToLine={zoomToLine} zoomToToken={zoomToToken} zoomToFullTrack={zoomToFullTrack} zoomToPlayheadTarget={zoomToPlayheadTarget} restorePreviousGraphWindow={restorePreviousGraphWindow} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
 
       <div className="quality-strip">
         <SyllabificationBadge
@@ -2590,8 +2615,11 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
           acceptedSongBpm={job.tempo?.acceptedSongBpm}
           commit={commit}
           onSplitLine={splitSelectedLineAtPlayhead}
+          onSplitWord={splitSelectedWordAtPlayhead}
+          onSplitToken={splitSelectedTokenAtPlayhead}
         />
       </div>
+      {splitNotice && <SplitNoticeDialog messageKey={splitNotice} onClose={() => setSplitNotice(null)} />}
       {validationModal && <ValidationModal report={validationModal} onClose={() => setValidationModal(null)} />}
     </section>
   );
@@ -2742,9 +2770,10 @@ function PlaybackVolumeControl({ source, label, volumePercent, enabled, onVolume
   );
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playingTokenId, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, audioVolumePercent, midiVolumePercent, audioPlaybackEnabled, midiPlaybackEnabled, setPlaybackVolume, togglePlaybackSource, zoomToLine, zoomToToken, zoomToFullTrack, zoomToPlayheadTarget, restorePreviousGraphWindow, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playingTokenId, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, cursorGuideSuppressed, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, audioVolumePercent, midiVolumePercent, audioPlaybackEnabled, midiPlaybackEnabled, setPlaybackVolume, togglePlaybackSource, zoomToLine, zoomToToken, zoomToFullTrack, zoomToPlayheadTarget, restorePreviousGraphWindow, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
   const timelinePanelRef = useRef(null);
   const cursorGuideRef = useRef(null);
+  const cursorInsideGraphRef = useRef(false);
   const pendingRightClickRef = useRef(null);
   const [isSticky, setIsSticky] = useState(false);
   const range = Math.max(windowEnd - windowStart, 0.001);
@@ -2804,14 +2833,21 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
   function moveCursorGuide(event) {
     const guide = cursorGuideRef.current;
     if (!guide) return;
+    cursorInsideGraphRef.current = true;
     const rect = event.currentTarget.getBoundingClientRect();
     guide.style.left = `${Math.max(0, Math.min(rect.width, event.clientX - rect.left))}px`;
-    guide.style.opacity = "1";
+    guide.style.opacity = cursorGuideSuppressed ? "0" : "1";
   }
 
   function hideCursorGuide() {
+    cursorInsideGraphRef.current = false;
     if (cursorGuideRef.current) cursorGuideRef.current.style.opacity = "0";
   }
+
+  useEffect(() => {
+    if (!cursorGuideRef.current) return;
+    cursorGuideRef.current.style.opacity = cursorGuideSuppressed || !cursorInsideGraphRef.current ? "0" : "1";
+  }, [cursorGuideSuppressed]);
 
   useEffect(() => {
     let animationFrame = null;
@@ -3236,7 +3272,7 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
   );
 }
 
-function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, selectedWord, selectedToken, acceptedSongBpm, commit, onSplitLine }) {
+function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, selectedWord, selectedToken, acceptedSongBpm, commit, onSplitLine, onSplitWord, onSplitToken }) {
   if (!selectedLine) {
     return <div className="properties-panel"><div className="panel-heading"><strong>{tx("editor.properties")}</strong></div></div>;
   }
@@ -3278,7 +3314,7 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
             <PropertyIconButton title={tx("editor.mergeLeft")} onClick={() => commit((draft) => mergeWordWithPrevious(draft, selectedWord.wordId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
             <PropertyIconButton title={tx("editor.mergeRight")} onClick={() => commit((draft) => mergeWordWithNext(draft, selectedWord.wordId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
             <PropertyIconButton title={tx("editor.addWord")} onClick={() => addWordFromPrompt(commit, selectedLine.lineId, selectedWord.wordId)}><Plus size={16} /></PropertyIconButton>
-            <PropertyIconButton title={tx("editor.splitWord")} onClick={() => commit((draft) => splitWord(draft, selectedWord.wordId))}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.splitWord")} onClick={onSplitWord}><Scissors size={16} /></PropertyIconButton>
             <PropertyIconButton title={tx("editor.deleteWord")} danger onClick={() => commit((draft) => deleteWord(draft, selectedWord.wordId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
           <QualityFlags
@@ -3306,7 +3342,7 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
             <PropertyIconButton title={tx("editor.mergeLeft")} onClick={() => commit((draft) => mergeTokenWithPrevious(draft, selectedToken.tokenId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
             <PropertyIconButton title={tx("editor.mergeRight")} onClick={() => commit((draft) => mergeTokenWithNext(draft, selectedToken.tokenId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
             <PropertyIconButton title={tx("editor.addSyllable")} onClick={() => addSyllableFromPrompt(commit, selectedToken.tokenId)}><Plus size={16} /></PropertyIconButton>
-            <PropertyIconButton title={tx("editor.splitSyllable")} onClick={() => commit((draft) => splitToken(draft, selectedToken.tokenId))}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.splitSyllable")} onClick={onSplitToken}><Scissors size={16} /></PropertyIconButton>
             <PropertyIconButton title={tx("editor.deleteSyllable")} danger onClick={() => commit((draft) => deleteToken(draft, selectedToken.tokenId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
           <QualityFlags
@@ -3316,6 +3352,22 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
         </div>
       )}
 
+    </div>
+  );
+}
+
+function SplitNoticeDialog({ messageKey, onClose }) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="confirmation-modal" role="alertdialog" aria-modal="true" aria-labelledby="split-notice-title" aria-describedby="split-notice-message">
+        <div className="modal-header">
+          <h2 id="split-notice-title">{tx("editor.splitNoticeTitle")}</h2>
+        </div>
+        <p id="split-notice-message">{tx(messageKey)}</p>
+        <div className="modal-actions">
+          <button className="button primary" type="button" autoFocus onClick={onClose}>OK</button>
+        </div>
+      </section>
     </div>
   );
 }
@@ -4663,16 +4715,7 @@ function nearestSnapDelta(candidates, value, threshold) {
 }
 
 function canSplitLineAtTime(arrangement, line, splitSec) {
-  const splitTime = Number(splitSec);
-  if (!arrangement || !line || !Number.isFinite(splitTime) || splitTime <= line.startSec || splitTime >= line.endSec) return false;
-  let hasLeft = false;
-  let hasRight = false;
-  for (const token of tokensForLine(arrangement, line)) {
-    if (token.startSec < splitTime && token.endSec > splitTime) return (token.text ?? "").length >= 2;
-    if (token.endSec <= splitTime) hasLeft = true;
-    if (token.startSec >= splitTime) hasRight = true;
-  }
-  return hasLeft && hasRight;
+  return Boolean(arrangement) && evaluateSplitPoint(line, splitSec).status === "valid";
 }
 
 function collectTimeSnapCandidates(draft, exclude = {}) {
@@ -4739,7 +4782,7 @@ function splitTokenAtTime(draft, token, splitTime) {
   const originalEnd = token.endSec;
   const nextTokenId = nextId("tok", draft.tokens);
   const [leftText, rightText] = splitTokenTextAtTime(token, splitTime);
-  const tokenSplitTime = splitTimeForRange(token.startSec, token.endSec, splitTime);
+  const tokenSplitTime = roundTime(splitTime);
   token.text = leftText || "~";
   token.endSec = tokenSplitTime;
   token.isExtension = false;
@@ -4749,7 +4792,7 @@ function splitTokenAtTime(draft, token, splitTime) {
     tokenId: nextTokenId,
     text: rightText || "~",
     startSec: tokenSplitTime,
-    endSec: Math.max(tokenSplitTime + MIN_TOKEN_NOTE_SEC, originalEnd),
+    endSec: originalEnd,
     noteId: null,
     midi: token.midi,
     isExtension: false,
@@ -4847,35 +4890,16 @@ function insertedLineTiming(previous, next) {
   return { startSec: 0, endSec: INSERTED_SENTENCE_LENGTH_SEC };
 }
 
-function splitToken(draft, tokenId) {
+function splitToken(draft, tokenId, splitSec) {
   const token = draft.tokens.find((item) => item.tokenId === tokenId);
   const line = draft.lines.find((item) => item.tokenIds.includes(tokenId));
   if (!token || !line) return draft;
+  const splitPoint = evaluateSplitPoint(token, splitSec);
+  if (splitPoint.status !== "valid") return draft;
   const tokenIndex = line.tokenIds.indexOf(tokenId);
-  const splitAt = Math.max(1, Math.ceil((token.text || "").length / 2));
-  const leftText = (token.text || "~").slice(0, splitAt) || "~";
-  const rightText = (token.text || "").slice(splitAt) || "~";
-  const midpoint = splitTimeForRange(token.startSec, token.endSec, token.startSec + (token.endSec - token.startSec) / 2);
-  const originalEnd = token.endSec;
-  token.text = leftText;
-  token.endSec = midpoint;
-  token.isExtension = false;
-  token.extendsTokenId = null;
-  const next = {
-    ...token,
-    tokenId: nextId("tok", draft.tokens),
-    text: rightText,
-    startSec: midpoint,
-    endSec: Math.max(midpoint + MIN_TOKEN_NOTE_SEC, originalEnd),
-    noteId: null,
-    midi: token.midi,
-    isExtension: false,
-    extendsTokenId: null,
-    requiresReview: true,
-    qualityFlags: [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])],
-  };
-  draft.tokens.push(next);
-  line.tokenIds.splice(tokenIndex + 1, 0, next.tokenId);
+  const nextTokenId = splitTokenAtTime(draft, token, splitPoint.splitSec);
+  if (!nextTokenId) return draft;
+  line.tokenIds.splice(tokenIndex + 1, 0, nextTokenId);
   return draft;
 }
 
@@ -5039,18 +5063,37 @@ function updateWordTiming(draft, wordId, changes) {
   return draft;
 }
 
-function splitWord(draft, wordId) {
+function splitWord(draft, wordId, splitSec) {
   const found = findWordById(draft, wordId);
-  if (!found || found.word.tokens.length < 2) return draft;
-  const splitAt = Math.ceil(found.word.tokens.length / 2);
+  if (!found) return draft;
+  const splitPoint = evaluateSplitPoint(found.word, splitSec);
+  if (splitPoint.status !== "valid") return draft;
+  const leftTokens = [];
+  const rightTokens = [];
+  for (const token of [...found.word.tokens]) {
+    if (token.endSec <= splitPoint.splitSec) {
+      leftTokens.push(token);
+    } else if (token.startSec >= splitPoint.splitSec) {
+      rightTokens.push(token);
+    } else {
+      const nextTokenId = splitTokenAtTime(draft, token, splitPoint.splitSec);
+      if (!nextTokenId) return draft;
+      const tokenIndex = found.line.tokenIds.indexOf(token.tokenId);
+      found.line.tokenIds.splice(tokenIndex + 1, 0, nextTokenId);
+      leftTokens.push(token);
+      rightTokens.push(draft.tokens.find((item) => item.tokenId === nextTokenId));
+    }
+  }
+  if (!leftTokens.length || !rightTokens.length || rightTokens.some((token) => !token)) return draft;
   const newWordId = nextId("word", draft.tokens);
-  found.word.tokens.slice(splitAt).forEach((token, index) => {
+  rightTokens.forEach((token, index) => {
     token.wordId = newWordId;
     token.syllableIndex = index;
     token.requiresReview = true;
     token.qualityFlags = [...new Set([...(token.qualityFlags ?? []), "needs_syllable_review"])];
   });
   renumberWordSyllables(draft, wordId);
+  renumberWordSyllables(draft, newWordId);
   return draft;
 }
 

@@ -91,7 +91,8 @@ Główne obszary:
 Tekst:
 
 - Edycja treści frazy.
-- Podział i scalanie fraz. Podział zaznaczonej sentencji/frazy odbywa się w miejscu playheada; jeśli playhead jest poza dzieloną sentencją, UI pokazuje komunikat `Przewiń wskaźnik do miejsca podziału wewnątrz dzielonej sentencji.` z przyciskiem `OK` i nie zmienia danych.
+- Podział zaznaczonej sentencji, wyrazu i sylaby odbywa się dokładnie w miejscu playheada. Playhead musi przecinać dzielony element i znajdować się dalej niż `20 ms` od obu jego brzegów.
+- Jeśli playhead nie przecina dzielonego elementu, UI nie zmienia danych i pokazuje popup `Wskaż na wykresie miejsce podziału tego elementu, a następnie ponownie użyj przycisku "podziel"`. Jeśli odległość od dowolnego brzegu wynosi najwyżej `20 ms`, popup ma treść `Wskazane miejsce jest za blisko brzegu dzielonego elementu`.
 - Jeśli playhead wypada w środku sylaby podczas podziału sentencji, sylaba jest rozcinana czasowo i tekstowo, a `NoteEvent` pozostaje bez zmian.
 - Podział i scalanie słów.
 - Podział i scalanie sylab.
@@ -159,7 +160,7 @@ Pasek jakości wylicza te stany ponownie po każdej zmianie arrangementu i stosu
 - Lewy dwuklik powiększający element oraz prawe kliknięcia ikon `Zoom In` i `Zoom Out` zapisują do `50` poprzednich viewportów. Prawy dwuklik na polu wykresu, rozpoznawany jako dwa kliknięcia w ciągu `300 ms` i w promieniu `8px`, przywraca ostatni z nich bez uruchamiania pojedynczej akcji prawego kliknięcia; pusty stos nie wykonuje akcji. Ciągły zoom, `Shift+scroll`, pan, scrollbar i auto-follow nie trafiają do historii.
 - Prawy klik `Zoom Out` pokazuje cały utwór od początku bez limitu `120 s`. Prawy klik `Zoom In` wybiera sylabę pod playheadem, następnie sentencję, a poza nimi nie zmienia viewportu.
 - Pojedynczy lewy klik markera sentencji na wykresie zaznacza sentencję i ustawia playhead w czasie odpowiadającym poziomej pozycji kliknięcia w jej zakresie. Klik sylaby nadal przenosi playhead na początek sylaby.
-- Nad polem wykresu kursorowi towarzyszy cienka pionowa, biała, półprzezroczysta i przerywana prowadnica przez całą wysokość wykresu. Prowadnica znika po opuszczeniu pola i nie przechwytuje zdarzeń myszy.
+- Nad polem wykresu kursorowi towarzyszy cienka pionowa, biała, półprzezroczysta i przerywana prowadnica przez całą wysokość wykresu. Prowadnica znika po opuszczeniu pola oraz podczas przeciągania początku albo końca sylaby, tak aby widoczna była wyłącznie prowadnica przeciąganej krawędzi; po zakończeniu przeciągania prowadnica kursora wraca. Nie przechwytuje zdarzeń myszy.
 - Podczas odtwarzania z włączonym przypinaniem zmiana aktywnej sentencji minimalnie przewija jej wiersz do widocznego obszaru listy z uwzględnieniem wysokości sticky wykresu. Pauza, brak aktywnej sentencji albo wyłączenie przypinania nie uruchamia przewijania.
 - Lista `Sentencje` pokazuje separator z przyciskiem `+` przed, między i po blokach; dodanie nowej sentencji odbywa się przez inline pole tekstowe, żeby nie tworzyć pustych tokenów.
 - Dwuklik na bloku sentencji w liście albo na markerze sentencji na wykresie zoomuje wykres tak, żeby objąć całą sentencję.
