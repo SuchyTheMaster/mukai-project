@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import WaveSurfer from "wavesurfer.js";
 import {
   AudioWaveform,
+  Check,
   Download,
   FileAudio,
   Info,
@@ -32,6 +33,8 @@ import {
   ZoomOut,
 } from "lucide-react";
 import "./styles.css";
+import { localizedLanguageOptions, translateApiError, tx, txp } from "./i18n/core.js";
+import { I18nContext, I18nProvider, useI18n } from "./i18n/react.jsx";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 const APP_STORAGE_KEY = "mukai.processingState.v1";
@@ -122,39 +125,22 @@ const defaultSyllabification = {
   method: "pyphen",
 };
 
-const SYLLABIFICATION_OPTIONS = [
-  ["kokosznicka", "Kokosznicka"],
-  ["pyphen", "Pyphen"],
-  ["heuristic", "Heurystyka"],
-  ["none", "Bez podziału"],
-];
+function syllabificationOptions() {
+  return [["kokosznicka", "Kokosznicka"], ["pyphen", "Pyphen"], ["heuristic", tx("option.heuristic")], ["none", tx("option.noSplit")]];
+}
 
-const SYLLABIFICATION_SELECT_LABELS = Object.fromEntries(SYLLABIFICATION_OPTIONS);
-const SYLLABIFICATION_BADGE_LABELS = {
-  kokosznicka: "Kokosznicka",
-  pyphen: "Pyphen",
-  heuristic: "Heurystyka",
-  none: "Bez podziału",
-};
+function transcriptionPositioningOptions() {
+  return [["words_and_syllables", tx("option.wordsAndSyllables")], ["words_only", tx("option.wordsOnly")]];
+}
 
-const TRANSCRIPTION_POSITIONING_OPTIONS = [
-  ["words_and_syllables", "słowa i sylaby"],
-  ["words_only", "tylko słowa"],
-];
-
-const TRANSCRIPTION_POSITIONING_LABELS = Object.fromEntries(TRANSCRIPTION_POSITIONING_OPTIONS);
-
-const PITCH_PROFILE_OPTIONS = [
-  ["fast", "Szybki"],
-  ["default", "Dokładny"],
-];
-
-const PITCH_PROFILE_LABELS = Object.fromEntries(PITCH_PROFILE_OPTIONS);
+function pitchProfileOptions() {
+  return [["fast", tx("option.fast")], ["default", tx("option.accurate")]];
+}
 
 const DEFAULT_CONFIGURATION_PRESET = "default";
 const DEFAULT_CONFIGURATION_PRESET_SUMMARY = {
   presetId: DEFAULT_CONFIGURATION_PRESET,
-  name: "Domyślna",
+  name: "default",
   presetType: "predefined",
   canDelete: false,
   canOverwrite: false,
@@ -162,139 +148,37 @@ const DEFAULT_CONFIGURATION_PRESET_SUMMARY = {
 };
 const DEFAULT_PROCESSING_MODE = "automatic";
 const MANUAL_PROCESSING_MODE = "manual";
-const PROCESSING_MODE_OPTIONS = [
-  [MANUAL_PROCESSING_MODE, "Ręczny"],
-  [DEFAULT_PROCESSING_MODE, "Automatyczny"],
-];
-const PROCESSING_MODE_LABELS = Object.fromEntries(PROCESSING_MODE_OPTIONS);
+function processingModeOptions() {
+  return [[MANUAL_PROCESSING_MODE, tx("mode.manual")], [DEFAULT_PROCESSING_MODE, tx("mode.automatic")]];
+}
 
-const WHISPER_LANGUAGE_OPTIONS = [
-  ["", "Auto"],
-  ...[
-    ["af", "Afrikaans"],
-    ["sq", "Albański"],
-    ["am", "Amharski"],
-    ["en", "Angielski"],
-    ["ar", "Arabski"],
-    ["as", "Asamski"],
-    ["az", "Azerbejdżański"],
-    ["eu", "Baskijski"],
-    ["bn", "Bengalski"],
-    ["be", "Białoruski"],
-    ["bs", "Bośniacki"],
-    ["br", "Bretoński"],
-    ["bg", "Bułgarski"],
-    ["yue", "Cantoński"],
-    ["zh", "Chiński"],
-    ["hr", "Chorwacki"],
-    ["cs", "Czeski"],
-    ["da", "Duński"],
-    ["et", "Estoński"],
-    ["fo", "Farerski"],
-    ["fi", "Fiński"],
-    ["fr", "Francuski"],
-    ["gl", "Galicyjski"],
-    ["ka", "Gruziński"],
-    ["el", "Grecki"],
-    ["gu", "Gudżarati"],
-    ["ht", "Haitański kreolski"],
-    ["ha", "Hausa"],
-    ["haw", "Hawajski"],
-    ["he", "Hebrajski"],
-    ["hi", "Hindi"],
-    ["es", "Hiszpański"],
-    ["id", "Indonezyjski"],
-    ["is", "Islandzki"],
-    ["ja", "Japoński"],
-    ["jw", "Jawajski"],
-    ["yi", "Jidysz"],
-    ["kn", "Kannada"],
-    ["ca", "Kataloński"],
-    ["kk", "Kazachski"],
-    ["km", "Khmerski"],
-    ["ko", "Koreański"],
-    ["lo", "Laotański"],
-    ["ln", "Lingala"],
-    ["lt", "Litewski"],
-    ["lb", "Luksemburski"],
-    ["la", "Łaciński"],
-    ["lv", "Łotewski"],
-    ["mk", "Macedoński"],
-    ["ml", "Malajalam"],
-    ["ms", "Malajski"],
-    ["mg", "Malgaski"],
-    ["mt", "Maltański"],
-    ["mi", "Maoryski"],
-    ["mr", "Marathi"],
-    ["mn", "Mongolski"],
-    ["my", "Myanmar"],
-    ["nl", "Niderlandzki"],
-    ["de", "Niemiecki"],
-    ["no", "Norweski"],
-    ["nn", "Norweski nynorsk"],
-    ["oc", "Oksytański"],
-    ["hy", "Ormiański"],
-    ["ps", "Paszto"],
-    ["fa", "Perski"],
-    ["pl", "Polski"],
-    ["pt", "Portugalski"],
-    ["pa", "Pendżabski"],
-    ["ru", "Rosyjski"],
-    ["ro", "Rumuński"],
-    ["sa", "Sanskryt"],
-    ["sr", "Serbski"],
-    ["sd", "Sindhi"],
-    ["si", "Syngaleski"],
-    ["sk", "Słowacki"],
-    ["sl", "Słoweński"],
-    ["so", "Somalijski"],
-    ["sw", "Suahili"],
-    ["su", "Sundajski"],
-    ["sn", "Shona"],
-    ["sv", "Szwedzki"],
-    ["tg", "Tadżycki"],
-    ["tl", "Tagalski"],
-    ["th", "Tajski"],
-    ["ta", "Tamilski"],
-    ["tt", "Tatarski"],
-    ["te", "Telugu"],
-    ["bo", "Tybetański"],
-    ["tk", "Turkmeński"],
-    ["tr", "Turecki"],
-    ["uk", "Ukraiński"],
-    ["ur", "Urdu"],
-    ["uz", "Uzbecki"],
-    ["vi", "Wietnamski"],
-    ["hu", "Węgierski"],
-    ["it", "Włoski"],
-    ["cy", "Walijski"],
-    ["yo", "Joruba"],
-    ["ne", "Nepalski"],
-    ["ba", "Baszkirski"],
-  ].sort((left, right) => left[1].localeCompare(right[1], "pl")),
-];
+const WHISPER_LANGUAGE_CODES = ["af", "sq", "am", "en", "ar", "as", "az", "eu", "bn", "be", "bs", "br", "bg", "yue", "zh", "hr", "cs", "da", "et", "fo", "fi", "fr", "gl", "ka", "el", "gu", "ht", "ha", "haw", "he", "hi", "es", "id", "is", "ja", "jw", "yi", "kn", "ca", "kk", "km", "ko", "lo", "ln", "lt", "lb", "la", "lv", "mk", "ml", "ms", "mg", "mt", "mi", "mr", "mn", "my", "nl", "de", "no", "nn", "oc", "hy", "ps", "fa", "pl", "pt", "pa", "ru", "ro", "sa", "sr", "sd", "si", "sk", "sl", "so", "sw", "su", "sn", "sv", "tg", "tl", "th", "ta", "tt", "te", "bo", "tk", "tr", "uk", "ur", "uz", "vi", "hu", "it", "cy", "yo", "ne", "ba"];
+
+function whisperLanguageOptions() {
+  return localizedLanguageOptions(["", ...WHISPER_LANGUAGE_CODES]);
+}
 
 const TRANSCRIPTION_SETTING_FIELDS = [
-  ["sileroThreshold", { methods: ["silero"], helper: "threshold", label: "Czułość wykrywania Silero", step: "0.01", tooltip: "Próg rozpoczęcia wokalu w Silero. Niższa wartość lepiej zachowuje cichy, oddechowy i śpiewany wokal, ale może przepuścić więcej szumu lub przesłuchów instrumentów." }],
-  ["sileroNegThreshold", { methods: ["silero"], helper: "neg_threshold", label: "Próg zakończenia Silero", step: "0.01", tooltip: "Próg, poniżej którego Silero zaczyna uznawać fragment za ciszę. Powinien być niższy od progu rozpoczęcia. Niższa wartość lepiej zachowuje wybrzmienia końcówek słów." }],
-  ["sileroMinSpeechDurationMs", { methods: ["silero"], helper: "min_speech_duration_ms", label: "Najkrótszy fragment wokalu (ms)", step: "10", tooltip: "Fragmenty wykryte jako wokal, które są krótsze od tej wartości, zostaną odrzucone. Niska wartość pomaga zachować szybkie sylaby, ale może dodać krótkie zakłócenia." }],
-  ["sileroMinSilenceDurationMs", { methods: ["silero"], helper: "min_silence_duration_ms", label: "Cisza kończąca fragment (ms)", step: "10", tooltip: "Minimalny czas ciszy potrzebny Silero do zakończenia aktywnego fragmentu. Większa wartość scala wokal przez krótkie pauzy, a mniejsza częściej dzieli frazy." }],
-  ["sileroSpeechPadMs", { methods: ["silero"], helper: "speech_pad_ms", label: "Margines wokalu Silero (ms)", step: "10", tooltip: "Dodaje zapas audio przed i po każdym fragmencie wykrytym przez Silero. Chroni miękkie początki i wybrzmienia, ale zbyt duża wartość może dołączyć przesłuchy lub ciszę." }],
-  ["pyannoteVadOnset", { methods: ["pyannote"], helper: "vad_onset", label: "Próg startu pyannote", step: "0.01", tooltip: "Próg rozpoczęcia wokalu w pyannote. Niższa wartość zwiększa kompletność cichego śpiewu, ale może skierować do transkrypcji więcej zakłóceń." }],
-  ["pyannoteVadOffset", { methods: ["pyannote"], helper: "vad_offset", label: "Próg końca pyannote", step: "0.01", tooltip: "Próg zakończenia wokalu w pyannote. Powinien być niższy od progu startu. Niższa wartość dłużej utrzymuje aktywną frazę i lepiej zachowuje wybrzmienia." }],
-  ["vadChunkSizeSec", { helper: "chunk_size", label: "Okno VAD/ASR (s)", step: "1", tooltip: "Maksymalna długość fragmentu przekazywanego do Whispera po wykrywaniu i łączeniu wokalu. Wartość 30 s odpowiada oknu kontekstowemu modelu i jest zalecana dla obu VAD." }],
-  ["sentenceGapMs", { label: "Ms między sentencjami", step: "1", nullable: true, placeholder: "auto", tooltip: "Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Większa wartość łączy więcej słów w dłuższe linie karaoke. Mniejsza wartość częściej rozdziela tekst na krótsze linie." }],
-  ["sentencePaddingMs", { helper: "sentencePaddingMs", label: "Padding frazy (ms)", step: "10", tooltip: "Dodatkowy margines czasu finalnej frazy karaoke, stosowany po alignacji słów. Nie wpływa na samą detekcję VAD; zabezpiecza granice frazy bez nakładania jej na sąsiadów." }],
+  ["sileroThreshold", { methods: ["silero"], helper: "threshold", labelKey: "setting.sileroThreshold", step: "0.01", tooltipKey: "setting.sileroThreshold.help" }],
+  ["sileroNegThreshold", { methods: ["silero"], helper: "neg_threshold", labelKey: "setting.sileroNegThreshold", step: "0.01", tooltipKey: "setting.sileroNegThreshold.help" }],
+  ["sileroMinSpeechDurationMs", { methods: ["silero"], helper: "min_speech_duration_ms", labelKey: "setting.minSpeech", step: "10", tooltipKey: "setting.minSpeech.help" }],
+  ["sileroMinSilenceDurationMs", { methods: ["silero"], helper: "min_silence_duration_ms", labelKey: "setting.minSilence", step: "10", tooltipKey: "setting.minSilence.help" }],
+  ["sileroSpeechPadMs", { methods: ["silero"], helper: "speech_pad_ms", labelKey: "setting.speechPad", step: "10", tooltipKey: "setting.speechPad.help" }],
+  ["pyannoteVadOnset", { methods: ["pyannote"], helper: "vad_onset", labelKey: "setting.pyannoteOnset", step: "0.01", tooltipKey: "setting.pyannoteOnset.help" }],
+  ["pyannoteVadOffset", { methods: ["pyannote"], helper: "vad_offset", labelKey: "setting.pyannoteOffset", step: "0.01", tooltipKey: "setting.pyannoteOffset.help" }],
+  ["vadChunkSizeSec", { helper: "chunk_size", labelKey: "setting.vadWindow", step: "1", tooltipKey: "setting.vadWindow.help" }],
+  ["sentenceGapMs", { labelKey: "setting.sentenceGap", step: "1", nullable: true, placeholder: "auto", tooltipKey: "setting.sentenceGap.help" }],
+  ["sentencePaddingMs", { helper: "sentencePaddingMs", labelKey: "setting.sentencePadding", step: "10", tooltipKey: "setting.sentencePadding.help" }],
 ];
 
 const PITCH_SETTING_FIELDS = [
-  ["silenceThresholdDb", { label: "Czułość na cichy wokal (dB)", step: "1", tooltip: "Próg głośności używany przy analizie tonu. Większa wartość ignoruje więcej cichych fragmentów i szumu, ale może pominąć delikatny wokal. Mniejsza wartość analizuje cichsze dźwięki, ale częściej łapie tło jako wokal." }],
-  ["periodicityThreshold", { label: "Minimalna pewność tonu (0-1)", step: "0.01", tooltip: "Minimalna pewność, że wykryty dźwięk ma stabilną wysokość. Większa wartość zostawia tylko pewniejsze nuty, ale może tworzyć braki. Mniejsza wartość wykrywa więcej nut, ale częściej przepuszcza błędne wysokości." }],
-  ["frameStepMs", { label: "Dokładność czasu analizy (ms)", step: "1", tooltip: "Odstęp między kolejnymi pomiarami tonu. Większa wartość jest szybsza, ale mniej dokładna czasowo. Mniejsza wartość daje gęstszy pomiar i lepsze granice nut, kosztem dłuższej analizy." }],
-  ["minNoteLengthMs", { label: "Najkrótsza nuta karaoke (ms)", step: "1", tooltip: "Minimalny czas trwania nuty w szkicu karaoke. Większa wartość usuwa krótkie ozdobniki i przypadkowe skoki, ale może zgubić szybkie sylaby. Mniejsza wartość zachowuje krótkie nuty, ale wynik może być bardziej poszarpany." }],
-  ["mergeGapMs", { label: "Scalanie krótkich przerw (ms)", step: "1", tooltip: "Maksymalna przerwa, którą można złączyć między sąsiednimi nutami. Większa wartość wygładza linię melodyczną, ale może zlewać oddzielne sylaby. Mniejsza wartość zostawia więcej przerw, ale może rozbić jedną nutę na kilka części." }],
-  ["checkNoteLongerThan", { label: "WERYFIKUJ SYLABY DŁUŻSZE NIŻ (MS)", step: "1", tooltip: "Minimalna długość sylab dla których weryfikowana jest długość, na podstawie dźwięku i ciszy" }],
-  ["silenceTresholdForNoteChecking", { label: "Próg ciszy do weryfikacji (dB)", step: "1", max: "0", tooltip: "Głośność poniżej której dźwięk będzie uznawany za cisze i dla której będę przycinane nuty dłuższe niże ustawiono w checkNoteLongerThan" }],
+  ["silenceThresholdDb", { labelKey: "setting.silenceThreshold", step: "1", tooltipKey: "setting.silenceThreshold.help" }],
+  ["periodicityThreshold", { labelKey: "setting.periodicity", step: "0.01", tooltipKey: "setting.periodicity.help" }],
+  ["frameStepMs", { labelKey: "setting.frameStep", step: "1", tooltipKey: "setting.frameStep.help" }],
+  ["minNoteLengthMs", { labelKey: "setting.minNote", step: "1", tooltipKey: "setting.minNote.help" }],
+  ["mergeGapMs", { labelKey: "setting.mergeGap", step: "1", tooltipKey: "setting.mergeGap.help" }],
+  ["checkNoteLongerThan", { labelKey: "setting.checkLong", step: "1", tooltipKey: "setting.checkLong.help" }],
+  ["silenceTresholdForNoteChecking", { labelKey: "setting.checkSilence", step: "1", max: "0", tooltipKey: "setting.checkSilence.help" }],
 ];
 
 const PIPELINE_ORDER = [
@@ -307,42 +191,38 @@ const PIPELINE_ORDER = [
   "aligning.draft",
 ];
 
-const STAGE_LABELS = {
-  "uploaded.source": "Źródło",
-  "preprocessing.ffmpeg": "Preprocessing audio",
-  "detecting_bpm.essentia": "Rozpoznawanie BPM",
-  "separating_vocals.demucs": "Separacja wokalu",
-  "transcribing.whisperx": "Transkrypcja",
-  "detecting_pitch.pitch_detection": "Detekcja tonów",
-  "aligning.draft": "Wstępne dopasowanie",
+const STAGE_LABEL_KEYS = {
+  "uploaded.source": "stage.source",
+  "preprocessing.ffmpeg": "stage.preprocessing",
+  "detecting_bpm.essentia": "stage.bpm",
+  "separating_vocals.demucs": "stage.separation",
+  "transcribing.whisperx": "stage.transcription",
+  "detecting_pitch.pitch_detection": "stage.pitch",
+  "aligning.draft": "stage.alignment",
 };
 
 const PREPROCESSING_DISPLAY_ARTIFACT_TYPES = new Set(["whisperx_input", "torchcrepe_input"]);
 
-const FLAG_LABELS = {
-  uncertain_pitch: "Niska pewność tonu",
-  missing_note: "Brak nuty dla tekstu",
-  uncertain_text: "Niska pewność tekstu",
-  needs_syllable_review: "Sylaby do sprawdzenia",
-  contains_review_items: "Elementy do recenzji",
-  too_short_note: "Zbyt krótka nuta",
-  overlapping_line: "Nachodzące sentencje",
+const FLAG_LABEL_KEYS = {
+  uncertain_pitch: "quality.uncertainPitch",
+  missing_note: "quality.missingNote",
+  uncertain_text: "quality.uncertainText",
+  needs_syllable_review: "quality.syllablesReview",
+  contains_review_items: "quality.reviewItems",
+  too_short_note: "quality.tooShort",
+  overlapping_line: "quality.overlap",
 };
 
-const NOTE_TYPES = [
-  ["normal", "Normal"],
-  ["golden", "Golden"],
-  ["freestyle", "Freestyle"],
-  ["rap", "Rap"],
-  ["rap_golden", "Rap golden"],
-];
+function noteTypeOptions() {
+  return [["normal", tx("note.normal")], ["golden", tx("note.golden")], ["freestyle", tx("note.freestyle")], ["rap", tx("note.rap")], ["rap_golden", tx("note.rapGolden")]];
+}
 
-const MODEL_TOOLTIPS = {
-  separation: "Separacja rozdziela utwór na wokal i instrumental. htdemucs_ft jest dokładniejszy, a htdemucs szybszy.",
-  vad: "Wykrywanie mowy wskazuje fragmenty z wokalem przed transkrypcją. Ma wpływ na pominięcie ciszy, oddechów i nieśpiewanych fragmentów.",
-  transcription: "Transkrypcja zamienia wokal na tekst. large-v3 jest dokładniejszy, a large-v3-turbo szybszy.",
-  positioning: "Pozycjonowanie wybiera szczegółowość danych czasowych z WhisperX. Opcja słowa i sylaby włącza return_char_alignments, więc sylaby mogą dostać dokładniejsze początki, ale przetwarzanie jest cięższe. Opcja tylko słowa jest prostsza i szybsza, ale daje mniej precyzji dla sylab.",
-  syllabification: 'Dla polskich piosenek zalecany sylabizator to "Kokosznicka", ale czasami może lepiej sprawdzić się "Pyphen". Dla zagranicznych tylko "Pyphen". Jeżeli jakiś język nie jest obsługiwany przez wybraną metodę, to zostanie użyta metoda heurystyczna. Jeżeli całe słowa piosenki są śpiewane w jednym tonie, to lepiej sprawdzi się tryb bez podziału na sylaby.',
+const MODEL_TOOLTIP_KEYS = {
+  separation: "model.separation.help",
+  vad: "model.vad.help",
+  transcription: "model.transcription.help",
+  positioning: "model.positioning.help",
+  syllabification: "model.syllabification.help",
 };
 
 const initialUiState = {
@@ -380,25 +260,28 @@ class AppErrorBoundary extends React.Component {
     if (!this.state.failed) return this.props.children;
     const canReset = latestResetContext.hasState || hasStoredProjectState();
     return (
-      <div className="reset-fallback-shell">
-        <div className="reset-fallback-panel">
-          <div className="brand">
-            <img src="/brand/mukai-logo.png" alt="MUKAI - Music to Karaoke AI Creator" />
-            <div className="brand-copy"><strong>MUKAI</strong><span>Music to Karaoke AI Creator</span></div>
+      <I18nContext.Consumer>{() => (
+        <div className="reset-fallback-shell">
+          <div className="reset-fallback-panel">
+            <div className="brand">
+              <img src="/brand/mukai-logo.png" alt="MUKAI - Music to Karaoke AI Creator" />
+              <div className="brand-copy"><strong>MUKAI</strong><span>{tx("brand.tagline")}</span></div>
+            </div>
+            <p>{tx("app.javascriptError")}</p>
+            {canReset && (
+              <button className="button ghost danger full" type="button" onClick={() => confirmAndResetApplication(latestResetContext)}>
+                <RotateCcw size={16} /> {tx("app.restart")}
+              </button>
+            )}
           </div>
-          <p>Interfejs napotkał błąd JavaScript.</p>
-          {canReset && (
-            <button className="button ghost danger full" type="button" onClick={() => confirmAndResetApplication(latestResetContext)}>
-              <RotateCcw size={16} /> Od nowa
-            </button>
-          )}
         </div>
-      </div>
+      )}</I18nContext.Consumer>
     );
   }
 }
 
 function App() {
+  const { language } = useI18n();
   const persisted = useMemo(readPersistedUiState, []);
   const [audioFile, setAudioFile] = useState(null);
   const [sourceDragActive, setSourceDragActive] = useState(false);
@@ -452,7 +335,7 @@ function App() {
         if (!ignore) setConfigurationPresets(catalog.presets?.length ? catalog.presets : [DEFAULT_CONFIGURATION_PRESET_SUMMARY]);
       })
       .catch((err) => {
-        if (!ignore) setError(err.message);
+        if (!ignore) setError(err);
       });
     return () => { ignore = true; };
   }, []);
@@ -465,7 +348,7 @@ function App() {
         if (!ignore) setJob(refreshed);
       })
       .catch((err) => {
-        if (!ignore) setError(err.message);
+        if (!ignore) setError(err);
       });
     return () => {
       ignore = true;
@@ -509,7 +392,7 @@ function App() {
         if (!ignore) setArrangement(toEditorArrangement(next));
       })
       .catch((err) => {
-        if (!ignore) setError(err.message);
+        if (!ignore) setError(err);
       });
     return () => {
       ignore = true;
@@ -614,7 +497,7 @@ function App() {
     } catch (err) {
       setAudioFile(null);
       setSourceUpload({ status: "pending", progressPercent: 0 });
-      setError(err.message);
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -652,7 +535,7 @@ function App() {
     } catch (err) {
       setAudioFile(null);
       setSourceUpload({ status: "pending", progressPercent: 0 });
-      setError(err.message);
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -694,7 +577,7 @@ function App() {
       if (err.code === "configuration_preset_fallback_required") {
         setFallbackWarning({ missingFields: err.details?.missingFields ?? [] });
       } else {
-        setError(err.message);
+      setError(err);
       }
     } finally {
       setBusy(false);
@@ -711,7 +594,7 @@ function App() {
       await refreshConfigurationPresets();
       setPresetDeleteTarget(null);
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setPresetSaving(false);
     }
@@ -734,7 +617,7 @@ function App() {
       if (err.code === "custom_preset_name_exists") {
         setPresetNameCollision({ presetId: err.details?.presetId, name: err.details?.name ?? name });
       } else {
-        setError(err.message);
+      setError(err);
       }
       return false;
     } finally {
@@ -757,7 +640,7 @@ function App() {
       setPresetSaveOpen(false);
       return true;
     } catch (err) {
-      setError(err.message);
+      setError(err);
       return false;
     } finally {
       setPresetSaving(false);
@@ -804,7 +687,7 @@ function App() {
       }
       triggerUrlDownload(result.archive.downloadUrl, result.archive.filename);
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setSavingProject(false);
     }
@@ -829,7 +712,7 @@ function App() {
         setStageWorkingState((current) => ({ ...current, [stage]: {}, __activeStage: null }));
       }
     } catch (err) {
-      setError(err.message);
+      setError(err);
     }
   }
 
@@ -847,7 +730,7 @@ function App() {
       setReviewOpen(false);
       setJob(await apiJson(`/api/jobs/${job.jobId}`));
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setBusy(false);
     }
@@ -868,7 +751,7 @@ function App() {
       setJob(result.job ?? result);
       return true;
     } catch (err) {
-      setError(err.message);
+      setError(err);
       return false;
     } finally {
       setBusy(false);
@@ -886,7 +769,7 @@ function App() {
       setJob(result.job ?? result);
       return true;
     } catch (err) {
-      setError(err.message);
+      setError(err);
       return false;
     } finally {
       setBusy(false);
@@ -907,7 +790,7 @@ function App() {
       setArrangement(toEditorArrangement(saved));
       return saved;
     } catch (err) {
-      setError(err.message);
+      setError(err);
       throw err;
     } finally {
       setSaving(false);
@@ -933,7 +816,7 @@ function App() {
       });
       setArrangement(toEditorArrangement(saved));
     } catch (err) {
-      setError(err.message);
+      setError(err);
     } finally {
       setSaving(false);
     }
@@ -988,14 +871,15 @@ function App() {
   }
 
   return (
-    <div className={`app-shell ${isReview ? "review-expanded" : ""}`}>
+    <div className={`app-shell ${isReview ? "review-expanded" : ""}`} data-interface-language={language}>
       <aside className="left-rail panel">
+        <LanguageSwitcher />
         <section className="brand-section">
           <div className="brand">
             <img src="/brand/mukai-logo.png" alt="MUKAI - Music to Karaoke AI Creator" />
             <div className="brand-copy">
               <strong>MUKAI</strong>
-              <span>Music to Karaoke AI Creator</span>
+              <span>{tx("brand.tagline")}</span>
             </div>
           </div>
         </section>
@@ -1003,16 +887,16 @@ function App() {
         {showRestart && (
           <section className="restart-section project-actions">
             <button className="button ghost danger full restart-button" type="button" onClick={() => setRestartOpen(true)}>
-              <RotateCcw size={16} /> Od nowa
+              <RotateCcw size={16} /> {tx("app.restart")}
             </button>
             <button className="button secondary full" type="button" disabled={savingProject || busy || (!inspection && !job)} onClick={saveProjectArchive}>
-              <Save size={16} /> {savingProject ? "Zapisywanie..." : "Zapisz"}
+              <Save size={16} /> {savingProject ? tx("upload.saving") : tx("common.save")}
             </button>
           </section>
         )}
 
         <section>
-          <div className="section-title">{jobCreated ? "WGRANE AUDIO" : "UPLOAD AUDIO/PROJEKTU"}</div>
+          <div className="section-title">{jobCreated ? tx("rail.uploadedAudio") : tx("rail.uploadAudioProject")}</div>
           {!jobCreated && (
             <label
               className={`dropzone ${sourceDragActive ? "is-dragging" : ""}`}
@@ -1022,13 +906,13 @@ function App() {
               onDrop={handleSourceDrop}
             >
               <UploadCloud size={22} />
-              <span aria-live="polite">{sourceDragActive ? "Upuść plik audio lub ZIP z projektem" : audioFile?.name ?? inspection?.originalFilename ?? "Wybierz WAV, MP3, MP4, M4A, OGG, FLAC lub wgraj ZIP z projektem"}</span>
+              <span aria-live="polite">{sourceDragActive ? tx("upload.dropActive") : audioFile?.name ?? inspection?.originalFilename ?? tx("upload.drop")}</span>
               <input type="file" accept=".wav,.mp3,.mp4,.m4a,.ogg,.flac,.zip,audio/*,video/mp4,application/zip" onChange={(event) => event.target.files?.[0] && selectSourceFile(event.target.files[0])} />
             </label>
           )}
           {(inspection || job?.audio) && <AudioSummary audio={inspection?.audio ?? job.audio} filename={inspection?.originalFilename ?? job?.artifacts?.find((asset) => asset.type === "source_audio")?.originalFilename} />}
           {jobCreated ? (
-            <div className="cover-box" aria-label="Podgląd okładki">
+            <div className="cover-box" aria-label={tx("upload.coverPreview")}>
               {coverPreview ? <img src={coverPreview} alt="" /> : <CoverPlaceholder />}
             </div>
           ) : (
@@ -1048,10 +932,10 @@ function App() {
               />
               <div className="cover-actions">
                 <button className="button secondary" type="button" disabled={!inspection} onClick={() => coverInputRef.current?.click()}>
-                  <UploadCloud size={16} /> Z dysku
+                  <UploadCloud size={16} /> {tx("upload.fromDisk")}
                 </button>
                 <button className="button ghost" type="button" disabled={!inspection} onClick={resetCover}>
-                  <RotateCcw size={16} /> Z tagów
+                  <RotateCcw size={16} /> {tx("upload.fromTags")}
                 </button>
               </div>
             </>
@@ -1059,13 +943,13 @@ function App() {
         </section>
 
         {job?.metadata && <section>
-          <div className="section-title">Ustawienia zadania</div>
+          <div className="section-title">{tx("rail.jobSettings")}</div>
           {job?.metadata && <MetadataSummary job={job} />}
         </section>}
       </aside>
 
       <main className="workspace">
-        {error && <div className="error-banner">{error}</div>}
+        {error && <div className="error-banner">{formatUiError(error)}</div>}
         {isReview ? (
           <ReviewEditor
             job={job}
@@ -1108,21 +992,21 @@ function App() {
       {!isReview && (
         <aside className="right-rail panel">
           <section>
-            <div className="section-title">Aktualny etap</div>
+            <div className="section-title">{tx("rail.currentStage")}</div>
             <div className="current-stage">
-              <strong>{job ? job.status : "Brak zadania"}</strong>
-              <small>{activeStage ? stageLabel(activeStage) : "Najpierw wybierz plik audio"}</small>
+              <strong>{job ? statusLabel(job.status) : tx("rail.noJob")}</strong>
+              <small>{activeStage ? stageLabel(activeStage) : tx("rail.chooseAudioFirst")}</small>
             </div>
           </section>
           <section>
-            <div className="section-title">Pipeline</div>
+            <div className="section-title">{tx("rail.pipeline")}</div>
             <StageRail job={job} sourceUpload={sourceUpload} />
           </section>
           {job?.status === "awaiting_review" && (
             <section className="review-entry-section">
-              <div className="section-title">Edycja dopasowania</div>
+              <div className="section-title">{tx("rail.editAlignment")}</div>
               <button className="button primary full review-entry-button" type="button" onClick={() => setReviewOpen(true)}>
-                <Music2 size={16} /> Przejdź do edycji
+                <Music2 size={16} /> {tx("rail.openEditor")}
               </button>
             </section>
           )}
@@ -1130,9 +1014,9 @@ function App() {
       )}
       {restartOpen && (
         <ConfirmDialog
-          title="Zacząć od nowa?"
-          message="Ta operacja wyczyści lokalny stan przeglądarki oraz artefakty bieżącego zadania i wróci do pierwszego kroku."
-          confirmLabel="Od nowa"
+          title={tx("app.restartTitle")}
+          message={tx("app.restartMessage")}
+          confirmLabel={tx("app.restart")}
           busy={resetting}
           onCancel={() => setRestartOpen(false)}
           onConfirm={restartProject}
@@ -1149,9 +1033,9 @@ function App() {
       )}
       {presetDeleteTarget && (
         <ConfirmDialog
-          title="Usunąć preset?"
-          message={`Preset „${presetDeleteTarget.name}” zostanie trwale usunięty.`}
-          confirmLabel="Usuń preset"
+          title={tx("preset.deleteTitle")}
+          message={tx("preset.deleteMessage", { name: presetDeleteTarget.name })}
+          confirmLabel={tx("preset.delete")}
           busy={presetSaving}
           nested={presetSaveOpen}
           onCancel={() => setPresetDeleteTarget(null)}
@@ -1180,12 +1064,107 @@ function App() {
   );
 }
 
+function LanguageSwitcher() {
+  const { language, languages, setLanguage } = useI18n();
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(() => Math.max(0, languages.findIndex((item) => item.code === language)));
+  const rootRef = useRef(null);
+  const triggerRef = useRef(null);
+  const optionRefs = useRef([]);
+  const selected = languages.find((item) => item.code === language) ?? languages[0];
+
+  useEffect(() => {
+    function closeOnOutside(event) {
+      if (!rootRef.current?.contains(event.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", closeOnOutside);
+    return () => document.removeEventListener("mousedown", closeOnOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const selectedIndex = Math.max(0, languages.findIndex((item) => item.code === language));
+    setActiveIndex(selectedIndex);
+    window.requestAnimationFrame(() => optionRefs.current[selectedIndex]?.focus());
+  }, [open, language, languages]);
+
+  function close({ restoreFocus = false } = {}) {
+    setOpen(false);
+    if (restoreFocus) window.requestAnimationFrame(() => triggerRef.current?.focus());
+  }
+
+  function choose(item) {
+    if (item.code !== language) setLanguage(item.code);
+    close({ restoreFocus: true });
+  }
+
+  function handleMenuKeyDown(event) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close({ restoreFocus: true });
+      return;
+    }
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    let next = activeIndex;
+    if (event.key === "Home") next = 0;
+    if (event.key === "End") next = languages.length - 1;
+    if (event.key === "ArrowDown") next = (activeIndex + 1) % languages.length;
+    if (event.key === "ArrowUp") next = (activeIndex - 1 + languages.length) % languages.length;
+    setActiveIndex(next);
+    optionRefs.current[next]?.focus();
+  }
+
+  return (
+    <div className="interface-language" ref={rootRef}>
+      <button
+        ref={triggerRef}
+        className="interface-language-trigger"
+        type="button"
+        aria-label={`${tx("language.selector")}: ${selected.name} (${selected.code})`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        onKeyDown={(event) => {
+          if (!open && ["ArrowDown", "ArrowUp"].includes(event.key)) {
+            event.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <img className="interface-language-flag" src={selected.flagSrc} alt="" aria-hidden="true" />
+        <span className="interface-language-code">{selected.code}</span>
+      </button>
+      {open && (
+        <div className="interface-language-menu" role="listbox" aria-label={tx("language.menu")} onKeyDown={handleMenuKeyDown}>
+          {languages.map((item, index) => (
+            <button
+              key={item.code}
+              ref={(node) => { optionRefs.current[index] = node; }}
+              className={item.code === language ? "selected" : ""}
+              type="button"
+              role="option"
+              aria-selected={item.code === language}
+              onFocus={() => setActiveIndex(index)}
+              onClick={() => choose(item)}
+            >
+              <img className="interface-language-option-flag" src={item.flagSrc} alt="" aria-hidden="true" />
+              <span>{item.name} ({item.code})</span>
+              <Check className="interface-language-check" size={15} aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UploadWorkspace({ metadata, setMetadata, configurationPreset, setConfigurationPreset, configurationPresets, onDeleteConfigurationPreset, processingMode, setProcessingMode, inspection, job, createJob, onStageSettings, onSourceSettings, onResumeStage, busy, stageWorkingState, onStageWorkingStateChange, onSaveConfigurationPreset }) {
   return (
     <section className="workspace-panel">
       <div className="workspace-header">
         <div>
-          <h1>Źródło i processing audio</h1>
+          <h1>{tx("workspace.title")}</h1>
         </div>
       </div>
       {job ? (
@@ -1193,19 +1172,19 @@ function UploadWorkspace({ metadata, setMetadata, configurationPreset, setConfig
       ) : (
         <form onSubmit={(event) => { event.preventDefault(); createJob(); }}>
           <div className="form-grid">
-            <TextField label="Tytuł" name="title" required value={metadata.title ?? ""} onChange={(value) => setMetadata({ ...metadata, title: value })} />
-            <TextField label="Artysta" name="artist" required value={metadata.artist ?? ""} onChange={(value) => setMetadata({ ...metadata, artist: value })} />
-            <TextField label="Album" value={metadata.album ?? ""} onChange={(value) => setMetadata({ ...metadata, album: value })} />
-            <TextField label="Rok" value={metadata.year ?? ""} onChange={(value) => setMetadata({ ...metadata, year: value })} />
-            <TextField label="Gatunek" value={metadata.genre ?? ""} onChange={(value) => setMetadata({ ...metadata, genre: value })} />
-            <LanguageSelect label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={WHISPER_LANGUAGE_OPTIONS} />
+            <TextField label={tx("field.title")} name="title" required value={metadata.title ?? ""} onChange={(value) => setMetadata({ ...metadata, title: value })} />
+            <TextField label={tx("field.artist")} name="artist" required value={metadata.artist ?? ""} onChange={(value) => setMetadata({ ...metadata, artist: value })} />
+            <TextField label={tx("field.album")} value={metadata.album ?? ""} onChange={(value) => setMetadata({ ...metadata, album: value })} />
+            <TextField label={tx("field.year")} value={metadata.year ?? ""} onChange={(value) => setMetadata({ ...metadata, year: value })} />
+            <TextField label={tx("field.genre")} value={metadata.genre ?? ""} onChange={(value) => setMetadata({ ...metadata, genre: value })} />
+            <LanguageSelect label={tx("field.language")} value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={whisperLanguageOptions()} />
           </div>
 
           <div className="initial-processing-actions">
-            <ConfigurationPresetSelect label="Konfiguracja" value={configurationPreset} onChange={setConfigurationPreset} presets={configurationPresets} onDelete={onDeleteConfigurationPreset} />
-            <Select label="Tryb" value={processingMode} onChange={setProcessingMode} options={PROCESSING_MODE_OPTIONS} />
+            <ConfigurationPresetSelect label={tx("field.configuration")} value={configurationPreset} onChange={setConfigurationPreset} presets={configurationPresets} onDelete={onDeleteConfigurationPreset} />
+            <Select label={tx("field.mode")} value={processingMode} onChange={setProcessingMode} options={processingModeOptions()} />
             <button className="button primary import-submit" type="submit" disabled={!inspection || busy}>
-              <Play size={16} /> {busy ? "Przetwarzanie..." : "Przetwarzaj audio"}
+              <Play size={16} /> {busy ? tx("processing.running") : tx("processing.start")}
             </button>
           </div>
         </form>
@@ -1282,7 +1261,7 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, on
       setCoverFile(null);
       setUseEmbeddedCover(Boolean(result.embeddedCover));
     } catch (err) {
-      setLocalError(err.message);
+      setLocalError(err);
     } finally {
       setSourceBusy(false);
     }
@@ -1304,7 +1283,7 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, on
           projectCovers: { ...(current?.projectCovers ?? {}), manual },
         }));
       } catch (err) {
-        setLocalError(err.message);
+        setLocalError(err);
       }
     }
   }
@@ -1324,19 +1303,19 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, on
   }
 
   return (
-    <StageFormShell title="Źródło" embedded={embedded}>
-      {localError && <div className="error-banner compact">{localError}</div>}
+    <StageFormShell title={tx("stage.source")} embedded={embedded}>
+      {localError && <div className="error-banner compact">{formatUiError(localError)}</div>}
       <div className="form-grid">
-        <TextField label="Tytuł" value={metadata.title ?? ""} onChange={(value) => setMetadata({ ...metadata, title: value })} />
-        <TextField label="Artysta" value={metadata.artist ?? ""} onChange={(value) => setMetadata({ ...metadata, artist: value })} />
-        <TextField label="Album" value={metadata.album ?? ""} onChange={(value) => setMetadata({ ...metadata, album: value })} />
-        <TextField label="Rok" value={metadata.year ?? ""} onChange={(value) => setMetadata({ ...metadata, year: value })} />
-        <TextField label="Gatunek" value={metadata.genre ?? ""} onChange={(value) => setMetadata({ ...metadata, genre: value })} />
-        <LanguageSelect label="Język" value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={WHISPER_LANGUAGE_OPTIONS} />
+        <TextField label={tx("field.title")} value={metadata.title ?? ""} onChange={(value) => setMetadata({ ...metadata, title: value })} />
+        <TextField label={tx("field.artist")} value={metadata.artist ?? ""} onChange={(value) => setMetadata({ ...metadata, artist: value })} />
+        <TextField label={tx("field.album")} value={metadata.album ?? ""} onChange={(value) => setMetadata({ ...metadata, album: value })} />
+        <TextField label={tx("field.year")} value={metadata.year ?? ""} onChange={(value) => setMetadata({ ...metadata, year: value })} />
+        <TextField label={tx("field.genre")} value={metadata.genre ?? ""} onChange={(value) => setMetadata({ ...metadata, genre: value })} />
+        <LanguageSelect label={tx("field.language")} value={metadata.language ?? ""} onChange={(value) => setMetadata({ ...metadata, language: value })} options={whisperLanguageOptions()} />
       </div>
       <div className="source-change-actions">
         <button className="button secondary" type="button" disabled={busy || sourceBusy} onClick={() => sourceInputRef.current?.click()}>
-          <UploadCloud size={16} /> {sourceInspection ? sourceInspection.originalFilename : "Zmień plik"}
+          <UploadCloud size={16} /> {sourceInspection ? sourceInspection.originalFilename : tx("form.changeFile")}
         </button>
         <input
           ref={sourceInputRef}
@@ -1349,7 +1328,7 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, on
           }}
         />
         <button className="button secondary" type="button" disabled={busy || sourceBusy} onClick={() => coverInputRef.current?.click()}>
-          <UploadCloud size={16} /> Zmień cover
+          <UploadCloud size={16} /> {tx("form.changeCover")}
         </button>
         <input
           ref={coverInputRef}
@@ -1363,14 +1342,14 @@ function SourceStageForm({ job, busy, onSubmit, embedded = false, draft = {}, on
         />
         {sourceInspection?.embeddedCover && (
           <button className="button ghost" type="button" disabled={busy || sourceBusy} onClick={() => { setCoverFile(null); setUseEmbeddedCover(true); }}>
-            <RotateCcw size={16} /> Cover z tagów
+            <RotateCcw size={16} /> {tx("form.coverFromTags")}
           </button>
         )}
       </div>
       {sourceInspection && <AudioSummary audio={sourceInspection.audio} filename={sourceInspection.originalFilename} />}
-      {coverPreview && <div className="cover-box source-cover-preview" aria-label="Nowy podgląd okładki"><img src={coverPreview} alt="" /></div>}
+      {coverPreview && <div className="cover-box source-cover-preview" aria-label={tx("upload.coverPreview")}><img src={coverPreview} alt="" /></div>}
       <button className="button primary" type="button" disabled={busy || sourceBusy || !sourceReady} onClick={submitSource}>
-        <Save size={16} /> Zapisz źródło
+        <Save size={16} /> {tx("form.saveSource")}
       </button>
     </StageFormShell>
   );
@@ -1385,12 +1364,12 @@ function SeparationStageForm({ job, busy, onSubmit, embedded = false, draft = {}
     setEditedFields((current) => new Set([...current, "profiles.separationModel"]));
   }
   return (
-    <StageFormShell title="Separacja wokalu" embedded={embedded}>
+    <StageFormShell title={tx("stage.separation")} embedded={embedded}>
       <div className="controls-row">
-        <Select label="Mechanizm separacji" tooltip={MODEL_TOOLTIPS.separation} value={separationModel} onChange={changeSeparationModel} fallback={isConfigurationFallback(job, "profiles.separationModel", editedFields)} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
+        <Select label={tx("field.separationEngine")} tooltip={tx(MODEL_TOOLTIP_KEYS.separation)} value={separationModel} onChange={changeSeparationModel} fallback={isConfigurationFallback(job, "profiles.separationModel", editedFields)} options={[["htdemucs_ft", "htdemucs_ft"], ["htdemucs", "htdemucs"]]} />
       </div>
       <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("separating_vocals", { profiles: { ...job.profiles, separationModel }, editedConfigurationFields: [...editedFields] })}>
-        <Play size={16} /> Uruchom separację
+        <Play size={16} /> {tx("form.runSeparation")}
       </button>
     </StageFormShell>
   );
@@ -1417,22 +1396,22 @@ function TranscriptionStageForm({ job, busy, onSubmit, embedded = false, draft =
   }
 
   return (
-    <StageFormShell title="Transkrypcja" embedded={embedded}>
+    <StageFormShell title={tx("stage.transcription")} embedded={embedded}>
       <div className="controls-row">
-        <Select label="Wykrywanie mowy" tooltip={MODEL_TOOLTIPS.vad} value={settings.vadMethod} fallback={isConfigurationFallback(job, "transcriptionSettings.vadMethod", editedFields)} onChange={(value) => { setSettings((current) => ({ ...current, vadMethod: value })); markEdited("transcriptionSettings.vadMethod"); }} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
-        <Select label="Transkrypcja" tooltip={MODEL_TOOLTIPS.transcription} value={transcriptionModel} fallback={isConfigurationFallback(job, "profiles.transcriptionModel", editedFields)} onChange={(value) => { setTranscriptionModel(value); markEdited("profiles.transcriptionModel"); }} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
-        <Select label="Sylabizacja" tooltip={MODEL_TOOLTIPS.syllabification} value={syllabification.method} fallback={isConfigurationFallback(job, "syllabificationSettings.method", editedFields)} onChange={changeSyllabification} options={SYLLABIFICATION_OPTIONS} />
+        <Select label={tx("field.speechDetection")} tooltip={tx(MODEL_TOOLTIP_KEYS.vad)} value={settings.vadMethod} fallback={isConfigurationFallback(job, "transcriptionSettings.vadMethod", editedFields)} onChange={(value) => { setSettings((current) => ({ ...current, vadMethod: value })); markEdited("transcriptionSettings.vadMethod"); }} options={[["silero", "Silero"], ["pyannote", "pyannote"]]} />
+        <Select label={tx("field.transcription")} tooltip={tx(MODEL_TOOLTIP_KEYS.transcription)} value={transcriptionModel} fallback={isConfigurationFallback(job, "profiles.transcriptionModel", editedFields)} onChange={(value) => { setTranscriptionModel(value); markEdited("profiles.transcriptionModel"); }} options={[["large-v3", "large-v3"], ["large-v3-turbo", "large-v3-turbo"]]} />
+        <Select label={tx("field.syllabification")} tooltip={tx(MODEL_TOOLTIP_KEYS.syllabification)} value={syllabification.method} fallback={isConfigurationFallback(job, "syllabificationSettings.method", editedFields)} onChange={changeSyllabification} options={syllabificationOptions()} />
       </div>
       <div className="advanced">
         <div className="form-grid compact transcription-settings-grid">
-          <Select label="Pozycjonowanie" helper="return_char_alignments" tooltip={MODEL_TOOLTIPS.positioning} value={positioningValue} disabled={positioningDisabled} fallback={isConfigurationFallback(job, "transcriptionSettings.positioning", editedFields)} onChange={(value) => { setSettings({ ...settings, positioning: value }); markEdited("transcriptionSettings.positioning"); }} options={TRANSCRIPTION_POSITIONING_OPTIONS} />
+          <Select label={tx("field.positioning")} helper="return_char_alignments" tooltip={tx(MODEL_TOOLTIP_KEYS.positioning)} value={positioningValue} disabled={positioningDisabled} fallback={isConfigurationFallback(job, "transcriptionSettings.positioning", editedFields)} onChange={(value) => { setSettings({ ...settings, positioning: value }); markEdited("transcriptionSettings.positioning"); }} options={transcriptionPositioningOptions()} />
           {TRANSCRIPTION_STAGE_FIELDS.filter(([, field]) => !field.methods || field.methods.includes(settings.vadMethod)).map(([key, field]) => (
-            <TextField key={key} label={field.label} helper={field.helper ?? key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key] ?? ""} fallback={isConfigurationFallback(job, `transcriptionSettings.${key}`, editedFields)} onChange={(next) => { setSettings((current) => ({ ...current, [key]: Number(next) })); markEdited(`transcriptionSettings.${key}`); }} />
+            <TextField key={key} label={tx(field.labelKey)} helper={field.helper ?? key} tooltip={tx(field.tooltipKey)} type="number" step={field.step} value={settings[key] ?? ""} fallback={isConfigurationFallback(job, `transcriptionSettings.${key}`, editedFields)} onChange={(next) => { setSettings((current) => ({ ...current, [key]: Number(next) })); markEdited(`transcriptionSettings.${key}`); }} />
           ))}
         </div>
       </div>
       <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("transcribing", { profiles: { ...job.profiles, transcriptionModel }, transcriptionSettings: serializeTranscriptionSettings(settings, syllabification), syllabificationSettings: syllabification, editedConfigurationFields: [...editedFields] })}>
-        <Play size={16} /> Uruchom transkrypcję
+        <Play size={16} /> {tx("form.runTranscription")}
       </button>
     </StageFormShell>
   );
@@ -1447,17 +1426,17 @@ function PitchStageForm({ job, busy, onSubmit, embedded = false, draft = {}, onD
     setEditedFields((current) => new Set([...current, path]));
   }
   return (
-    <StageFormShell title="Detekcja tonów" embedded={embedded}>
+    <StageFormShell title={tx("stage.pitch")} embedded={embedded}>
       <div className="advanced">
         <div className="form-grid compact pitch-settings-grid">
-          <Select label="Profil analizy" helper="torchcrepe" value={pitchProfile} fallback={isConfigurationFallback(job, "profiles.pitch", editedFields)} onChange={(value) => { setPitchProfile(value); markEdited("profiles.pitch"); }} options={PITCH_PROFILE_OPTIONS} />
+          <Select label={tx("field.analysisProfile")} helper="torchcrepe" value={pitchProfile} fallback={isConfigurationFallback(job, "profiles.pitch", editedFields)} onChange={(value) => { setPitchProfile(value); markEdited("profiles.pitch"); }} options={pitchProfileOptions()} />
           {PITCH_DETECTION_FIELDS.map(([key, field]) => (
-            <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} value={settings[key]} fallback={isConfigurationFallback(job, `pitchSettings.${key}`, editedFields)} onChange={(next) => { setSettings({ ...settings, [key]: Number(next) }); markEdited(`pitchSettings.${key}`); }} />
+            <TextField key={key} label={tx(field.labelKey)} helper={key} tooltip={tx(field.tooltipKey)} type="number" step={field.step} value={settings[key]} fallback={isConfigurationFallback(job, `pitchSettings.${key}`, editedFields)} onChange={(next) => { setSettings({ ...settings, [key]: Number(next) }); markEdited(`pitchSettings.${key}`); }} />
           ))}
         </div>
       </div>
       <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("detecting_pitch", { profiles: { ...job.profiles, pitch: pitchProfile }, pitchSettings: settings, editedConfigurationFields: [...editedFields] })}>
-        <Play size={16} /> Uruchom detekcję tonów
+        <Play size={16} /> {tx("form.runPitch")}
       </button>
     </StageFormShell>
   );
@@ -1472,15 +1451,15 @@ function AlignmentStageForm({ job, busy, onSubmit, embedded = false, draft = {},
     setEditedFields((current) => new Set([...current, path]));
   }
   return (
-    <StageFormShell title="Wstępne dopasowanie" embedded={embedded}>
+    <StageFormShell title={tx("stage.alignment")} embedded={embedded}>
       <div className="form-grid compact pitch-settings-grid">
-        <TextField label="Ms między sentencjami" helper="sentenceGapMs" tooltip="Minimalna przerwa, po której tekst jest dzielony na osobne frazy. Puste pole oznacza tryb auto." type="number" step="1" placeholder="auto" value={sentenceGapMs} fallback={isConfigurationFallback(job, "transcriptionSettings.sentenceGapMs", editedFields)} onChange={(value) => { setSentenceGapMs(value); markEdited("transcriptionSettings.sentenceGapMs"); }} />
+        <TextField label={tx("setting.sentenceGap")} helper="sentenceGapMs" tooltip={tx("setting.sentenceGap.help")} type="number" step="1" placeholder={tx("common.auto")} value={sentenceGapMs} fallback={isConfigurationFallback(job, "transcriptionSettings.sentenceGapMs", editedFields)} onChange={(value) => { setSentenceGapMs(value); markEdited("transcriptionSettings.sentenceGapMs"); }} />
         {ALIGNMENT_PITCH_FIELDS.map(([key, field]) => (
-          <TextField key={key} label={field.label} helper={key} tooltip={field.tooltip} type="number" step={field.step} max={field.max} value={settings[key]} fallback={isConfigurationFallback(job, `pitchSettings.${key}`, editedFields)} onChange={(next) => { setSettings({ ...settings, [key]: field.max == null ? Number(next) : Math.min(Number(next), Number(field.max)) }); markEdited(`pitchSettings.${key}`); }} />
+          <TextField key={key} label={tx(field.labelKey)} helper={key} tooltip={tx(field.tooltipKey)} type="number" step={field.step} max={field.max} value={settings[key]} fallback={isConfigurationFallback(job, `pitchSettings.${key}`, editedFields)} onChange={(next) => { setSettings({ ...settings, [key]: field.max == null ? Number(next) : Math.min(Number(next), Number(field.max)) }); markEdited(`pitchSettings.${key}`); }} />
         ))}
       </div>
       <button className="button primary" type="button" disabled={busy} onClick={() => onSubmit("aligning", { transcriptionSettings: { ...job.transcriptionSettings, sentenceGapMs: nullableNumber(sentenceGapMs) }, pitchSettings: settings, editedConfigurationFields: [...editedFields] })}>
-        <Play size={16} /> Wykonaj dopasowanie
+        <Play size={16} /> {tx("form.runAlignment")}
       </button>
     </StageFormShell>
   );
@@ -1543,13 +1522,13 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
               <div className="summary-stage-header">
                 <div>
                   <h2>{stageLabel(stage)}</h2>
-                  <small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.status} · {stageDuration(stage)}</small>
+                  <small>{stage.actionRequired ? tx("stage.awaitingSettings") : statusLabel(stage.status)} · {stageDuration(stage)}</small>
                 </div>
                 {isConfigurableStage(stage) && stage.status === "completed" && (
-                  <button className="button ghost" type="button" disabled={busy || jobRunning} onClick={() => (isEditing ? cancelChange() : changeStage(stage))}>{isEditing ? "Anuluj" : "Zmień"}</button>
+                  <button className="button ghost" type="button" disabled={busy || jobRunning} onClick={() => (isEditing ? cancelChange() : changeStage(stage))}>{isEditing ? tx("common.cancel") : tx("common.change")}</button>
                 )}
                 {stage.status === "failed" && (
-                  <button className="button secondary" type="button" disabled={busy || jobRunning} onClick={() => onResumeStage?.(stage.stage)}>Kontynuuj</button>
+                  <button className="button secondary" type="button" disabled={busy || jobRunning} onClick={() => onResumeStage?.(stage.stage)}>{tx("common.continue")}</button>
                 )}
               </div>
               <div className={transcriptAsset ? "summary-with-preview" : undefined}>
@@ -1570,7 +1549,7 @@ function ProcessingSummary({ job, busy, onSubmit, onSourceSubmit, onResumeStage,
       </div>
       {job.status === "awaiting_review" && (
         <button className="button ghost preset-save-button" type="button" disabled={busy} onClick={onSaveConfigurationPreset}>
-          <Save size={16} /> Zapisz bieżącą konfigurację
+          <Save size={16} /> {tx("preset.saveCurrent")}
         </button>
       )}
       {previewAsset && <ArtifactPreviewModal jobId={job.jobId} asset={previewAsset} onClose={() => setPreviewAsset(null)} />}
@@ -1583,7 +1562,7 @@ function ArtifactPreviewButton({ asset, fallback, onOpen, iconOnly = false }) {
   if (!asset) return null;
   if (iconOnly) {
     return (
-      <button className="icon-button" type="button" title={`Podgląd: ${filename}`} aria-label={`Podgląd: ${filename}`} onClick={() => onOpen(asset)}>
+      <button className="icon-button" type="button" title={`${tx("common.preview")}: ${filename}`} aria-label={`${tx("common.preview")}: ${filename}`} onClick={() => onOpen(asset)}>
         <Download size={16} />
       </button>
     );
@@ -1609,18 +1588,18 @@ function TranscriptionTextPreview({ jobId, asset }) {
       .then((segments) => setPreview({ loading: false, error: null, segments }))
       .catch((error) => {
         if (error.name !== "AbortError") {
-          setPreview({ loading: false, error: "Nie udało się wczytać rozpoznanego tekstu.", segments: [] });
+          setPreview({ loading: false, error: "preview.transcriptFailed", segments: [] });
         }
       });
     return () => controller.abort();
   }, [artifactUrl]);
 
   return (
-    <section className="transcription-preview" aria-label="Podgląd rozpoznanego tekstu">
+    <section className="transcription-preview" aria-label={tx("preview.transcript")}>
       <div className="transcription-preview-text">
-        {preview.loading && <span className="preview-state">Wczytywanie tekstu...</span>}
-        {preview.error && <span className="preview-state error">{preview.error}</span>}
-        {!preview.loading && !preview.error && preview.segments.length === 0 && <span className="preview-state">Brak rozpoznanego tekstu.</span>}
+        {preview.loading && <span className="preview-state">{tx("preview.loadingText")}</span>}
+        {preview.error && <span className="preview-state error">{tx(preview.error)}</span>}
+        {!preview.loading && !preview.error && preview.segments.length === 0 && <span className="preview-state">{tx("preview.noText")}</span>}
         {!preview.loading && !preview.error && preview.segments.map((segment, segmentIndex) => (
           <p key={segment.key ?? segmentIndex}>
             {segment.words.map((word, wordIndex) => (
@@ -1672,7 +1651,7 @@ function ArtifactPreviewModal({ jobId, asset, onClose }) {
       .then(({ text, json }) => setTextPreview({ loading: false, error: null, text, json }))
       .catch((error) => {
         if (error.name !== "AbortError") {
-          setTextPreview({ loading: false, error: "Nie udało się wczytać podglądu tekstu.", text: "", json: false });
+          setTextPreview({ loading: false, error: "preview.failed", text: "", json: false });
         }
       });
     return () => controller.abort();
@@ -1683,23 +1662,23 @@ function ArtifactPreviewModal({ jobId, asset, onClose }) {
       <section className="artifact-preview-modal" role="dialog" aria-modal="true" aria-labelledby="artifact-preview-title">
         <div className="modal-header">
           <strong id="artifact-preview-title">{filename}</strong>
-          <button className="icon-button" type="button" title="Zamknij" aria-label="Zamknij" onClick={onClose}><X size={18} /></button>
+          <button className="icon-button" type="button" title={tx("common.close")} aria-label={tx("common.close")} onClick={onClose}><X size={18} /></button>
         </div>
         <div className={`artifact-preview-content ${previewKind}`}>
-          {previewKind === "image" && <img src={artifactUrl} alt={`Podgląd artefaktu ${filename}`} />}
+          {previewKind === "image" && <img src={artifactUrl} alt={`${tx("common.preview")}: ${filename}`} />}
           {previewKind === "audio" && <audio src={artifactUrl} controls autoPlay />}
-          {previewKind === "text" && textPreview.loading && <p className="preview-state">Wczytywanie podglądu...</p>}
-          {previewKind === "text" && textPreview.error && <p className="preview-state error">{textPreview.error}</p>}
+          {previewKind === "text" && textPreview.loading && <p className="preview-state">{tx("preview.loading")}</p>}
+          {previewKind === "text" && textPreview.error && <p className="preview-state error">{tx(textPreview.error)}</p>}
           {previewKind === "text" && !textPreview.loading && !textPreview.error && (
             <pre className={textPreview.json ? "json-preview" : "text-preview"}>
               {textPreview.json ? renderJsonSyntax(textPreview.text) : textPreview.text}
             </pre>
           )}
-          {previewKind === "unsupported" && <p className="preview-state">Brak podglądu dla tego typu pliku.</p>}
+          {previewKind === "unsupported" && <p className="preview-state">{tx("preview.unsupported")}</p>}
         </div>
         <div className="modal-actions">
-          <button className="button ghost" type="button" onClick={onClose}>Zamknij</button>
-          <button className="button primary" type="button" onClick={() => triggerArtifactDownload(jobId, asset)}><Download size={16} /> Pobierz</button>
+          <button className="button ghost" type="button" onClick={onClose}>{tx("common.close")}</button>
+          <button className="button primary" type="button" onClick={() => triggerArtifactDownload(jobId, asset)}><Download size={16} /> {tx("common.download")}</button>
         </div>
       </section>
     </div>
@@ -1856,7 +1835,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     playbackMixRef.current = next;
     setPlaybackMix(next);
     setMidiMasterGain(next);
-    setEditorNotice("Odtwarzanie MIDI nie jest dostępne w tej przeglądarce. MIDI zostało wyciszone.");
+    setEditorNotice("editor.noticeMidi");
   }
 
   async function prepareMidiPlayback() {
@@ -2331,7 +2310,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   function splitSelectedLineAtPlayhead() {
     if (!selectedLine || !arrangement) return;
     if (!canSplitLineAtTime(arrangement, selectedLine, currentTime)) {
-      setEditorNotice("Przewiń wskaźnik do miejsca podziału wewnątrz dzielonej sentencji.");
+      setEditorNotice("editor.noticeSplit");
       return;
     }
     setEditorNotice(null);
@@ -2390,7 +2369,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
 
   function deleteSelected() {
     if (!selected.id) return;
-    if (!window.confirm("Usunąć zaznaczony element?")) return;
+    if (!window.confirm(tx("editor.deleteSelected"))) return;
     commit((draft) => {
       if (selected.type === "line") return deleteLine(draft, selected.id);
       if (selected.type === "word") return deleteWord(draft, selected.id);
@@ -2500,8 +2479,8 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   if (!arrangement) {
     return (
       <section className="workspace-panel editor-shell loading-editor">
-        <h1>Dopasowanie</h1>
-        <p>Ładowanie arrangementu...</p>
+        <h1>{tx("editor.title")}</h1>
+        <p>{tx("editor.loading")}</p>
       </section>
     );
   }
@@ -2510,25 +2489,25 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     <section className={`workspace-panel editor-shell ${timelinePinningEnabled ? "timeline-pinning-enabled" : ""}`}>
       <div className="editor-top">
         <div>
-          <h1>Dopasowanie</h1>
+          <h1>{tx("editor.title")}</h1>
           <div className="editor-meta">
             <span>Revision {arrangement.revision}</span>
-            <span>{arrangement.lines.length} sentencji</span>
-            <span>Odstęp sentencji: {sentenceGapLabel(arrangement)}</span>
-            <span>{arrangement.noteEvents.length} nut</span>
+            <span>{txp("editor.sentenceCount", arrangement.lines.length)}</span>
+            <span>{tx("editor.sentenceGap", { value: sentenceGapLabel(arrangement) })}</span>
+            <span>{txp("editor.noteCount", arrangement.noteEvents.length)}</span>
           </div>
         </div>
         <div className="editor-actions">
           <button className="icon-button" type="button" title="Undo" aria-label="Undo" disabled={!past.length} onClick={undo}><Undo2 size={16} /></button>
           <button className="icon-button" type="button" title="Redo" aria-label="Redo" disabled={!future.length} onClick={redo}><Redo2 size={16} /></button>
-          <button className="button secondary" type="button" onClick={() => onResetStage("aligning", { forceManualMode: true })}><Workflow size={16} /> Wróć do audio</button>
+          <button className="button secondary" type="button" onClick={() => onResetStage("aligning", { forceManualMode: true })}><Workflow size={16} /> {tx("editor.backToAudio")}</button>
           <ExportKaraokeButton job={job} saving={saving} onSave={onSave} onJobRefresh={onJobRefresh} onValidationError={setValidationModal} />
         </div>
       </div>
 
       {editorNotice && (
         <div className="editor-notice" role="alert">
-          <span>{editorNotice}</span>
+          <span>{tx(editorNotice)}</span>
           <button className="button ghost" type="button" onClick={() => setEditorNotice(null)}>OK</button>
         </div>
       )}
@@ -2549,9 +2528,9 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
             aria-pressed={activeQualityFlag === flag}
             onClick={() => setActiveQualityFlag((current) => current === flag ? null : flag)}
           >
-            {FLAG_LABELS[flag] ?? flag}: {count}
+            {FLAG_LABEL_KEYS[flag] ? tx(FLAG_LABEL_KEYS[flag]) : flag}: {count}
           </button>
-        ) : <span key={flag} className="quality-badge ok">{FLAG_LABELS[flag] ?? flag}: 0</span>)}
+        ) : <span key={flag} className="quality-badge ok">{FLAG_LABEL_KEYS[flag] ? tx(FLAG_LABEL_KEYS[flag]) : flag}: 0</span>)}
       </div>
 
       <div className="editor-grid">
@@ -2618,7 +2597,7 @@ function ExportKaraokeButton({ job, saving, onSave, onJobRefresh, onValidationEr
 
   return (
     <button className="button primary save-menu-trigger" type="button" disabled={pending} onClick={exportKaraoke}>
-      <Download size={16} /> {pending ? "Eksportowanie..." : "Eksportuj"}
+      <Download size={16} /> {pending ? tx("export.running") : tx("export.action")}
     </button>
   );
 }
@@ -2631,36 +2610,42 @@ function ValidationModal({ report, onClose }) {
     <div className="modal-backdrop" role="presentation">
       <div className="validation-modal" role="dialog" aria-modal="true" aria-labelledby="validation-modal-title">
         <div className="modal-header">
-          <strong id="validation-modal-title">Eksport zablokowany</strong>
-          <button className="icon-button" type="button" title="Zamknij" aria-label="Zamknij" onClick={onClose}>×</button>
+          <strong id="validation-modal-title">{tx("export.blocked")}</strong>
+          <button className="icon-button" type="button" title={tx("common.close")} aria-label={tx("common.close")} onClick={onClose}>×</button>
         </div>
-        <p>Projekt nie przeszedł walidacji eksportu. Popraw poniższe problemy i uruchom eksport ponownie.</p>
+        <p>{tx("export.validationIntro")}</p>
         <ul>
           {issues.map((issue, index) => (
             <li key={`${issue.code}-${index}`}>
               <strong>{issue.code}</strong>
-              <span>{issue.message}</span>
+              <span>{validationIssueLabel(issue)}</span>
               <ValidationIssueSyllableDetails details={issue.details} />
             </li>
           ))}
         </ul>
         <div className="modal-actions">
-          <button className="button primary" type="button" onClick={onClose}>Zamknij</button>
+          <button className="button primary" type="button" onClick={onClose}>{tx("common.close")}</button>
         </div>
       </div>
     </div>
   );
 }
 
+function validationIssueLabel(issue) {
+  const key = `validation.${issue?.code ?? "unknown"}`;
+  const localized = tx(key);
+  return localized === key ? tx("error.generic", { code: issue?.code ?? "unknown" }) : localized;
+}
+
 function ValidationIssueSyllableDetails({ details = {} }) {
   if (!details.syllableId) return null;
-  const text = typeof details.text === "string" && details.text.trim() ? details.text : "[brak tekstu]";
-  const midi = details.midi == null ? "[brak midi]" : details.midi;
+  const text = typeof details.text === "string" && details.text.trim() ? details.text : `[${tx("common.none")}]`;
+  const midi = details.midi == null ? `[${tx("common.none")}]` : details.midi;
   return (
     <dl className="validation-issue-details">
-      <div><dt>Tekst sylaby</dt><dd>{text}</dd></div>
-      <div><dt>Początek</dt><dd>{formatValidationStart(details.startSec)}</dd></div>
-      <div><dt>Czas trwania</dt><dd>{formatValidationDuration(details.durationMs)}</dd></div>
+      <div><dt>{tx("export.syllableText")}</dt><dd>{text}</dd></div>
+      <div><dt>{tx("editor.start")}</dt><dd>{formatValidationStart(details.startSec)}</dd></div>
+      <div><dt>{tx("editor.duration")}</dt><dd>{formatValidationDuration(details.durationMs)}</dd></div>
       <div><dt>MIDI</dt><dd>{midi}</dd></div>
     </dl>
   );
@@ -2678,14 +2663,14 @@ function formatValidationDuration(value) {
 
 function PlaybackVolumeControl({ source, label, volumePercent, enabled, onVolumeChange, onToggle }) {
   const DetailIcon = source === "audio" ? AudioWaveform : Music2;
-  const stateLabel = enabled ? "aktywny" : "wyciszony";
+  const stateLabel = enabled ? tx("editor.active") : tx("editor.muted");
 
   return (
     <div className="playback-volume-control">
       <button
         className={`playback-volume-button ${enabled ? "active" : ""}`}
         type="button"
-        aria-label={`${label}: ${volumePercent}%, ${stateLabel}. Kliknięcie, Enter lub Spacja przełącza wyciszenie.`}
+        aria-label={tx("editor.volumeAction", { label, value: volumePercent, state: stateLabel })}
         aria-pressed={enabled}
         onClick={onToggle}
       >
@@ -2703,7 +2688,7 @@ function PlaybackVolumeControl({ source, label, volumePercent, enabled, onVolume
           max="100"
           step="1"
           value={volumePercent}
-          aria-label={`Głośność: ${label}`}
+          aria-label={tx("editor.volume", { label })}
           aria-valuetext={`${volumePercent}%`}
           onChange={(event) => onVolumeChange(event.target.value)}
         />
@@ -2832,19 +2817,19 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
     <div ref={timelinePanelRef} className={`timeline-panel ${timelinePinningEnabled && isSticky ? "is-sticky" : ""}`}>
       <div className="timeline-header">
         <div className="timeline-source-controls">
-          <div className="track-switch subtle" role="group" aria-label="Źródło audio">
+          <div className="track-switch subtle" role="group" aria-label={tx("editor.audioSource")}>
             {[
-              ["source_audio", "Oryginał"],
-              ["vocals", "Wokal"],
-              ["instrumental", "Instrumental"],
+              ["source_audio", tx("editor.original")],
+              ["vocals", tx("editor.vocal")],
+              ["instrumental", tx("editor.instrumental")],
             ].map(([key, label]) => (
               <button key={key} className={effectiveTrack === key ? "active" : ""} type="button" disabled={!assets[key]} onClick={() => changeTrack(key)}>{label}</button>
             ))}
           </div>
-          <div className="playback-volume-controls" role="group" aria-label="Głośność odtwarzania">
+          <div className="playback-volume-controls" role="group" aria-label={tx("editor.playbackVolume")}>
             <PlaybackVolumeControl
               source="audio"
-              label="Audio podkładu"
+              label={tx("editor.audioVolume")}
               volumePercent={audioVolumePercent}
               enabled={audioPlaybackEnabled}
               onVolumeChange={(value) => setPlaybackVolume("audio", value)}
@@ -2852,7 +2837,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
             />
             <PlaybackVolumeControl
               source="midi"
-              label="MIDI sylab"
+              label={tx("editor.midiVolume")}
               volumePercent={midiVolumePercent}
               enabled={midiPlaybackEnabled}
               onVolumeChange={(value) => setPlaybackVolume("midi", value)}
@@ -2861,24 +2846,24 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
           </div>
         </div>
         <div className="timeline-tools">
-          <button className="icon-button" type="button" title="poprzedni element" aria-label="poprzedni element" onClick={seekPreviousTokenEdge} onContextMenu={(event) => { event.preventDefault(); seekPreviousSentenceEdge(); }}><SkipBack size={14} /></button>
-          <button className="icon-button" type="button" title="następny element" aria-label="następny element" onClick={seekNextTokenEdge} onContextMenu={(event) => { event.preventDefault(); seekNextSentenceEdge(); }}><SkipForward size={14} /></button>
+          <button className="icon-button" type="button" title={tx("editor.previous")} aria-label={tx("editor.previous")} onClick={seekPreviousTokenEdge} onContextMenu={(event) => { event.preventDefault(); seekPreviousSentenceEdge(); }}><SkipBack size={14} /></button>
+          <button className="icon-button" type="button" title={tx("editor.next")} aria-label={tx("editor.next")} onClick={seekNextTokenEdge} onContextMenu={(event) => { event.preventDefault(); seekNextSentenceEdge(); }}><SkipForward size={14} /></button>
           <button className={`button secondary transport-play ${playing ? "active" : ""}`} type="button" disabled={!audioReady} onClick={togglePlay}>
-            {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? "Pauza" : "Play"}
+            {playing ? <Pause size={14} /> : <Play size={14} />} {playing ? tx("editor.pause") : tx("editor.play")}
           </button>
-          <button className={`icon-button toggle-button ${loopPlayback ? "active" : ""}`} type="button" title="Zapętl odtwarzanie" aria-label="Zapętl odtwarzanie" aria-pressed={loopPlayback} onClick={() => setLoopPlayback((value) => !value)}><RefreshCcw size={14} /></button>
+          <button className={`icon-button toggle-button ${loopPlayback ? "active" : ""}`} type="button" title={tx("editor.loop")} aria-label={tx("editor.loop")} aria-pressed={loopPlayback} onClick={() => setLoopPlayback((value) => !value)}><RefreshCcw size={14} /></button>
           <input className="time-slider" type="range" min="0" max={duration || 0} step="0.01" value={currentTime} onChange={(event) => seek(event.target.value)} />
           <span className="time-readout">{formatTime(currentTime)} / {formatTime(duration)}</span>
-          <button className="icon-button" type="button" title="Oddal" aria-label="Oddal" onPointerDown={(event) => zoomFromPointer(event, 1.25)} onClick={(event) => zoomFromClick(event, 1.25)} onContextMenu={(event) => { event.preventDefault(); zoomToFullTrack(); }}><ZoomOut size={14} /></button>
-          <button className="icon-button" type="button" title="Przybliż" aria-label="Przybliż" onPointerDown={(event) => zoomFromPointer(event, 0.75)} onClick={(event) => zoomFromClick(event, 0.75)} onContextMenu={(event) => { event.preventDefault(); zoomToPlayheadTarget(); }}><ZoomIn size={14} /></button>
-          <button className={`icon-button toggle-button ${limitPlaybackToWindow ? "active" : ""}`} type="button" title="ogranicz odtwarzanie do widocznego zakresu" aria-label="ogranicz odtwarzanie do widocznego zakresu" aria-pressed={limitPlaybackToWindow} onClick={() => setLimitPlaybackToWindow((value) => !value)}><Lock size={14} /></button>
-          <button className={`icon-button toggle-button ${showNotes ? "active" : ""}`} type="button" title="pokaż nuty diagnostyczne" aria-label="pokaż nuty diagnostyczne" aria-pressed={showNotes} onClick={() => setShowNotes((value) => !value)}><Music2 size={14} /></button>
-          <button className={`icon-button toggle-button ${snapToExisting ? "active" : ""}`} type="button" title="przyciągaj elementy na wykresie" aria-label="przyciągaj elementy na wykresie" aria-pressed={snapToExisting} onClick={() => setSnapToExisting((value) => !value)}><Magnet size={14} /></button>
+          <button className="icon-button" type="button" title={tx("editor.zoomOut")} aria-label={tx("editor.zoomOut")} onPointerDown={(event) => zoomFromPointer(event, 1.25)} onClick={(event) => zoomFromClick(event, 1.25)} onContextMenu={(event) => { event.preventDefault(); zoomToFullTrack(); }}><ZoomOut size={14} /></button>
+          <button className="icon-button" type="button" title={tx("editor.zoomIn")} aria-label={tx("editor.zoomIn")} onPointerDown={(event) => zoomFromPointer(event, 0.75)} onClick={(event) => zoomFromClick(event, 0.75)} onContextMenu={(event) => { event.preventDefault(); zoomToPlayheadTarget(); }}><ZoomIn size={14} /></button>
+          <button className={`icon-button toggle-button ${limitPlaybackToWindow ? "active" : ""}`} type="button" title={tx("editor.limitWindow")} aria-label={tx("editor.limitWindow")} aria-pressed={limitPlaybackToWindow} onClick={() => setLimitPlaybackToWindow((value) => !value)}><Lock size={14} /></button>
+          <button className={`icon-button toggle-button ${showNotes ? "active" : ""}`} type="button" title={tx("editor.showNotes")} aria-label={tx("editor.showNotes")} aria-pressed={showNotes} onClick={() => setShowNotes((value) => !value)}><Music2 size={14} /></button>
+          <button className={`icon-button toggle-button ${snapToExisting ? "active" : ""}`} type="button" title={tx("editor.snap")} aria-label={tx("editor.snap")} aria-pressed={snapToExisting} onClick={() => setSnapToExisting((value) => !value)}><Magnet size={14} /></button>
           <label className="snap-threshold-field">
             <input type="number" min="0" step="10" value={snapThresholdMs} onChange={(event) => setSnapThresholdInput(event.target.value)} />
             <span>ms</span>
           </label>
-          <button className={`icon-button toggle-button ${timelinePinningEnabled ? "active" : ""}`} type="button" title="przypinanie wykresu" aria-label="przypinanie wykresu" aria-pressed={timelinePinningEnabled} onClick={() => setTimelinePinningEnabled((value) => !value)}>
+          <button className={`icon-button toggle-button ${timelinePinningEnabled ? "active" : ""}`} type="button" title={tx("editor.pin")} aria-label={tx("editor.pin")} aria-pressed={timelinePinningEnabled} onClick={() => setTimelinePinningEnabled((value) => !value)}>
             {timelinePinningEnabled ? <Pin size={14} fill="currentColor" /> : <PinOff size={14} />}
           </button>
         </div>
@@ -2939,7 +2924,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
                 }}
                 role="button"
                 tabIndex={0}
-                title={`${token.text || "Przedłużenie"} (${midi == null ? "brak nuty" : `MIDI ${midi}`})`}
+                title={`${token.text || tx("editor.extension")} (${midi == null ? tx("editor.noNote") : `MIDI ${midi}`})`}
                 onPointerDown={(event) => startGraphDrag("token", token.tokenId, "move", event, windowStart, windowEnd, pitchRange)}
                 onClick={(event) => {
                   event.stopPropagation();
@@ -2955,7 +2940,7 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
               >
                 <span className="drag-handle start" onPointerDown={(event) => startGraphDrag("token", token.tokenId, "resize-start", event, windowStart, windowEnd)} />
                 <span className="syllable-text">{token.text || "..."}</span>
-                <span className="syllable-note">{midi == null ? "brak" : midi}</span>
+                <span className="syllable-note">{midi == null ? tx("common.none") : midi}</span>
                 <span className="drag-handle end" onPointerDown={(event) => startGraphDrag("token", token.tokenId, "resize-end", event, windowStart, windowEnd)} />
               </div>
             );
@@ -3075,12 +3060,12 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
         <span />
         {insertIndex === index ? (
           <form className="sentence-insert-form" onSubmit={(event) => submitInsert(event, index)}>
-            <input autoFocus value={insertText} placeholder="Nowa sentencja" onChange={(event) => setInsertText(event.target.value)} />
-            <button className="icon-button" type="submit" title="Wstaw sentencję" aria-label="Wstaw sentencję" disabled={!trimmedInsertText}><Plus size={16} /></button>
-            <button className="button ghost" type="button" onClick={cancelInsert}>Anuluj</button>
+            <input autoFocus value={insertText} placeholder={tx("editor.newSentence")} onChange={(event) => setInsertText(event.target.value)} />
+            <button className="icon-button" type="submit" title={tx("editor.insertSentence")} aria-label={tx("editor.insertSentence")} disabled={!trimmedInsertText}><Plus size={16} /></button>
+            <button className="button ghost" type="button" onClick={cancelInsert}>{tx("common.cancel")}</button>
           </form>
         ) : (
-          <button className="icon-button sentence-add" type="button" title="Dodaj sentencję" aria-label="Dodaj sentencję" onClick={() => openInsert(index)}><Plus size={12} /></button>
+          <button className="icon-button sentence-add" type="button" title={tx("editor.addSentence")} aria-label={tx("editor.addSentence")} onClick={() => openInsert(index)}><Plus size={12} /></button>
         )}
         <span />
       </div>
@@ -3090,7 +3075,7 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
   return (
     <div className="phrase-list">
       <div className="panel-heading">
-        <strong>Sentencje</strong>
+        <strong>{tx("editor.sentences")}</strong>
         <small>{arrangement.lines.length}</small>
       </div>
       {renderInsertControl(0)}
@@ -3142,7 +3127,7 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
                               className={tokenClassName}
                               draggable
                               value={token.text || ""}
-                              aria-label="Treść sylaby"
+                              aria-label={tx("editor.syllableContent")}
                               onDragStart={(event) => startSyllableDrag(event, token.tokenId)}
                               onDragOver={(event) => event.preventDefault()}
                               onDrop={(event) => dropSyllable(event, commit, token.tokenId)}
@@ -3176,7 +3161,7 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
                       <button
                         className="mini-add"
                         type="button"
-                        title="Dodaj sylabę"
+                        title={tx("editor.addSyllable")}
                         onDragOver={(event) => event.preventDefault()}
                         onDrop={(event) => dropSyllableToEnd(event, commit, word.wordId)}
                         onClick={() => addSyllableFromPrompt(commit, word.tokens.at(-1)?.tokenId)}
@@ -3190,7 +3175,7 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
               <button
                 className="mini-add word-insert"
                 type="button"
-                title="Dodaj wyraz"
+                title={tx("editor.addWord")}
                 onDragOver={(event) => event.preventDefault()}
                 onDrop={(event) => dropWordToEnd(event, commit, line.lineId)}
                 onClick={() => addWordFromPrompt(commit, line.lineId, wordsForLine(arrangement, line).at(-1)?.wordId ?? null)}
@@ -3208,9 +3193,9 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
 
 function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, selectedWord, selectedToken, acceptedSongBpm, commit, onSplitLine }) {
   if (!selectedLine) {
-    return <div className="properties-panel"><div className="panel-heading"><strong>Właściwości</strong></div></div>;
+    return <div className="properties-panel"><div className="panel-heading"><strong>{tx("editor.properties")}</strong></div></div>;
   }
-  const heading = selected.type === "word" ? "Wyraz" : selected.type === "token" ? "Sylaba" : "Sentencja";
+  const heading = selected.type === "word" ? tx("editor.word") : selected.type === "token" ? tx("editor.syllable") : tx("editor.sentence");
   const sortedLines = [...arrangement.lines].sort((left, right) => left.startSec - right.startSec);
   const selectedLineIndex = sortedLines.findIndex((line) => line.lineId === selectedLine.lineId);
   const previousLine = selectedLineIndex > 0 ? sortedLines[selectedLineIndex - 1] : null;
@@ -3227,14 +3212,14 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
 
       {selected.type === "line" && (
         <div className="property-stack">
-          <PropertyReadout label="Treść sentencji" value={selectedLineText} />
+          <PropertyReadout label={tx("editor.sentenceContent")} value={selectedLineText} />
           <PropertyTimeRow startSec={selectedLine.startSec} endSec={selectedLine.endSec} />
           <div className="property-actions">
-            <PropertyIconButton title="Scal w lewo" disabled={!previousLine} onClick={() => commit((draft) => mergeLineWithPrevious(draft, selectedLine.lineId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
-            <PropertyIconButton title="Scal w prawo" disabled={selectedLineIndex === -1 || selectedLineIndex >= sortedLines.length - 1} onClick={() => commit((draft) => mergeLineWithNext(draft, selectedLine.lineId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
-            <PropertyIconButton title="Dodaj sentencję" onClick={() => addLineFromPrompt(commit, lineInsertIndex)}><Plus size={16} /></PropertyIconButton>
-            <PropertyIconButton title="Podziel sentencję" onClick={onSplitLine}><Scissors size={16} /></PropertyIconButton>
-            <PropertyIconButton title="Usuń sentencję" danger onClick={() => commit((draft) => deleteLine(draft, selectedLine.lineId))}><Trash2 size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.mergeLeft")} disabled={!previousLine} onClick={() => commit((draft) => mergeLineWithPrevious(draft, selectedLine.lineId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.mergeRight")} disabled={selectedLineIndex === -1 || selectedLineIndex >= sortedLines.length - 1} onClick={() => commit((draft) => mergeLineWithNext(draft, selectedLine.lineId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.addSentence")} onClick={() => addLineFromPrompt(commit, lineInsertIndex)}><Plus size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.splitSentence")} onClick={onSplitLine}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.deleteSentence")} danger onClick={() => commit((draft) => deleteLine(draft, selectedLine.lineId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
           <QualityFlags flags={selectedLine.qualityFlags} />
         </div>
@@ -3242,14 +3227,14 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
 
       {selected.type === "word" && selectedWord && (
         <div className="property-stack">
-          <PropertyReadout label="Treść wyrazu" value={selectedWord.text || "..."} />
+          <PropertyReadout label={tx("editor.wordContent")} value={selectedWord.text || "..."} />
           <PropertyTimeRow startSec={selectedWord.startSec} endSec={selectedWord.endSec} />
           <div className="property-actions">
-            <PropertyIconButton title="Scal w lewo" onClick={() => commit((draft) => mergeWordWithPrevious(draft, selectedWord.wordId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
-            <PropertyIconButton title="Scal w prawo" onClick={() => commit((draft) => mergeWordWithNext(draft, selectedWord.wordId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
-            <PropertyIconButton title="Dodaj wyraz" onClick={() => addWordFromPrompt(commit, selectedLine.lineId, selectedWord.wordId)}><Plus size={16} /></PropertyIconButton>
-            <PropertyIconButton title="Podziel wyraz" onClick={() => commit((draft) => splitWord(draft, selectedWord.wordId))}><Scissors size={16} /></PropertyIconButton>
-            <PropertyIconButton title="Usuń wyraz" danger onClick={() => commit((draft) => deleteWord(draft, selectedWord.wordId))}><Trash2 size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.mergeLeft")} onClick={() => commit((draft) => mergeWordWithPrevious(draft, selectedWord.wordId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.mergeRight")} onClick={() => commit((draft) => mergeWordWithNext(draft, selectedWord.wordId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.addWord")} onClick={() => addWordFromPrompt(commit, selectedLine.lineId, selectedWord.wordId)}><Plus size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.splitWord")} onClick={() => commit((draft) => splitWord(draft, selectedWord.wordId))}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.deleteWord")} danger onClick={() => commit((draft) => deleteWord(draft, selectedWord.wordId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
           <QualityFlags
             flags={selectedWordQualityFlags}
@@ -3261,9 +3246,9 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
       {selected.type === "token" && selectedToken && (
         <div className="property-stack">
           <div className="property-inline-row property-inline-row-token">
-            <InlineField label="Sylaba" value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value || "~", isExtension: false, extendsTokenId: null }))} />
-            <InlineField label="MIDI" type="number" step="1" value={selectedToken.midi ?? ""} placeholder="brak" onChange={(value) => commit((draft) => updateTokenMidi(draft, selectedToken.tokenId, value))} />
-            <InlineSelect label="Typ" value={selectedToken.noteType} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { noteType: value }))} options={NOTE_TYPES} />
+            <InlineField label={tx("editor.syllable")} value={selectedToken.text} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { text: value || "~", isExtension: false, extendsTokenId: null }))} />
+            <InlineField label="MIDI" type="number" step="1" value={selectedToken.midi ?? ""} placeholder={tx("common.none")} onChange={(value) => commit((draft) => updateTokenMidi(draft, selectedToken.tokenId, value))} />
+            <InlineSelect label={tx("field.type")} value={selectedToken.noteType} onChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { noteType: value }))} options={noteTypeOptions()} />
           </div>
           <EditableTimeRow
             startSec={selectedToken.startSec}
@@ -3273,11 +3258,11 @@ function PropertiesPanel({ arrangement, selected, selectAndSeek, selectedLine, s
             onEndChange={(value) => commit((draft) => updateToken(draft, selectedToken.tokenId, { endSec: Number(value) }))}
           />
           <div className="property-actions">
-            <PropertyIconButton title="Scal w lewo" onClick={() => commit((draft) => mergeTokenWithPrevious(draft, selectedToken.tokenId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
-            <PropertyIconButton title="Scal w prawo" onClick={() => commit((draft) => mergeTokenWithNext(draft, selectedToken.tokenId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
-            <PropertyIconButton title="Dodaj sylabę" onClick={() => addSyllableFromPrompt(commit, selectedToken.tokenId)}><Plus size={16} /></PropertyIconButton>
-            <PropertyIconButton title="Podziel sylabę" onClick={() => commit((draft) => splitToken(draft, selectedToken.tokenId))}><Scissors size={16} /></PropertyIconButton>
-            <PropertyIconButton title="Usuń sylabę" danger onClick={() => commit((draft) => deleteToken(draft, selectedToken.tokenId))}><Trash2 size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.mergeLeft")} onClick={() => commit((draft) => mergeTokenWithPrevious(draft, selectedToken.tokenId))}><Merge size={16} /><SkipBack size={12} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.mergeRight")} onClick={() => commit((draft) => mergeTokenWithNext(draft, selectedToken.tokenId))}><Merge size={16} /><SkipForward size={12} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.addSyllable")} onClick={() => addSyllableFromPrompt(commit, selectedToken.tokenId)}><Plus size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.splitSyllable")} onClick={() => commit((draft) => splitToken(draft, selectedToken.tokenId))}><Scissors size={16} /></PropertyIconButton>
+            <PropertyIconButton title={tx("editor.deleteSyllable")} danger onClick={() => commit((draft) => deleteToken(draft, selectedToken.tokenId))}><Trash2 size={16} /></PropertyIconButton>
           </div>
           <QualityFlags
             flags={selectedTokenQualityFlags}
@@ -3302,9 +3287,9 @@ function PropertyReadout({ label, value }) {
 function PropertyTimeRow({ startSec, endSec }) {
   return (
     <div className="property-inline-row property-time-row">
-      <PropertyReadout label="Start" value={formatPropertyTime(startSec)} />
-      <PropertyReadout label="Czas" value={formatPropertyTime(endSec - startSec)} />
-      <PropertyReadout label="Koniec" value={formatPropertyTime(endSec)} />
+      <PropertyReadout label={tx("editor.start")} value={formatPropertyTime(startSec)} />
+      <PropertyReadout label={tx("editor.duration")} value={formatPropertyTime(endSec - startSec)} />
+      <PropertyReadout label={tx("editor.end")} value={formatPropertyTime(endSec)} />
     </div>
   );
 }
@@ -3312,9 +3297,9 @@ function PropertyTimeRow({ startSec, endSec }) {
 function EditableTimeRow({ startSec, endSec, onStartChange, onDurationChange, onEndChange }) {
   return (
     <div className="property-inline-row property-time-row">
-      <InlineField label="Start" type="number" value={startSec} onChange={onStartChange} />
-      <InlineField label="Czas" type="number" value={roundTime(endSec - startSec)} onChange={onDurationChange} />
-      <InlineField label="Koniec" type="number" value={endSec} onChange={onEndChange} />
+      <InlineField label={tx("editor.start")} type="number" value={startSec} onChange={onStartChange} />
+      <InlineField label={tx("editor.duration")} type="number" value={roundTime(endSec - startSec)} onChange={onDurationChange} />
+      <InlineField label={tx("editor.end")} type="number" value={endSec} onChange={onEndChange} />
     </div>
   );
 }
@@ -3355,17 +3340,17 @@ function QualityFlags({ flags = [], onAcceptFlag }) {
     <div className="flag-list">
       {flags.map((flag) => ["uncertain_text", "uncertain_pitch", "needs_syllable_review"].includes(flag) && onAcceptFlag ? (
         <button key={flag} className="quality-badge warning quality-accept" type="button" title={qualityAcceptTooltip(flag)} onClick={() => onAcceptFlag(flag)}>
-          {FLAG_LABELS[flag] ?? flag}
+          {FLAG_LABEL_KEYS[flag] ? tx(FLAG_LABEL_KEYS[flag]) : flag}
         </button>
-      ) : <span key={flag} className="quality-badge warning">{FLAG_LABELS[flag] ?? flag}</span>)}
+      ) : <span key={flag} className="quality-badge warning">{FLAG_LABEL_KEYS[flag] ? tx(FLAG_LABEL_KEYS[flag]) : flag}</span>)}
     </div>
   );
 }
 
 function qualityAcceptTooltip(flag) {
-  if (flag === "uncertain_pitch") return "kliknij aby uznać za pewny ton";
-  if (flag === "needs_syllable_review") return "Kliknij aby potwierdzić, jeśli sylaba jest ok";
-  return "kliknij by oznaczyć jako prawidłowy";
+  if (flag === "uncertain_pitch") return tx("quality.acceptPitch");
+  if (flag === "needs_syllable_review") return tx("quality.acceptSyllable");
+  return tx("quality.accept");
 }
 
 function propertyQualityFlags(tokens, acceptedSongBpm) {
@@ -3384,7 +3369,7 @@ function LanguageSelect({ label, value, onChange, options }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
-  const selected = options.find(([code]) => code === value) ?? [value, value || "Auto"];
+  const selected = options.find(([code]) => code === value) ?? [value, value || tx("common.auto")];
   const normalizedQuery = normalizeSearchText(query);
   const visibleOptions = [
     options[0],
@@ -3532,7 +3517,7 @@ function ConfigurationPresetSelect({ label, value, onChange, presets, onDelete, 
   const [activeIndex, setActiveIndex] = useState(0);
   const selected = presets.find((preset) => preset.presetId === value) ?? presets[0] ?? DEFAULT_CONFIGURATION_PRESET_SUMMARY;
   const normalizedQuery = normalizeSearchText(query);
-  const matches = (preset) => !normalizedQuery || normalizeSearchText(preset.name).includes(normalizedQuery) || normalizeSearchText(preset.presetId).includes(normalizedQuery);
+  const matches = (preset) => !normalizedQuery || normalizeSearchText(presetDisplayName(preset)).includes(normalizedQuery) || normalizeSearchText(preset.presetId).includes(normalizedQuery);
   const builtIn = presets.filter((preset) => preset.presetType === "predefined" && matches(preset));
   const custom = presets.filter((preset) => preset.presetType === "custom" && matches(preset));
   const visibleOptions = [...builtIn, ...custom];
@@ -3610,14 +3595,14 @@ function ConfigurationPresetSelect({ label, value, onChange, presets, onDelete, 
                 onMouseEnter={() => setActiveIndex(index)}
                 onClick={() => choosePreset(preset)}
               >
-                <span>{preset.name}</span>
+                <span>{presetDisplayName(preset)}</span>
               </button>
               {preset.canDelete && (
                 <button
                   className="preset-delete-button"
                   type="button"
-                  title={`Usuń preset ${preset.name}`}
-                  aria-label={`Usuń preset ${preset.name}`}
+                  title={`${tx("preset.delete")}: ${preset.name}`}
+                  aria-label={`${tx("preset.delete")}: ${preset.name}`}
                   onMouseDown={(event) => event.preventDefault()}
                   onClick={(event) => { event.stopPropagation(); setOpen(false); setQuery(""); onDelete?.(preset); }}
                 >
@@ -3641,15 +3626,15 @@ function ConfigurationPresetSelect({ label, value, onChange, presets, onDelete, 
         aria-autocomplete="list"
         aria-controls="configuration-preset-options"
         aria-activedescendant={open && visibleOptions[activeIndex] ? `configuration-preset-${visibleOptions[activeIndex].presetId}` : undefined}
-        value={open ? query : selected.name}
+        value={open ? query : presetDisplayName(selected)}
         onFocus={() => { setOpen(true); setQuery(""); }}
         onChange={(event) => { setQuery(event.target.value); setOpen(true); setActiveIndex(0); }}
         onKeyDown={handleKeyDown}
       />
       {open && (
         <div className="language-options configuration-preset-options" id="configuration-preset-options" role="listbox">
-          {grouped ? <>{renderGroup("Wbudowane", builtIn)}{renderGroup("Użytkownika", custom)}</> : renderGroup(null, visibleOptions)}
-          {!visibleOptions.length && <div className="preset-options-empty">Brak pasujących presetów.</div>}
+          {grouped ? <>{renderGroup(tx("preset.builtIn"), builtIn)}{renderGroup(tx("preset.user"), custom)}</> : renderGroup(null, visibleOptions)}
+          {!visibleOptions.length && <div className="preset-options-empty">{tx("preset.noMatches")}</div>}
         </div>
       )}
     </div>
@@ -3658,6 +3643,10 @@ function ConfigurationPresetSelect({ label, value, onChange, presets, onDelete, 
 
 function Select({ label, helper, value, onChange, options, tooltip, disabled = false, fallback = false }) {
   return <label className={`field ${fallback ? "configuration-fallback-field" : ""}`}><FieldLabel label={label} tooltip={tooltip} />{helper && <small>{helper}</small>}<select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>{options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>;
+}
+
+function presetDisplayName(preset) {
+  return preset?.presetId === DEFAULT_CONFIGURATION_PRESET ? tx("preset.default") : preset?.name ?? "";
 }
 
 function FieldLabel({ label, tooltip }) {
@@ -3687,7 +3676,7 @@ function ConfirmDialog({ title, message, confirmLabel, busy, nested = false, onC
         </div>
         <p>{message}</p>
         <div className="modal-actions">
-          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Anuluj</button>
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>{tx("common.cancel")}</button>
           <button className="button ghost danger" type="button" disabled={busy} onClick={onConfirm}>
             <Trash2 size={16} /> {confirmLabel}
           </button>
@@ -3702,14 +3691,14 @@ function ConfigurationFallbackModal({ processingMode, busy, onCancel, onManualCo
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirmation-modal configuration-warning-modal" role="dialog" aria-modal="true" aria-labelledby="configuration-warning-title">
-        <div className="modal-header"><h2 id="configuration-warning-title">Niepełna konfiguracja</h2></div>
-        <p>Użyta konfiguracja ma niezdefiniowane wartości dla niektórych pól (w trybie ręcznym będą oznaczone na czerwono). W tych polach zostaną użyte wartości z konfiguracji „Domyślna”.</p>
-        {automatic && <p>Zaleca się uruchomienie w trybie ręcznym i zweryfikowanie ustawień oznaczonych na czerwono.</p>}
+        <div className="modal-header"><h2 id="configuration-warning-title">{tx("configuration.incomplete")}</h2></div>
+        <p>{tx("configuration.fallback")}</p>
+        {automatic && <p>{tx("configuration.manualRecommended")}</p>}
         <div className="modal-actions configuration-warning-actions">
-          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Anuluj</button>
-          {automatic && <button className="button ghost" type="button" disabled={busy} onClick={onAutomaticConfirm}>Przetwarzaj automatycznie</button>}
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>{tx("common.cancel")}</button>
+          {automatic && <button className="button ghost" type="button" disabled={busy} onClick={onAutomaticConfirm}>{tx("configuration.processAutomatic")}</button>}
           <span className="modal-action-spacer" />
-          <button className="button primary" type="button" disabled={busy} onClick={onManualConfirm}>{automatic ? "Przełącz na tryb ręczny" : "Ok"}</button>
+          <button className="button primary" type="button" disabled={busy} onClick={onManualConfirm}>{automatic ? tx("configuration.switchManual") : "OK"}</button>
         </div>
       </section>
     </div>
@@ -3732,18 +3721,18 @@ function SaveConfigurationPresetModal({ customPresets, busy, onCancel, onCreate,
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="confirmation-modal preset-save-modal" role="dialog" aria-modal="true" aria-labelledby="preset-save-title">
-        <div className="modal-header"><h2 id="preset-save-title">Zapisz bieżącą konfigurację</h2></div>
+        <div className="modal-header"><h2 id="preset-save-title">{tx("preset.saveCurrent")}</h2></div>
         {canOverwrite && (
-          <div className="preset-save-mode" role="group" aria-label="Sposób zapisu presetu">
-            <button className={`button ${mode === "new" ? "secondary" : "ghost"}`} type="button" onClick={() => setMode("new")}>Nowy preset</button>
-            <button className={`button ${mode === "overwrite" ? "secondary" : "ghost"}`} type="button" onClick={() => setMode("overwrite")}>Nadpisz istniejący</button>
+          <div className="preset-save-mode" role="group" aria-label={tx("preset.saveMethod")}>
+            <button className={`button ${mode === "new" ? "secondary" : "ghost"}`} type="button" onClick={() => setMode("new")}>{tx("preset.new")}</button>
+            <button className={`button ${mode === "overwrite" ? "secondary" : "ghost"}`} type="button" onClick={() => setMode("overwrite")}>{tx("preset.overwrite")}</button>
           </div>
         )}
         {createsNewPreset ? (
-          <TextField label="Nazwa presetu" required value={name} onChange={setName} />
+          <TextField label={tx("preset.name")} required value={name} onChange={setName} />
         ) : (
           <ConfigurationPresetSelect
-            label="Preset użytkownika"
+            label={tx("preset.userPreset")}
             value={selectedPresetId}
             onChange={setSelectedPresetId}
             presets={customPresets}
@@ -3752,14 +3741,14 @@ function SaveConfigurationPresetModal({ customPresets, busy, onCancel, onCreate,
           />
         )}
         <div className="modal-actions">
-          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Anuluj</button>
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>{tx("common.cancel")}</button>
           <button
             className="button primary"
             type="button"
             disabled={busy || (createsNewPreset ? !name.trim() : !selectedPresetId)}
             onClick={() => (createsNewPreset ? onCreate(name.trim()) : onOverwrite(selectedPresetId))}
           >
-            <Save size={16} /> {createsNewPreset ? "Zapisz preset" : "Nadpisz preset"}
+            <Save size={16} /> {createsNewPreset ? tx("preset.save") : tx("preset.overwriteAction")}
           </button>
         </div>
       </section>
@@ -3771,11 +3760,11 @@ function PresetNameCollisionModal({ preset, busy, onCancel, onConfirm }) {
   return (
     <div className="modal-backdrop modal-backdrop-nested" role="presentation">
       <section className="confirmation-modal" role="dialog" aria-modal="true" aria-labelledby="preset-collision-title">
-        <div className="modal-header"><h2 id="preset-collision-title">Preset już istnieje</h2></div>
-        <p>Preset „{preset.name}” już istnieje. Czy go nadpisać?</p>
+        <div className="modal-header"><h2 id="preset-collision-title">{tx("preset.exists")}</h2></div>
+        <p>{tx("preset.collisionMessage", { name: preset.name })}</p>
         <div className="modal-actions">
-          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>Nie</button>
-          <button className="button primary" type="button" disabled={busy} onClick={onConfirm}>Tak</button>
+          <button className="button ghost" type="button" disabled={busy} onClick={onCancel}>{tx("common.no")}</button>
+          <button className="button primary" type="button" disabled={busy} onClick={onConfirm}>{tx("common.yes")}</button>
         </div>
       </section>
     </div>
@@ -3783,24 +3772,24 @@ function PresetNameCollisionModal({ preset, busy, onCancel, onConfirm }) {
 }
 
 function AudioSummary({ audio, filename }) {
-  return <dl className="summary"><dt>Plik</dt><dd>{filename}</dd><dt>Format</dt><dd>{audio.container ?? "-"}</dd><dt>Kodek</dt><dd>{audio.codec ?? "-"}</dd><dt>Kanały</dt><dd>{audio.channels ?? "-"}</dd><dt>Hz</dt><dd>{audio.sampleRate ?? "-"}</dd><dt>Czas</dt><dd>{audio.durationSec ? `${audio.durationSec.toFixed(2)} s` : "-"}</dd></dl>;
+  return <dl className="summary"><dt>{tx("summary.file")}</dt><dd>{filename}</dd><dt>{tx("summary.format")}</dt><dd>{audio.container ?? "-"}</dd><dt>{tx("summary.codec")}</dt><dd>{audio.codec ?? "-"}</dd><dt>{tx("summary.channels")}</dt><dd>{audio.channels ?? "-"}</dd><dt>Hz</dt><dd>{audio.sampleRate ?? "-"}</dd><dt>{tx("summary.duration")}</dt><dd>{audio.durationSec ? `${audio.durationSec.toFixed(2)} s` : "-"}</dd></dl>;
 }
 
 function CoverPlaceholder() {
-  return <span className="cover-placeholder"><FileAudio size={42} /><span>brak okładki</span></span>;
+  return <span className="cover-placeholder"><FileAudio size={42} /><span>{tx("upload.noCover")}</span></span>;
 }
 
 function MetadataSummary({ job }) {
   const confirmedStages = sortedStages(job.processing).filter((stage) => isConfigurableStage(stage) && isSettingsConfirmed(stage));
-  if (!confirmedStages.length) return <p className="empty-summary">Brak zatwierdzonych ustawień.</p>;
+  if (!confirmedStages.length) return <p className="empty-summary">{tx("summary.noConfirmed")}</p>;
 
   return (
     <div className="settings-summary-groups">
       <div className="settings-summary-group">
-        <strong>Konfiguracja</strong>
+        <strong>{tx("field.configuration")}</strong>
         <dl className="summary">
-          <dt>Preset</dt><dd>{job.configurationPresetName ?? (job.configurationPreset === DEFAULT_CONFIGURATION_PRESET ? "Domyślna" : job.configurationPreset)}</dd>
-          <dt>Tryb</dt><dd>{PROCESSING_MODE_LABELS[job.processingMode] ?? job.processingMode}</dd>
+          <dt>Preset</dt><dd>{job.configurationPreset === DEFAULT_CONFIGURATION_PRESET ? tx("preset.default") : job.configurationPresetName ?? job.configurationPreset}</dd>
+          <dt>{tx("field.mode")}</dt><dd>{Object.fromEntries(processingModeOptions())[job.processingMode] ?? job.processingMode}</dd>
         </dl>
       </div>
       {confirmedStages.map((stage) => (
@@ -3821,7 +3810,7 @@ function MetadataSummary({ job }) {
 
 function StageRail({ job, sourceUpload }) {
   const stages = job?.processing ? sortedStages(job.processing) : defaultStages(sourceUpload);
-  return <div className="stage-list">{stages.map((stage) => <div key={`${stage.stage}.${stage.substep}`} className={`stage ${stage.status} ${stage.actionRequired || stage.attention ? "action-required" : ""}`}><span /> <div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.status}</small>{!stage.hideProgress && <Progress stage={stage} />}</div></div>)}</div>;
+  return <div className="stage-list">{stages.map((stage) => <div key={`${stage.stage}.${stage.substep}`} className={`stage ${stage.status} ${stage.actionRequired || stage.attention ? "action-required" : ""}`}><span /> <div><strong>{stageLabel(stage)}</strong><small>{stage.actionRequired ? tx("stage.awaitingSettings") : statusLabel(stage.status)}</small>{!stage.hideProgress && <Progress stage={stage} />}</div></div>)}</div>;
 }
 
 function StatusPanel({ job, onResetStage }) {
@@ -3846,13 +3835,13 @@ function StatusPanel({ job, onResetStage }) {
           <article key={key} ref={(node) => { if (node) rowRefs.current[key] = node; }} className={`status-row ${stage.status}`}>
             <div>
               <strong>{stageLabel(stage)}</strong>
-              <small>{stage.actionRequired ? "oczekuje na ustawienia" : stage.workerRole}</small>
+              <small>{stage.actionRequired ? tx("stage.awaitingSettings") : stage.workerRole}</small>
               {stage.logExcerpt && <pre>{stage.logExcerpt}</pre>}
             </div>
             <div className="status-actions">
               <Progress stage={stage} />
               <div className="artifact-buttons">
-                {isConfigurableStage(stage) && stage.status === "completed" && <button className="button ghost" type="button" disabled={jobRunning} onClick={() => onResetStage?.(stage.stage)}>Zmień</button>}
+                {isConfigurableStage(stage) && stage.status === "completed" && <button className="button ghost" type="button" disabled={jobRunning} onClick={() => onResetStage?.(stage.stage)}>{tx("common.change")}</button>}
                 {artifactIds.map((assetId) => <ArtifactPreviewButton key={assetId} asset={artifactsById[assetId]} fallback={assetId} onOpen={setPreviewAsset} iconOnly />)}
               </div>
             </div>
@@ -3883,10 +3872,10 @@ function formatTranscriptionSettingValue(key, value) {
 }
 
 function stageDuration(stage) {
-  if (!stage.startedAt || !stage.finishedAt) return "czas niedostępny";
+  if (!stage.startedAt || !stage.finishedAt) return tx("common.timeUnavailable");
   const start = new Date(stage.startedAt).getTime();
   const end = new Date(stage.finishedAt).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return "czas niedostępny";
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return tx("common.timeUnavailable");
   return `${((end - start) / 1000).toFixed(1)} s`;
 }
 
@@ -3894,13 +3883,13 @@ function stageSettingsSummary(job, stage) {
   const transcription = { ...defaultTranscription, ...(job.transcriptionSettings ?? {}) };
   const pitch = { ...defaultPitch, ...(job.pitchSettings ?? {}) };
   const syllabification = { ...defaultSyllabification, ...(job.syllabificationSettings ?? {}) };
-  if (stage.stage === "uploaded") return [["Tytuł", job.metadata?.title || "-"], ["Artysta", job.metadata?.artist || "-"], ["Album", job.metadata?.album || "-"], ["Rok", job.metadata?.year || "-"], ["Gatunek", job.metadata?.genre || "-"], ["Język", job.metadata?.language || "auto"]];
-  if (stage.stage === "detecting_bpm") return [["Rozpoznane BPM", formatSettingValue(job.tempo?.detectedSongBpm)]];
-  if (stage.stage === "separating_vocals") return [["Model", job.profiles?.separationModel ?? "-"]];
-  if (stage.stage === "transcribing") return [["Model", job.profiles?.transcriptionModel ?? "-"], ["VAD", transcription.vadMethod], ["Pozycjonowanie", TRANSCRIPTION_POSITIONING_LABELS[transcription.positioning] ?? transcription.positioning], ["Sylabizacja", SYLLABIFICATION_SELECT_LABELS[syllabification.method] ?? syllabification.method]];
-  if (stage.stage === "detecting_pitch") return [["Profil", PITCH_PROFILE_LABELS[job.profiles?.pitch] ?? job.profiles?.pitch ?? "Dokładny"], ["Czułość dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["Krok ramek", `${pitch.frameStepMs} ms`]];
-  if (stage.stage === "aligning") return [["Ms między sentencjami", transcription.sentenceGapMs == null ? "auto" : `${transcription.sentenceGapMs} ms`], ["Najkrótsza nuta", `${pitch.minNoteLengthMs} ms`], ["Scalanie przerw", `${pitch.mergeGapMs} ms`], ["Weryfikuj sylaby dłuższe niż", `${pitch.checkNoteLongerThan} ms`], ["Próg ciszy do weryfikacji", `${pitch.silenceTresholdForNoteChecking} dB`]];
-  return [["Ustawienia", "-"]];
+  if (stage.stage === "uploaded") return [[tx("field.title"), job.metadata?.title || "-"], [tx("field.artist"), job.metadata?.artist || "-"], [tx("field.album"), job.metadata?.album || "-"], [tx("field.year"), job.metadata?.year || "-"], [tx("field.genre"), job.metadata?.genre || "-"], [tx("field.language"), job.metadata?.language || tx("common.auto")]];
+  if (stage.stage === "detecting_bpm") return [[tx("summary.detectedBpm"), formatSettingValue(job.tempo?.detectedSongBpm)]];
+  if (stage.stage === "separating_vocals") return [[tx("field.model"), job.profiles?.separationModel ?? "-"]];
+  if (stage.stage === "transcribing") return [[tx("field.model"), job.profiles?.transcriptionModel ?? "-"], ["VAD", transcription.vadMethod], [tx("field.positioning"), Object.fromEntries(transcriptionPositioningOptions())[transcription.positioning] ?? transcription.positioning], [tx("field.syllabification"), Object.fromEntries(syllabificationOptions())[syllabification.method] ?? syllabification.method]];
+  if (stage.stage === "detecting_pitch") return [[tx("field.profile"), Object.fromEntries(pitchProfileOptions())[job.profiles?.pitch] ?? job.profiles?.pitch ?? tx("option.accurate")], ["dB", formatSettingValue(pitch.silenceThresholdDb)], ["Periodicity", formatSettingValue(pitch.periodicityThreshold)], ["frameStep", `${pitch.frameStepMs} ms`]];
+  if (stage.stage === "aligning") return [[tx("setting.sentenceGap"), transcription.sentenceGapMs == null ? tx("common.auto") : `${transcription.sentenceGapMs} ms`], [tx("setting.minNote"), `${pitch.minNoteLengthMs} ms`], [tx("setting.mergeGap"), `${pitch.mergeGapMs} ms`], [tx("setting.checkLong"), `${pitch.checkNoteLongerThan} ms`], [tx("setting.checkSilence"), `${pitch.silenceTresholdForNoteChecking} dB`]];
+  return [[tx("common.settings"), "-"]];
 }
 
 function normalizeSearchText(value) {
@@ -4034,20 +4023,20 @@ function fromEditorArrangement(arrangement) {
 }
 
 function addWordFromPrompt(commit, lineId, afterWordId = null) {
-  const text = window.prompt("Nowy wyraz");
+  const text = window.prompt(tx("editor.newWord"));
   if (!text?.trim()) return;
   commit((draft) => insertWordAfter(draft, lineId, afterWordId, text.trim()));
 }
 
 function addLineFromPrompt(commit, insertIndex) {
-  const text = window.prompt("Nowa sentencja");
+  const text = window.prompt(tx("editor.newSentence"));
   if (!text?.trim()) return;
   commit((draft) => insertLineAtBoundary(draft, insertIndex, text.trim()));
 }
 
 function addSyllableFromPrompt(commit, afterTokenId) {
   if (!afterTokenId) return;
-  const text = window.prompt("Nowa sylaba");
+  const text = window.prompt(tx("editor.newSyllable"));
   if (!text?.trim()) return;
   commit((draft) => insertSyllableAfter(draft, afterTokenId, text.trim()));
 }
@@ -5115,15 +5104,15 @@ function waveformPixelsPerSecond(container, zoomSec) {
 function SyllabificationBadge({ info, active = false, onToggle }) {
   if (!info) {
     return onToggle
-      ? <button className={`quality-badge warning quality-filter ${active ? "quality-highlight" : ""}`} type="button" aria-pressed={active} onClick={onToggle}>Sylabizacja: brak danych</button>
-      : <span className="quality-badge warning">Sylabizacja: brak danych</span>;
+      ? <button className={`quality-badge warning quality-filter ${active ? "quality-highlight" : ""}`} type="button" aria-pressed={active} onClick={onToggle}>{tx("quality.syllabificationNone")}</button>
+      : <span className="quality-badge warning">{tx("quality.syllabificationNone")}</span>;
   }
   const requested = info.requestedMethod;
   const applied = info.appliedMethod;
   const warning = requested && applied && requested !== applied;
   const appliedLabel = syllabificationBadgeLabel(applied);
   const requestedLabel = syllabificationBadgeLabel(requested);
-  const text = warning ? `Sylabizacja: ${appliedLabel} (wybrano ${requestedLabel})` : `Sylabizacja: ${appliedLabel}`;
+  const text = warning ? tx("quality.syllabificationFallback", { applied: appliedLabel, requested: requestedLabel }) : tx("quality.syllabification", { applied: appliedLabel });
   if (warning && onToggle) {
     return <button className={`quality-badge warning quality-filter ${active ? "quality-highlight" : ""}`} type="button" title={info.fallbackReason ?? ""} aria-pressed={active} onClick={onToggle}>{text}</button>;
   }
@@ -5146,7 +5135,7 @@ function syllabificationIssueForArrangement(arrangement) {
 }
 
 function syllabificationBadgeLabel(method) {
-  return SYLLABIFICATION_BADGE_LABELS[method] ?? method ?? "brak danych";
+  return Object.fromEntries(syllabificationOptions())[method] ?? method ?? tx("common.noData");
 }
 
 function defaultSyllabificationForLanguage(language) {
@@ -5467,7 +5456,7 @@ function storedResetContext() {
 
 function clearBrowserProjectState() {
   try {
-    window.localStorage.clear();
+    window.localStorage.removeItem(APP_STORAGE_KEY);
   } catch {
     // Reset pamięci aplikacji nie może zależeć od dostępności localStorage.
   }
@@ -5520,7 +5509,7 @@ function reloadInitialApplication() {
 }
 
 function confirmAndResetApplication(context) {
-  if (!window.confirm("Zacząć od nowa? Wszystkie dane bieżącego projektu zostaną usunięte.")) return;
+  if (!window.confirm(tx("app.restartConfirm"))) return;
   resetApplicationData(context).finally(reloadInitialApplication);
 }
 
@@ -5555,7 +5544,14 @@ function stageIndex(stage) {
 }
 
 function stageLabel(stage) {
-  return STAGE_LABELS[stageDomKey(stage)] ?? stage?.message ?? "";
+  const key = STAGE_LABEL_KEYS[stageDomKey(stage)];
+  return key ? tx(key) : stage?.stage ?? "";
+}
+
+function statusLabel(status) {
+  const key = `status.${status}`;
+  const label = tx(key);
+  return label === key ? status : label;
 }
 
 function stageDomKey(stage) {
@@ -5664,7 +5660,7 @@ function confidenceClassName(confidence) {
 }
 
 function confidenceTitle(confidence) {
-  return confidence == null ? "Pewność: brak" : `Pewność: ${confidence.toFixed(3)}`;
+  return confidence == null ? tx("preview.confidenceNone") : tx("preview.confidence", { value: confidence.toFixed(3) });
 }
 
 function artifactPreviewKind(asset, filename) {
@@ -5824,6 +5820,10 @@ function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+function formatUiError(error) {
+  return translateApiError(error);
+}
+
 async function apiForm(path, form) {
   const response = await fetch(`${API_BASE}${path}`, { method: "POST", body: form });
   return parseResponse(response);
@@ -5846,11 +5846,20 @@ function apiFormWithUploadProgress(path, form, onProgress) {
       }
       const error = new Error(payload?.error?.message ?? `HTTP ${request.status}`);
       error.code = payload?.error?.code ?? null;
+      error.status = request.status;
       error.details = payload?.error?.details ?? {};
       reject(error);
     });
-    request.addEventListener("error", () => reject(new Error("Nie udało się wysłać pliku.")));
-    request.addEventListener("abort", () => reject(new Error("Wysyłanie pliku zostało anulowane.")));
+    request.addEventListener("error", () => {
+      const error = new Error("upload_failed");
+      error.code = "uploadFailed";
+      reject(error);
+    });
+    request.addEventListener("abort", () => {
+      const error = new Error("upload_aborted");
+      error.code = "uploadAborted";
+      reject(error);
+    });
     request.send(form);
   });
 }
@@ -5865,10 +5874,11 @@ async function parseResponse(response) {
   if (!response.ok) {
     const error = new Error(payload?.error?.message ?? `HTTP ${response.status}`);
     error.code = payload?.error?.code ?? null;
+    error.status = response.status;
     error.details = payload?.error?.details ?? {};
     throw error;
   }
   return payload;
 }
 
-createRoot(document.getElementById("root")).render(<AppErrorBoundary><App /></AppErrorBoundary>);
+createRoot(document.getElementById("root")).render(<I18nProvider><AppErrorBoundary><App /></AppErrorBoundary></I18nProvider>);

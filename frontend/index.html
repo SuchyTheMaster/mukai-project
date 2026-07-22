@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="pl">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -18,55 +18,12 @@
             <img src="/brand/mukai-logo.png" alt="MUKAI - Music to Karaoke AI Creator" />
             <div class="brand-copy"><strong>MUKAI</strong><span>Music to Karaoke AI Creator</span></div>
           </div>
-          <p>Nie udało się uruchomić interfejsu.</p>
-          <button id="bootstrap-reset-button" class="button ghost danger full" type="button">Od nowa</button>
+          <p id="bootstrap-reset-message"></p>
+          <button id="bootstrap-reset-button" class="button ghost danger full" type="button"><span aria-hidden="true">↻</span> <span></span></button>
         </div>
       </div>
     </div>
-    <script>
-      (() => {
-        const storageKey = "mukai.processingState.v1";
-        const rawState = (() => {
-          try { return window.localStorage.getItem(storageKey); } catch { return null; }
-        })();
-        if (!rawState) return;
-        document.getElementById("bootstrap-reset-shell").hidden = false;
-        document.getElementById("bootstrap-reset-button").addEventListener("click", async () => {
-          if (!window.confirm("Zacząć od nowa? Wszystkie dane bieżącego projektu zostaną usunięte.")) return;
-          let state = {};
-          try { state = JSON.parse(rawState); } catch { state = {}; }
-          const payload = {
-            jobId: state.job?.jobId ?? null,
-            uploadDraftId: state.inspection?.uploadDraftId ?? null,
-          };
-          try { window.localStorage.clear(); } catch {}
-          try { window.sessionStorage.clear(); } catch {}
-          try {
-            if ("caches" in window) {
-              const names = await window.caches.keys();
-              await Promise.all(names.map((name) => window.caches.delete(name)));
-            }
-            if (payload.jobId || payload.uploadDraftId) {
-              const controller = new AbortController();
-              const timeout = window.setTimeout(() => controller.abort(), 5000);
-              try {
-                await fetch("/api/reset", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload),
-                  keepalive: true,
-                  signal: controller.signal,
-                });
-              } finally {
-                window.clearTimeout(timeout);
-              }
-            }
-          } finally {
-            window.location.replace(window.location.pathname);
-          }
-        });
-      })();
-    </script>
+    <script type="module" src="/src/bootstrap.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

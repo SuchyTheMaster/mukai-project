@@ -109,6 +109,8 @@ docker run --rm --gpus all nvidia/cuda:<aktualny-tag-base> nvidia-smi
 - Build frontendu wykonywać na poziomie Dockera przez `docker compose build frontend`. Nie traktować hostowego `npm ci` ani hostowego `npm run build` jako testu akceptacyjnego projektu.
 - Host może służyć co najwyżej do wygenerowania albo aktualizacji `package-lock.json`, jeśli zmieniają się zależności; katalog `frontend/node_modules` nie jest artefaktem projektu i nie powinien być wymagany do pracy aplikacji.
 - Po zmianie zależności albo konfiguracji frontendu testem akceptacyjnym jest `docker compose build frontend`.
+- Build obrazu uruchamia testy `node:test` modułu i18n przed produkcyjnym buildem Vite. Testy obejmują priorytet `localStorage`, normalizację regionów i aliasu `jp`, fallback `en`, niedostępny storage, kompletność katalogów, pluralizację, nazwy języków i mapowanie kodów API.
+- Manualny smoke test lokalizacji obejmuje wszystkie osiem języków, klawiaturę i zamykanie dropdownu, zachowanie preferencji po odświeżeniu i resecie oraz przełączanie podczas uploadu, pipeline'u i edycji bez utraty stanu.
 - Nie podbijać wersji zależności przez automatyczne `npm audit fix --force` bez osobnej decyzji, bo może to zmienić graf zależności i zachowanie builda.
 
 ## Przechowywanie plików

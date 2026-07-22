@@ -57,6 +57,122 @@ button:not(:disabled) {
   min-width: 0;
 }
 
+.interface-language {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  width: max-content;
+  margin: 0;
+}
+
+.interface-language-trigger {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+  padding: 3px 7px 4px;
+  color: var(--secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  opacity: 0.75;
+  transition: opacity 120ms ease;
+}
+
+.interface-language-trigger:hover,
+.interface-language-trigger:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  opacity: 1;
+  outline: none;
+}
+
+.interface-language-flag {
+  display: block;
+  width: 24px;
+  height: 16px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 2px;
+}
+
+.interface-language-code {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  color: black;
+  text-shadow: 0 0 2px white, 0 0 2px white, 0 0 2px white;
+  transform: translate(-50%, -50%);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.interface-language-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  display: grid;
+  width: max-content;
+  min-width: 205px;
+  max-width: min(280px, calc(100vw - 32px));
+  padding: 6px;
+  background: var(--overlay);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(6, 6, 32, 0.65), 0 0 16px rgba(131, 56, 236, 0.22);
+}
+
+.interface-language-menu button {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 18px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--secondary);
+  text-align: left;
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+
+.interface-language-menu button:hover,
+.interface-language-menu button:focus-visible {
+  color: var(--text);
+  background: rgba(255, 0, 110, 0.08);
+  outline: none;
+}
+
+.interface-language-menu button.selected {
+  color: var(--text);
+  background: rgba(255, 0, 110, 0.14);
+}
+
+.interface-language-option-flag {
+  display: block;
+  width: 24px;
+  height: 16px;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+}
+
+.interface-language-check {
+  visibility: hidden;
+  color: var(--success);
+}
+
+.interface-language-menu button.selected .interface-language-check {
+  visibility: visible;
+}
+
 .brand {
   display: flex;
   gap: 14px;
@@ -114,6 +230,10 @@ small,
   top: 24px;
   align-self: start;
   padding: 20px;
+}
+
+.left-rail.panel {
+  position: sticky;
 }
 
 .panel section + section {
@@ -2550,6 +2670,11 @@ summary:hover {
 
   .panel {
     position: static;
+  }
+
+  .left-rail.panel {
+    position: relative;
+    top: auto;
   }
 
   .right-rail .stage-list {

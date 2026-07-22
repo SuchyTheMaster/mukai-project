@@ -5,7 +5,7 @@ RUN if [ -f package-lock.json ]; then npm ci; else npm install --package-lock-on
 COPY index.html vite.config.js /app/
 COPY src /app/src
 COPY public /app/public
-RUN npm run build
+RUN npm test && npm run build
 
 FROM nginx:1.27.3-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf

@@ -18,6 +18,15 @@ RetroWave is a synthwave-infused, gradient-soaked design system dripping with 80
 
 ## App Shell Layout
 
+### Język interfejsu
+
+- Interfejs jest dostępny w językach `pl`, `de`, `en`, `fr`, `it`, `pt`, `es` i `ja`; `jp` jest aliasem wejściowym normalizowanym do `ja`.
+- Preferencja jest zapisywana pod kluczem `mukai.interfaceLanguage.v1`. Zapisana wartość ma pierwszeństwo przed głównym `navigator.language`; nieobsługiwany kod daje fallback `en`. Przy braku klucza kod przeglądarki jest normalizowany przez usunięcie regionu, a potem stosowany jest fallback `en`.
+- Przełącznik `.interface-language` znajduje się w lewym górnym rogu kolumny (`position: absolute; top: 0; left: 0; margin: 0;`), nad brandingiem, i pokazuje graficzną flagę SVG z kodem aktywnego języka nałożonym na flagę. Przycisk ma domyślnie `opacity: 0.75`, a hover/focus zmienia tylko opacity na `1`, bez widocznego tła i ramki. Lokalne zasoby flag znajdują się w `frontend/public/flags/`. Dropdown pokazuje graficzną flagę, autonim, kod i zaznaczenie aktualnej pozycji.
+- Wybór innego języka zapisuje preferencję i natychmiast przerysowuje UI bez przeładowania, remountowania aplikacji ani zmiany stanu projektu. Kliknięcie bieżącego języka, kliknięcie poza menu lub `Escape` zamyka menu; obsługiwane są też Enter, Spacja, strzałki, Home i End.
+- Reset projektu zachowuje język. Tekst piosenki, słowa, sylaby, metadane, nazwy plików i presetów użytkownika oraz identyfikatory techniczne nie podlegają tłumaczeniu.
+- Nazwy języków transkrypcji są formatowane przez `Intl.DisplayNames`. Znane błędy API i walidacji eksportu są lokalizowane na podstawie stabilnych kodów.
+
 - Globalny shell nie ma stałego headera pełnej szerokości; branding `MUKAI` zajmuje tylko szerokość lewej kolumny, dzięki czemu środkowa i prawa kolumna zaczynają się od góry strony z zachowaniem paddingu.
 - Po lewej stronie znajduje się pływająca kolumna robocza. Jej górny panel zawiera branding, upload audio, krótkie podsumowanie pliku, podgląd covera oraz akcje covera przed utworzeniem zadania.
 - Obszar uploadu przyjmuje plik audio lub ZIP zarówno po kliknięciu i wyborze z dysku, jak i po przeciągnięciu pliku. Podczas przeciągania nad obszarem pokazuje aktywne obramowanie i komunikat `Upuść plik audio lub ZIP z projektem`, a upuszczony plik przechodzi przez ten sam proces inspekcji lub importu co plik wybrany z dysku.
