@@ -36,6 +36,14 @@ import {
 import "./styles.css";
 import { localeFor, localizedLanguageOptions, translateApiError, tx, txp } from "./i18n/core.js";
 import { I18nContext, I18nProvider, useI18n } from "./i18n/react.jsx";
+import {
+  boundaryWordDropTargets,
+  draggableBoundaryWordIds,
+  getBoundaryWordDrop,
+  moveBoundaryWordToAdjacentSentence,
+  sortSentenceSyllablesByStart,
+  wordSegmentRenderKey,
+} from "./editor-arrangement.js";
 import { evaluateSplitPoint } from "./editor-split.js";
 import { filterProjects, selectableProjectIds, sortProjects } from "./project-table.js";
 
@@ -3100,7 +3108,11 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
   const lineRowsRef = useRef(new Map());
   const [insertIndex, setInsertIndex] = useState(null);
   const [insertText, setInsertText] = useState("");
+  const [draggedWordId, setDraggedWordId] = useState(null);
+  const [dropPreview, setDropPreview] = useState(null);
   const trimmedInsertText = insertText.trim();
+  const draggableWordIds = useMemo(() => draggableBoundaryWordIds(arrangement), [arrangement]);
+  const draggedWord = draggedWordId ? findWordById(arrangement, draggedWordId)?.word ?? null : null;
 
   useEffect(() => {
     if (!playing || !timelinePinningEnabled || !playingLineId) return undefined;
@@ -3135,6 +3147,56 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
     setInsertText("");
   }
 
+  function clearWordDrag() {
+    setDraggedWordId(null);
+    setDropPreview(null);
+  }
+
+  function startBoundaryWordDrag(event, wordId) {
+    if (!boundaryWordDropTargets(arrangement, wordId).length) {
+      event.preventDefault();
+      return;
+    }
+    setDraggedWordId(wordId);
+    setDropPreview(null);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-mukai-word", wordId);
+  }
+
+  function previewBoundaryWordDrop(event, lineId) {
+    const sourceWordId = draggedWordId || event.dataTransfer.getData("application/x-mukai-word");
+    const drop = getBoundaryWordDrop(arrangement, sourceWordId, lineId);
+    if (!drop) {
+      event.dataTransfer.dropEffect = "none";
+      setDropPreview((current) => current?.targetLineId === lineId ? null : current);
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropPreview((current) => (
+      current?.sourceWordId === sourceWordId
+      && current?.targetLineId === drop.targetLineId
+      && current?.position === drop.position
+        ? current
+        : { sourceWordId, targetLineId: drop.targetLineId, position: drop.position }
+    ));
+  }
+
+  function leaveBoundaryWordDrop(event, lineId) {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+    setDropPreview((current) => current?.targetLineId === lineId ? null : current);
+  }
+
+  function commitBoundaryWordDrop(event, lineId) {
+    const sourceWordId = draggedWordId || event.dataTransfer.getData("application/x-mukai-word");
+    const drop = getBoundaryWordDrop(arrangement, sourceWordId, lineId);
+    if (!drop) return;
+    event.preventDefault();
+    event.stopPropagation();
+    commit((draft) => moveBoundaryWordToAdjacentSentence(draft, sourceWordId, lineId));
+    clearWordDrag();
+  }
+
   function renderInsertControl(index) {
     return (
       <div className={`sentence-separator ${insertIndex === index ? "editing" : ""}`}>
@@ -3162,9 +3224,17 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
       {renderInsertControl(0)}
       {arrangement.lines.map((line, index) => (
         <React.Fragment key={line.lineId}>
-          <article ref={(node) => bindLineRow(line.lineId, node)} className={`phrase-row ${selectedContext.lineIds.includes(line.lineId) ? "selected" : ""} ${playingLineId === line.lineId ? "playback-active" : ""}`}>
+          <article
+            ref={(node) => bindLineRow(line.lineId, node)}
+            className={`phrase-row ${selectedContext.lineIds.includes(line.lineId) ? "selected" : ""} ${playingLineId === line.lineId ? "playback-active" : ""} ${dropPreview?.targetLineId === line.lineId ? "word-drop-target" : ""}`}
+            draggable={false}
+            onDragOver={(event) => previewBoundaryWordDrop(event, line.lineId)}
+            onDragLeave={(event) => leaveBoundaryWordDrop(event, line.lineId)}
+            onDrop={(event) => commitBoundaryWordDrop(event, line.lineId)}
+          >
             <button
               type="button"
+              draggable={false}
               onClick={() => selectAndSeek("line", line.lineId, line.startSec)}
               onDoubleClick={() => zoomToLine(line)}
               onContextMenu={(event) => {
@@ -3175,20 +3245,24 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
               <span>{formatTime(line.startSec)} - {formatTime(line.endSec)}</span>
             </button>
             <div className="word-list">
-              {wordsForLine(arrangement, line).map((word) => {
+              {dropPreview?.targetLineId === line.lineId && dropPreview.position === "start" && draggedWord && (
+                <WordDropGhost word={draggedWord} />
+              )}
+              {wordsForLine(arrangement, line).map((word, wordIndex) => {
                 const hasWarnings = propertyQualityFlags(word.tokens, acceptedSongBpm).length > 0;
+                const wordIsDraggable = draggableWordIds.has(word.wordId);
                 return (
                   <div
-                    key={word.wordId}
-                    className={`word-block ${hasWarnings ? "review" : ""} ${selectedContext.wordIds.includes(word.wordId) ? "selected" : ""} ${playingWordId === word.wordId ? "playback-active" : ""} ${highlightedWordIds.includes(word.wordId) ? "quality-highlight" : ""}`}
-                    draggable
-                    onDragStart={(event) => startWordDrag(event, word.wordId)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => dropWord(event, commit, line.lineId, word.wordId)}
+                    key={wordSegmentRenderKey(word, wordIndex)}
+                    className={`word-block ${wordIsDraggable ? "word-draggable" : ""} ${draggedWordId === word.wordId ? "word-dragging" : ""} ${hasWarnings ? "review" : ""} ${selectedContext.wordIds.includes(word.wordId) ? "selected" : ""} ${playingWordId === word.wordId ? "playback-active" : ""} ${highlightedWordIds.includes(word.wordId) ? "quality-highlight" : ""}`}
+                    draggable={false}
                   >
                     <button
                       className="word-chip"
                       type="button"
+                      draggable={wordIsDraggable}
+                      onDragStart={(event) => startBoundaryWordDrag(event, word.wordId)}
+                      onDragEnd={clearWordDrag}
                       onClick={() => selectAndSeek("word", word.wordId, word.startSec)}
                       onDoubleClick={() => zoomToToken(word)}
                       onContextMenu={(event) => {
@@ -3206,12 +3280,11 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
                           <span className="syllable-playback-shell" key={token.tokenId}>
                             <input
                               className={tokenClassName}
-                              draggable
+                              draggable={false}
                               value={token.text || ""}
+                              size={Math.max(Array.from(token.text || "").length + 1, 2)}
                               aria-label={tx("editor.syllableContent")}
-                              onDragStart={(event) => startSyllableDrag(event, token.tokenId)}
-                              onDragOver={(event) => event.preventDefault()}
-                              onDrop={(event) => dropSyllable(event, commit, token.tokenId)}
+                              onDragStart={(event) => event.preventDefault()}
                               onFocus={() => selectAndSeek("token", token.tokenId, token.startSec)}
                               onClick={(event) => {
                                 event.stopPropagation();
@@ -3243,8 +3316,6 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
                         className="mini-add"
                         type="button"
                         title={tx("editor.addSyllable")}
-                        onDragOver={(event) => event.preventDefault()}
-                        onDrop={(event) => dropSyllableToEnd(event, commit, word.wordId)}
                         onClick={() => addSyllableFromPrompt(commit, word.tokens.at(-1)?.tokenId)}
                       >
                         +
@@ -3253,12 +3324,13 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
                   </div>
                 );
               })}
+              {dropPreview?.targetLineId === line.lineId && dropPreview.position === "end" && draggedWord && (
+                <WordDropGhost word={draggedWord} />
+              )}
               <button
                 className="mini-add word-insert"
                 type="button"
                 title={tx("editor.addWord")}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => dropWordToEnd(event, commit, line.lineId)}
                 onClick={() => addWordFromPrompt(commit, line.lineId, wordsForLine(arrangement, line).at(-1)?.wordId ?? null)}
               >
                 +
@@ -3268,6 +3340,24 @@ function PhraseList({ arrangement, selected, selectedContext, playing, playbackC
           {renderInsertControl(index + 1)}
         </React.Fragment>
       ))}
+    </div>
+  );
+}
+
+function WordDropGhost({ word }) {
+  return (
+    <div className="word-block word-drop-ghost" aria-hidden="true">
+      <span className="word-chip">{word.text || "..."}</span>
+      <div className="syllable-chip-list">
+        {word.tokens.map((token) => (
+          <span
+            className={`token-chip syllable-inline-input note-type-${token.noteType ?? "normal"} ${token.midi == null ? "missing-note" : ""} ${token.requiresReview ? "review" : ""}`}
+            key={token.tokenId}
+          >
+            {token.text || ""}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -4350,7 +4440,8 @@ function normalizeTranscriptionSettings(settings = {}) {
 }
 
 function toEditorArrangement(arrangement) {
-  if (!arrangement || arrangement.lines || arrangement.tokens) return arrangement;
+  if (!arrangement) return arrangement;
+  if (arrangement.lines || arrangement.tokens) return sortSentenceSyllablesByStart(arrangement);
   const tokens = [];
   const lines = (arrangement.sentences ?? []).map((sentence) => {
     const tokenIds = [];
@@ -4387,7 +4478,7 @@ function toEditorArrangement(arrangement) {
       effectiveSentenceGapMs: sentence.effectiveSentenceGapMs,
     };
   });
-  return { ...arrangement, lines, tokens };
+  return sortSentenceSyllablesByStart({ ...arrangement, lines, tokens });
 }
 
 function fromEditorArrangement(arrangement) {
@@ -4460,47 +4551,6 @@ function addSyllableFromPrompt(commit, afterTokenId) {
   const text = window.prompt(tx("editor.newSyllable"));
   if (!text?.trim()) return;
   commit((draft) => insertSyllableAfter(draft, afterTokenId, text.trim()));
-}
-
-function startWordDrag(event, wordId) {
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("application/x-mukai-word", wordId);
-}
-
-function dropWord(event, commit, lineId, targetWordId) {
-  const sourceWordId = event.dataTransfer.getData("application/x-mukai-word");
-  if (!sourceWordId || sourceWordId === targetWordId) return;
-  event.preventDefault();
-  commit((draft) => moveWordBefore(draft, lineId, sourceWordId, targetWordId));
-}
-
-function dropWordToEnd(event, commit, lineId) {
-  const sourceWordId = event.dataTransfer.getData("application/x-mukai-word");
-  if (!sourceWordId) return;
-  event.preventDefault();
-  commit((draft) => moveWordToEnd(draft, lineId, sourceWordId));
-}
-
-function startSyllableDrag(event, tokenId) {
-  event.stopPropagation();
-  event.dataTransfer.effectAllowed = "move";
-  event.dataTransfer.setData("application/x-mukai-syllable", tokenId);
-}
-
-function dropSyllable(event, commit, targetTokenId) {
-  const sourceTokenId = event.dataTransfer.getData("application/x-mukai-syllable");
-  if (!sourceTokenId || sourceTokenId === targetTokenId) return;
-  event.preventDefault();
-  event.stopPropagation();
-  commit((draft) => moveSyllableBefore(draft, sourceTokenId, targetTokenId));
-}
-
-function dropSyllableToEnd(event, commit, wordId) {
-  const sourceTokenId = event.dataTransfer.getData("application/x-mukai-syllable");
-  if (!sourceTokenId) return;
-  event.preventDefault();
-  event.stopPropagation();
-  commit((draft) => moveSyllableToEnd(draft, sourceTokenId, wordId));
 }
 
 function updateLineText(draft, lineId, text) {
@@ -5135,74 +5185,6 @@ function mergeTokenWithPrevious(draft, tokenId) {
   return mergeTokenWithNext(draft, line.tokenIds[index - 1]);
 }
 
-function moveWordBefore(draft, lineId, sourceWordId, targetWordId) {
-  const line = draft.lines.find((item) => item.lineId === lineId);
-  if (!line || sourceWordId === targetWordId) return draft;
-  const words = wordsForLine(draft, line);
-  const source = words.find((word) => word.wordId === sourceWordId);
-  const target = words.find((word) => word.wordId === targetWordId);
-  if (!source || !target) return draft;
-  const sourceIds = new Set(source.tokens.map((token) => token.tokenId));
-  const targetFirstId = target.tokens[0]?.tokenId;
-  const withoutSource = line.tokenIds.filter((tokenId) => !sourceIds.has(tokenId));
-  const targetIndex = withoutSource.indexOf(targetFirstId);
-  if (targetIndex === -1) return draft;
-  line.tokenIds = [
-    ...withoutSource.slice(0, targetIndex),
-    ...source.tokens.map((token) => token.tokenId),
-    ...withoutSource.slice(targetIndex),
-  ];
-  return draft;
-}
-
-function moveWordToEnd(draft, lineId, sourceWordId) {
-  const line = draft.lines.find((item) => item.lineId === lineId);
-  if (!line) return draft;
-  const words = wordsForLine(draft, line);
-  const source = words.find((word) => word.wordId === sourceWordId);
-  if (!source) return draft;
-  const sourceIds = new Set(source.tokens.map((token) => token.tokenId));
-  line.tokenIds = [
-    ...line.tokenIds.filter((tokenId) => !sourceIds.has(tokenId)),
-    ...source.tokens.map((token) => token.tokenId),
-  ];
-  return draft;
-}
-
-function moveSyllableBefore(draft, sourceTokenId, targetTokenId) {
-  const line = draft.lines.find((item) => item.tokenIds.includes(sourceTokenId) && item.tokenIds.includes(targetTokenId));
-  const source = draft.tokens.find((token) => token.tokenId === sourceTokenId);
-  const target = draft.tokens.find((token) => token.tokenId === targetTokenId);
-  if (!line || !source || !target) return draft;
-  const sourceWordId = source.wordId || source.tokenId;
-  const targetWordId = target.wordId || target.tokenId;
-  if (sourceWordId !== targetWordId) return draft;
-  line.tokenIds = line.tokenIds.filter((tokenId) => tokenId !== sourceTokenId);
-  const targetIndex = line.tokenIds.indexOf(targetTokenId);
-  if (targetIndex === -1) return draft;
-  line.tokenIds.splice(targetIndex, 0, sourceTokenId);
-  renumberWordSyllables(draft, sourceWordId);
-  return draft;
-}
-
-function moveSyllableToEnd(draft, sourceTokenId, wordId) {
-  const line = draft.lines.find((item) => item.tokenIds.includes(sourceTokenId));
-  const source = draft.tokens.find((token) => token.tokenId === sourceTokenId);
-  if (!line || !source || (source.wordId || source.tokenId) !== wordId) return draft;
-  const word = wordsForLine(draft, line).find((item) => item.wordId === wordId);
-  if (!word) return draft;
-  const sourceIndex = line.tokenIds.indexOf(sourceTokenId);
-  line.tokenIds.splice(sourceIndex, 1);
-  const lastRemaining = [...word.tokens.map((token) => token.tokenId)].filter((tokenId) => tokenId !== sourceTokenId).at(-1);
-  if (lastRemaining && line.tokenIds.includes(lastRemaining)) {
-    line.tokenIds.splice(line.tokenIds.indexOf(lastRemaining) + 1, 0, sourceTokenId);
-  } else {
-    line.tokenIds.push(sourceTokenId);
-  }
-  renumberWordSyllables(draft, wordId);
-  return draft;
-}
-
 function deleteToken(draft, tokenId) {
   const token = draft.tokens.find((item) => item.tokenId === tokenId);
   if (!token) return draft;
@@ -5273,6 +5255,7 @@ function mergeNoteWithNext(draft, noteId) {
 }
 
 function normalizeArrangement(arrangement) {
+  sortSentenceSyllablesByStart(arrangement);
   normalizeWordIds(arrangement);
   normalizeTokenTexts(arrangement);
   syncAssignmentQualityFlags(arrangement);
