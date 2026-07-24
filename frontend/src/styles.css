@@ -2330,21 +2330,45 @@ summary:hover {
   --syllable-border: #5b168f;
   --syllable-content: #ffffff;
   --syllable-inner-glow: none;
-  min-width: 36px;
+  container-name: syllable;
+  container-type: inline-size;
+  min-width: 0;
   height: 46px;
-  overflow: hidden;
-  display: grid;
-  align-content: center;
-  gap: 2px;
-  padding: 4px 10px;
+  overflow: visible;
+  padding: 0;
   color: var(--syllable-content);
-  background: var(--syllable-bg);
-  border-color: var(--syllable-border);
-  box-shadow: var(--syllable-inner-glow);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   font-size: 11px;
   opacity: 0.5;
   transform: translateY(-50%);
   cursor: grab;
+}
+
+.syllable-block::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background: var(--syllable-bg);
+  outline: 1px solid var(--syllable-border);
+  outline-offset: -1px;
+  box-shadow: var(--syllable-inner-glow);
+  pointer-events: none;
+}
+
+.syllable-content {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  align-content: center;
+  min-width: 0;
+  overflow: hidden;
+  gap: 2px;
+  padding: 4px 10px;
+  pointer-events: none;
 }
 
 .syllable-block.note-type-normal {
@@ -2389,8 +2413,8 @@ summary:hover {
   --syllable-inner-glow: inset 0 0 0 1px rgba(127, 7, 28, 0.35);
 }
 
-.syllable-block.extension {
-  border-style: dashed;
+.syllable-block.extension::before {
+  outline-style: dashed;
 }
 
 .ghost-note-block {
@@ -2414,20 +2438,31 @@ summary:hover {
 }
 
 .phrase-span.review,
-.syllable-block.review,
 .ghost-note-block.review {
   border-color: var(--warning);
 }
 
+.syllable-block.review::before {
+  outline-color: var(--warning);
+}
+
 .phrase-span.selected,
-.syllable-block.selected,
 .token-chip.selected {
   opacity: 1;
   box-shadow: var(--syllable-inner-glow, none);
 }
 
 .syllable-block.selected {
+  opacity: 1;
   z-index: 3;
+}
+
+.syllable-block:hover {
+  z-index: 4;
+}
+
+.syllable-block.dragging {
+  z-index: 5;
 }
 
 .syllable-block.playback-active {
@@ -2455,6 +2490,8 @@ summary:hover {
 .syllable-text,
 .syllable-note {
   display: block;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2479,7 +2516,7 @@ summary:hover {
   top: 0;
   bottom: 0;
   z-index: 3;
-  width: 8px;
+  width: 9px;
   background: rgba(255, 255, 255, 0.22);
   opacity: 0;
   cursor: ew-resize;
@@ -2487,21 +2524,40 @@ summary:hover {
 }
 
 .drag-handle.start {
-  left: 0;
+  left: -9px;
 }
 
 .drag-handle.end {
-  right: 0;
+  right: -9px;
 }
 
-.syllable-block:hover .drag-handle,
-.syllable-block:focus-visible .drag-handle,
-.syllable-block.selected .drag-handle {
+@container syllable (min-width: 10px) {
+  .drag-handle.start {
+    left: -4.5px;
+  }
+
+  .drag-handle.end {
+    right: -4.5px;
+  }
+}
+
+@container syllable (min-width: 20px) {
+  .drag-handle.start {
+    left: 0;
+  }
+
+  .drag-handle.end {
+    right: 0;
+  }
+}
+
+.syllable-block:focus-visible .drag-handle {
   opacity: 1;
 }
 
 .drag-handle:hover {
-  background: rgba(255, 215, 0, 0.6);
+  opacity: 1;
+  background: #ffffff66;
 }
 
 .editor-grid {
@@ -2862,10 +2918,14 @@ summary:hover {
 }
 
 .quality-badge.quality-highlight,
-.syllable-block.quality-highlight,
 .word-block.quality-highlight,
 .syllable-inline-input.quality-highlight {
   border: 3px solid #ffffff;
+}
+
+.syllable-block.quality-highlight::before {
+  outline: 3px solid #ffffff;
+  outline-offset: -3px;
 }
 
 .property-stack {

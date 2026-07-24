@@ -1768,6 +1768,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
   const [snapThresholdMs, setSnapThresholdMs] = useState(initialWorkspace?.snapThresholdMs ?? DEFAULT_SNAP_MS);
   const [dragGuideTime, setDragGuideTime] = useState(null);
   const [tokenEdgeDragging, setTokenEdgeDragging] = useState(false);
+  const [draggingTokenId, setDraggingTokenId] = useState(null);
   const [loopPlayback, setLoopPlayback] = useState(initialWorkspace?.loopPlayback ?? false);
   const [limitPlaybackToWindow, setLimitPlaybackToWindow] = useState(initialWorkspace?.limitPlaybackToWindow ?? false);
   const [showNotes, setShowNotes] = useState(initialWorkspace?.showNotes ?? false);
@@ -2483,6 +2484,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
     let finalTime = graphItemStart(arrangement, kind, id);
     const draggingTokenEdge = kind === "token" && (mode === "resize-start" || mode === "resize-end");
     selectAndSeek(kind === "note" ? "note" : "token", id, graphItemStart(arrangement, kind, id));
+    if (kind === "token") setDraggingTokenId(id);
     if (draggingTokenEdge) setTokenEdgeDragging(true);
     if (kind === "token") setDragGuideTime(graphGuideTime(arrangement, kind, id, mode));
 
@@ -2509,7 +2511,10 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
       window.removeEventListener("pointerup", stopDrag);
       window.removeEventListener("pointercancel", stopDrag);
       if (draggingTokenEdge) setTokenEdgeDragging(false);
-      if (kind === "token") setDragGuideTime(null);
+      if (kind === "token") {
+        setDraggingTokenId(null);
+        setDragGuideTime(null);
+      }
       if (moved) {
         setPast((items) => [...items.slice(-49), before]);
         setFuture([]);
@@ -2590,7 +2595,7 @@ function ReviewEditor({ job, arrangement, setArrangement, onSave, onResegment, s
         </div>
       )}
 
-      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} playingTokenId={playheadContext.tokenId} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} cursorGuideSuppressed={tokenEdgeDragging} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} audioVolumePercent={audioVolumePercent} midiVolumePercent={midiVolumePercent} audioPlaybackEnabled={audioPlaybackEnabled} midiPlaybackEnabled={midiPlaybackEnabled} setPlaybackVolume={setPlaybackVolume} togglePlaybackSource={togglePlaybackSource} zoomToLine={zoomToLine} zoomToToken={zoomToToken} zoomToFullTrack={zoomToFullTrack} zoomToPlayheadTarget={zoomToPlayheadTarget} restorePreviousGraphWindow={restorePreviousGraphWindow} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
+      <CombinedEditorGraph bindWaveform={bindWaveform} arrangement={arrangement} selectedContext={selectedContext} playingTokenId={playheadContext.tokenId} highlightedTokenIds={activeQualityIssue?.tokenIds ?? []} draggingTokenId={draggingTokenId} selectAndSeek={selectAndSeek} playTokenRange={playTokenRange} playLineRange={playLineRange} startGraphDrag={startGraphDrag} startGraphBackgroundDrag={startGraphBackgroundDrag} dragGuideTime={dragGuideTime} cursorGuideSuppressed={tokenEdgeDragging} currentTime={currentTime} duration={duration} windowStart={windowStart} windowEnd={windowEnd} zoomSec={zoomSec} onViewportChange={setGraphViewport} assets={assets} effectiveTrack={effectiveTrack} changeTrack={changeTrack} audioVolumePercent={audioVolumePercent} midiVolumePercent={midiVolumePercent} audioPlaybackEnabled={audioPlaybackEnabled} midiPlaybackEnabled={midiPlaybackEnabled} setPlaybackVolume={setPlaybackVolume} togglePlaybackSource={togglePlaybackSource} zoomToLine={zoomToLine} zoomToToken={zoomToToken} zoomToFullTrack={zoomToFullTrack} zoomToPlayheadTarget={zoomToPlayheadTarget} restorePreviousGraphWindow={restorePreviousGraphWindow} audioReady={Boolean(audioUrl)} playing={playing} togglePlay={togglePlay} seekPreviousTokenEdge={() => seekTokenEdge("previous")} seekNextTokenEdge={() => seekTokenEdge("next")} seekPreviousSentenceEdge={() => seekSentenceEdge("previous")} seekNextSentenceEdge={() => seekSentenceEdge("next")} loopPlayback={loopPlayback} setLoopPlayback={setLoopPlayback} seek={seek} zoomFromPointer={zoomFromPointer} zoomFromClick={zoomFromClick} zoomFromWheel={zoomFromWheel} limitPlaybackToWindow={limitPlaybackToWindow} setLimitPlaybackToWindow={setLimitPlaybackToWindow} snapToExisting={snapToExisting} setSnapToExisting={setSnapToExisting} snapThresholdMs={snapThresholdMs} setSnapThresholdInput={setSnapThresholdInput} showNotes={showNotes} setShowNotes={setShowNotes} timelinePinningEnabled={timelinePinningEnabled} setTimelinePinningEnabled={setTimelinePinningEnabled} />
 
       <div className="quality-strip">
         <SyllabificationBadge
@@ -2778,7 +2783,7 @@ function PlaybackVolumeControl({ source, label, volumePercent, enabled, onVolume
   );
 }
 
-function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playingTokenId, highlightedTokenIds, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, cursorGuideSuppressed, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, audioVolumePercent, midiVolumePercent, audioPlaybackEnabled, midiPlaybackEnabled, setPlaybackVolume, togglePlaybackSource, zoomToLine, zoomToToken, zoomToFullTrack, zoomToPlayheadTarget, restorePreviousGraphWindow, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
+function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playingTokenId, highlightedTokenIds, draggingTokenId, selectAndSeek, playTokenRange, playLineRange, startGraphDrag, startGraphBackgroundDrag, dragGuideTime, cursorGuideSuppressed, currentTime, duration, windowStart, windowEnd, zoomSec, onViewportChange, assets, effectiveTrack, changeTrack, audioVolumePercent, midiVolumePercent, audioPlaybackEnabled, midiPlaybackEnabled, setPlaybackVolume, togglePlaybackSource, zoomToLine, zoomToToken, zoomToFullTrack, zoomToPlayheadTarget, restorePreviousGraphWindow, audioReady, playing, togglePlay, seekPreviousTokenEdge, seekNextTokenEdge, seekPreviousSentenceEdge, seekNextSentenceEdge, loopPlayback, setLoopPlayback, seek, zoomFromPointer, zoomFromClick, zoomFromWheel, limitPlaybackToWindow, setLimitPlaybackToWindow, snapToExisting, setSnapToExisting, snapThresholdMs, setSnapThresholdInput, showNotes, setShowNotes, timelinePinningEnabled, setTimelinePinningEnabled }) {
   const timelinePanelRef = useRef(null);
   const cursorGuideRef = useRef(null);
   const cursorInsideGraphRef = useRef(false);
@@ -3005,10 +3010,10 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
             return (
               <div
                 key={token.tokenId}
-                className={`syllable-block note-type-${token.noteType ?? "normal"} ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${playingTokenId === token.tokenId ? "playback-active" : ""} ${token.requiresReview ? "review" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""}`}
+                className={`syllable-block note-type-${token.noteType ?? "normal"} ${midi == null ? "missing-note" : ""} ${token.isExtension ? "extension" : ""} ${selectedContext.tokenIds.includes(token.tokenId) ? "selected" : ""} ${playingTokenId === token.tokenId ? "playback-active" : ""} ${token.requiresReview ? "review" : ""} ${highlightedTokenIds.includes(token.tokenId) ? "quality-highlight" : ""} ${draggingTokenId === token.tokenId ? "dragging" : ""}`}
                 style={{
                   left: `${percent(token.startSec, windowStart, windowEnd)}%`,
-                  width: `${spanPercent(token.startSec, token.endSec, windowStart, windowEnd)}%`,
+                  width: `${spanPercent(token.startSec, token.endSec, windowStart, windowEnd, 0)}%`,
                   top: `${pitchTopPercent(visualMidi, pitchRange.minMidi, pitchRange.maxMidi)}%`,
                 }}
                 role="button"
@@ -3028,8 +3033,10 @@ function CombinedEditorGraph({ bindWaveform, arrangement, selectedContext, playi
                 }}
               >
                 <span className="drag-handle start" onPointerDown={(event) => startGraphDrag("token", token.tokenId, "resize-start", event, windowStart, windowEnd)} />
-                <span className="syllable-text">{token.text || "..."}</span>
-                <span className="syllable-note">{midi == null ? tx("common.none") : midi}</span>
+                <span className="syllable-content">
+                  <span className="syllable-text">{token.text || "..."}</span>
+                  <span className="syllable-note">{midi == null ? tx("common.none") : midi}</span>
+                </span>
                 <span className="drag-handle end" onPointerDown={(event) => startGraphDrag("token", token.tokenId, "resize-end", event, windowStart, windowEnd)} />
               </div>
             );
@@ -6198,10 +6205,10 @@ function percent(value, start, end) {
   return Math.max(0, Math.min(100, ((value - start) / (end - start)) * 100));
 }
 
-function spanPercent(start, end, windowStart, windowEnd) {
+function spanPercent(start, end, windowStart, windowEnd, minimum = 0.5) {
   const clippedStart = Math.max(start, windowStart);
   const clippedEnd = Math.min(end, windowEnd);
-  return Math.max(0.5, percent(clippedEnd, windowStart, windowEnd) - percent(clippedStart, windowStart, windowEnd));
+  return Math.max(minimum, percent(clippedEnd, windowStart, windowEnd) - percent(clippedStart, windowStart, windowEnd));
 }
 
 function formatTime(value) {
